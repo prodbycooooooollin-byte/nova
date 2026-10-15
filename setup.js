@@ -151,7 +151,7 @@ function run(mode) {
           await killRunning(dir);
           await copyApp(src, dir, (p, f) => send('setup:progress', { pct: p * 0.97, text: f }));
           require('original-fs').writeFileSync(path.join(dir, 'nova-installed.flag'), pkg.version);
-          await regSet(UNINSTALL_KEY, 'DisplayVersion', pkg.version);
+          if ((await existingInstall())?.toLowerCase() === path.resolve(dir).toLowerCase()) await regSet(UNINSTALL_KEY, 'DisplayVersion', pkg.version);
           send('setup:progress', { pct: 1, text: 'Done' });
           if (ARGV.includes('--relaunch')) launchNova(dir);
         } catch (e) { send('setup:error', e.message); await new Promise((r) => setTimeout(r, 6000)); }
