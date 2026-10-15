@@ -247,4 +247,11 @@ async function handle(name, a, t) {
   }
 }
 
-module.exports = { init, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, isBookmarked };
+function topSites(n = 8) { // bookmarks first, then the most visited hosts
+  const seen = new Set(), out = [];
+  const add = (x) => { let host; try { host = new URL(x.url).hostname.replace(/^www\./, ''); } catch { return; } if (seen.has(host) || out.length >= n) return; seen.add(host); out.push({ url: x.url, host, title: x.title }); };
+  bookmarks.slice(0, 4).forEach(add);
+  [...history].sort((a, b) => b.n - a.n || b.t - a.t).forEach(add);
+  return out;
+}
+module.exports = { init, topSites, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, isBookmarked };

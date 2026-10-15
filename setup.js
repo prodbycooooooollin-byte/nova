@@ -39,7 +39,8 @@ const startLink = () => path.join(startMenuDir(), 'Nova.lnk');
 async function existingInstall() {
   const out = await reg('query', UNINSTALL_KEY, '/v', 'InstallLocation');
   const m = out && out.match(/InstallLocation\s+REG_SZ\s+(.+)/);
-  return m ? m[1].trim() : null;
+  const loc = m ? m[1].trim() : null;
+  return loc && ofs.existsSync(path.join(loc, 'Nova.exe')) ? loc : null; // a stale entry must not steer the installer
 }
 async function killRunning(dir) {
   const d = dir.replace(/'/g, "''");
@@ -92,6 +93,7 @@ async function removeShell() {
   for (const l of [desktopLink(), startLink()]) fs.rmSync(l, { force: true });
   for (const k of [UNINSTALL_KEY, 'HKCU\\Software\\Classes\\NovaHTML', 'HKCU\\Software\\Clients\\StartMenuInternet\\Nova']) await reg('delete', k, '/f');
   await reg('delete', 'HKCU\\Software\\RegisteredApplications', '/v', 'Nova', '/f');
+  await reg('delete', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', '/v', 'Nova', '/f');
 }
 
 function run(mode) {
@@ -101,7 +103,7 @@ function run(mode) {
   const small = mode === 'update';
   app.whenReady().then(async () => {
     const win = new BrowserWindow({
-      width: small ? 460 : 820, height: small ? 220 : 520, frame: false, resizable: false, maximizable: false, backgroundColor: '#0b0b12', show: false,
+      width: small ? 520 : 940, height: small ? 230 : 600, frame: false, resizable: false, maximizable: false, backgroundColor: '#0b0b12', show: false,
       icon: path.join(__dirname, 'build', 'icon.ico'), title: mode === 'uninstall' ? 'Uninstall Nova' : 'Nova Setup',
       webPreferences: { preload: path.join(__dirname, 'setup-preload.js'), contextIsolation: true, sandbox: true },
     });
@@ -111,7 +113,9 @@ function run(mode) {
 
     ipcMain.handle('setup:init', async () => {
       const prev = await existingInstall();
-      return { mode, version: pkg.version, defaultDir: path.join(process.env.LOCALAPPDATA, 'Programs', 'Nova'), previous: prev, dataDir: app.getPath('userData') };
+      const def = path.join(process.env.LOCALAPPDATA, 'Programs', 'Nova'); let freeGB = 0;
+      try { const st = ofs.statfsSync(path.parse(def).root); freeGB = Math.round(st.bavail * st.bsize / 1073741824); } catch {}
+      return { mode, version: pkg.version, defaultDir: def, previous: prev, dataDir: app.getPath('userData'), freeGB };
     });
     ipcMain.handle('setup:browse', async () => {
       const r = await dialog.showOpenDialog(win, { title: 'Choose where to install Nova', properties: ['openDirectory', 'createDirectory'] });
@@ -126,6 +130,8 @@ function run(mode) {
         await copyApp(src, dir, (p, f) => send('setup:progress', { pct: p * 0.92, text: f }));
         send('setup:progress', { pct: 0.95, text: 'Creating shortcuts' });
         await registerShell(dir, o);
+        if (o.startup) await regSet('HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', 'Nova', `"${path.join(dir, 'Nova.exe')}"`);
+        if (o.profile) { try { const ud = app.getPath('userData'); ofs.mkdirSync(ud, { recursive: true }); ofs.writeFileSync(path.join(ud, 'first-run.json'), JSON.stringify({ profile: o.profile })); } catch {} }
         send('setup:progress', { pct: 1, text: 'Done' });
         return { ok: true, dir };
       } catch (e) { return { ok: false, error: e.message }; }

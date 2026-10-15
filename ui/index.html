@@ -10,19 +10,22 @@
 <body>
 <div id="app">
   <aside id="chrome">
-    <div id="head" class="drag">
-      <div id="nav" class="nodrag"></div>
-      <div id="winctl" class="nodrag"></div>
-    </div>
-    <button id="urlbar" class="nodrag"><span class="ico" id="url-ico"></span><span id="url-text"></span></button>
-    <div id="pins" class="nodrag"></div>
-    <div id="tabs" class="nodrag"></div>
-    <div id="foot" class="nodrag"></div>
+    <div id="head"><div id="nav"></div><div id="winctl"></div></div>
+    <button id="urlbar"></button>
+    <div id="pins"></div>
+    <div id="tabhead"></div>
+    <div id="tabs"></div>
+    <div id="spaces"></div>
+    <div id="tools"></div>
   </aside>
   <div id="menu" hidden></div>
   <div id="overlay" hidden></div>
   <div id="toast" hidden></div>
 </div>
 <script src="ui.js"></script>
+<script src="extras.js"></script>
+<script src="settings.js"></script>
+<script src="wizard.js"></script>
+<script src="boot.js"></script>
 </body>
 </html>

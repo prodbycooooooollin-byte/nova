@@ -25,7 +25,7 @@ const DEFAULTS = {
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
   searchEngine: 'https://duckduckgo.com/?q=%s',
   layout: 'left', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
-  theme: { bg: '#0b0b12', surface: '#13131c', surface2: '#1b1b27', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
+  theme: { bg: '#0b0b12', page: '#161621', surface: '#13131c', surface2: '#1c1c28', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
   customCss: '', customJs: '', pageCss: '',
   sleepAfterMin: 10, archiveAfterHours: 24, maxTabs: 25, dedupeTabs: true,
   adblock: true, extensions: [], keys: {}, updateFeed: '', zoom: {},
@@ -37,7 +37,7 @@ const DEFAULTS = {
 const HOME = 'nova://home';
 const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
 const isHome = (u) => u === HOME || (u || '').startsWith(HOME_FILE);
-const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, fx: settings.effects ? 1 : 0 });
+const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, fx: settings.effects ? 1 : 0, sites: JSON.stringify(settings.keepHistory ? features.topSites(8) : []) });
 // Profiles: one switch that decides how much Nova does.
 const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'savePdf', 'translate', 'privateTabs'];
 const featureSet = (on) => Object.fromEntries(FEATURE_KEYS.map((k) => [k, on]));
@@ -59,13 +59,14 @@ const writeJson = (f, v) => { try { fs.writeFileSync(userFile(f), JSON.stringify
 
 function loadSettings() {
   const s = readJson('settings.json', {});
-  settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
+  settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
 }
 const saveSettings = () => writeJson('settings.json', settings);
 
 // ---------- helpers ----------
 function normalizeInput(text) {
   const t = text.trim();
+  if (/^nova:\/\/home/i.test(t)) return HOME;
   if (!t) return HOME;
   if (/^(https?|file|about|chrome|devtools):/i.test(t)) return t;
   if (!/\s/.test(t) && (/^localhost(:\d+)?(\/|$)/i.test(t) || /^(\d{1,3}\.){3}\d{1,3}(:\d+)?(\/|$)/.test(t) || /^[^\s/]+\.[a-z]{2,}(:\d+)?([/?#]|$)/i.test(t))) return 'https://' + t;
@@ -80,7 +81,7 @@ function layout() {
   const [w, h] = win.getContentSize();
   const gap = settings.gap;
   const side = settings.compact ? 56 : settings.sidebarWidth;
-  const top = 46 + 34; // top layout: header + tab strip
+  const top = 96; // top layout: toolbar row + tab strip
   const hidden = sidebarHidden || focusMode || pageFullscreen;
   let uiRect = { x: 0, y: 0, width: 0, height: 0 }, c;
   if (hidden) c = { x: 0, y: 0, width: w, height: h };
@@ -157,7 +158,7 @@ function wake(t) {
   if (t.view) return;
   const view = new WebContentsView({ webPreferences: { partition: t.private ? 'nova-private' : 'persist:nova', sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: settings.profile !== 'ultra' } });
   t.view = view;
-  view.setBackgroundColor(settings.theme.bg);
+  view.setBackgroundColor(settings.theme.page);
   const wc = view.webContents;
   const upd = () => { if (wc.isDestroyed()) return; const u = wc.getURL(); t.url = isHome(u) ? HOME : u || t.url; if (t.url === HOME) t.title = 'New tab'; t.canBack = wc.navigationHistory.canGoBack(); t.canForward = wc.navigationHistory.canGoForward(); push(); };
   wc.on('page-title-updated', (_e, title) => { t.title = isHome(t.url) ? 'New tab' : title; if (!isHome(t.url) && !t.private) features.recordVisit(wc.getURL(), title); push(); });
@@ -202,7 +203,7 @@ function sleep(t) {
   if (t.attached) { win.contentView.removeChildView(t.view); t.attached = false; }
   const wc = t.view.webContents;
   t.url = wc.isDestroyed() ? t.url : (isHome(wc.getURL()) ? HOME : wc.getURL() || t.url);
-  if (!wc.isDestroyed()) wc.close();
+  if (!wc.isDestroyed()) { try { if (wc.debugger.isAttached()) wc.debugger.detach(); } catch {} wc.close(); }
   t.view = null; t.audible = false; t.loading = false; t.darkKey = null; t.muted = false;
 }
 function destroyTab(t) { sleep(t); tabs.delete(t.id); }
@@ -356,8 +357,9 @@ function accel(input) {
   parts.push(k.length === 1 ? k.toUpperCase() : k);
   return parts.join('+');
 }
+let keysPaused = false; // true while the Shortcuts page records a new key combination
 function handleKey(e, input) {
-  if (input.type !== 'keyDown') return;
+  if (input.type !== 'keyDown' || keysPaused) return;
   const a = accel(input);
   if (!a || a === 'Escape') return;
   for (const [action, list] of Object.entries(settings.keys)) {
@@ -480,6 +482,9 @@ if (setupMode) setup.run(setupMode);
 if (!setupMode && gotLock) app.whenReady().then(async () => {
   app.setAppUserModelId('app.nova.browser');
   loadSettings();
+  // the installer can leave a profile choice behind for the very first launch
+  { const fr = readJson('first-run.json', null); try { fs.rmSync(userFile('first-run.json'), { force: true }); } catch {}
+    if (fr && PROFILES[fr.profile]) { const { features: f, budget: b, ...rest } = PROFILES[fr.profile]; Object.assign(settings, rest, { profile: fr.profile, features: { ...f }, budget: { ...b } }); saveSettings(); } }
   const saved = readJson('state.json', null);
   state = { spaces: saved?.spaces?.length ? saved.spaces : [{ id: 1, name: 'Main', color: '#7c8cff' }], activeSpace: saved?.activeSpace || 1, activeTab: null, archive: saved?.archive || [], snoozed: saved?.snoozed || [], split: null };
   Menu.setApplicationMenu(null);
@@ -582,7 +587,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'settings': {
         const prev = JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss]);
         Object.assign(settings, a.patch);
-        if (a.patch.theme) settings.theme = { ...DEFAULTS.theme, ...a.patch.theme };
+        if (a.patch.theme) { settings.theme = { ...DEFAULTS.theme, ...a.patch.theme }; if (!a.patch.theme.page) settings.theme.page = a.patch.theme.surface || DEFAULTS.theme.page; for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(settings.theme.page); }
         if (a.patch.keys) settings.keys = { ...DEFAULT_KEYS, ...a.patch.keys };
         if ('adblock' in a.patch) setAdblock(a.patch.adblock);
         saveSettings();
@@ -602,6 +607,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'removeExtension': settings.extensions = settings.extensions.filter((p) => p !== a.path); saveSettings(); toast('Removed. Takes effect after restart.'); push(); break;
       case 'checkUpdate': updater.check(settings.updateFeed || updater.defaultFeed, { manual: true }); break;
       case 'applyUpdate': if (updater.apply()) app.quit(); break;
+      case 'keysPause': keysPaused = !!a.on; break;
       case 'dragStart': startDrag(); break;
       case 'dragEnd': endDrag(); break;
       case 'external': shell.openExternal(a.url); break;

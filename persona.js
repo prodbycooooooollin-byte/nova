@@ -24,6 +24,7 @@ function apply(wc) {
 }
 async function run(wc) {
   try {
+    if (wc.isDestroyed()) return;
     if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
     await wc.debugger.sendCommand('Emulation.setUserAgentOverride', { userAgent: UA, acceptLanguage: acceptLanguage(), platform: 'Win32', userAgentMetadata: META });
   } catch (e) { /* the page is closing, or DevTools holds the session */ }

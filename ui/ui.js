@@ -31,12 +31,12 @@ const ibtn = (n, title, id, cls = '') => `<button class="ibtn ${cls}" title="${e
 const STAR = '<span class="star"><svg viewBox="0 0 24 24"><path d="M12 1c.7 6.6 4.4 10.3 11 11-6.6.7-10.3 4.4-11 11-.7-6.6-4.4-10.3-11-11C7.6 11.3 11.3 7.6 12 1z"/></svg></span>';
 
 const PRESETS = {
-  Nova: { bg: '#0b0b12', surface: '#13131c', surface2: '#1b1b27', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
-  Daylight: { bg: '#e9e8ee', surface: '#f6f5f9', surface2: '#ffffff', text: '#1b1b22', dim: '#76758a', accent: '#5b4bf0', danger: '#d92d56' },
-  Nebula: { bg: '#100a1c', surface: '#1a1229', surface2: '#251a39', text: '#f0e9fb', dim: '#9d8ebb', accent: '#c084fc', danger: '#ff6b8b' },
-  Supernova: { bg: '#130d0a', surface: '#1d1511', surface2: '#2a1e18', text: '#f7ebe2', dim: '#a89283', accent: '#ff9a4d', danger: '#ff5d5d' },
-  Aurora: { bg: '#07100f', surface: '#0e1a19', surface2: '#152624', text: '#e4f5f1', dim: '#7ea39b', accent: '#2dd4bf', danger: '#ff6b7a' },
-  Graphite: { bg: '#141414', surface: '#1c1c1c', surface2: '#262626', text: '#eeeeee', dim: '#8e8e8e', accent: '#e5e5e5', danger: '#ff6b6b' },
+  Nova: { bg: '#0b0b12', page: '#161621', surface: '#13131c', surface2: '#1b1b27', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
+  Daylight: { bg: '#e9e8ee', page: '#ffffff', surface: '#f6f5f9', surface2: '#ffffff', text: '#1b1b22', dim: '#76758a', accent: '#5b4bf0', danger: '#d92d56' },
+  Nebula: { bg: '#100a1c', page: '#1b1230', surface: '#1a1229', surface2: '#251a39', text: '#f0e9fb', dim: '#9d8ebb', accent: '#c084fc', danger: '#ff6b8b' },
+  Supernova: { bg: '#130d0a', page: '#211812', surface: '#1d1511', surface2: '#2a1e18', text: '#f7ebe2', dim: '#a89283', accent: '#ff9a4d', danger: '#ff5d5d' },
+  Aurora: { bg: '#07100f', page: '#0f1d1b', surface: '#0e1a19', surface2: '#152624', text: '#e4f5f1', dim: '#7ea39b', accent: '#2dd4bf', danger: '#ff6b7a' },
+  Graphite: { bg: '#141414', page: '#202020', surface: '#1c1c1c', surface2: '#262626', text: '#eeeeee', dim: '#8e8e8e', accent: '#e5e5e5', danger: '#ff6b6b' },
 };
 const ACTIONS = {
   newTab: 'New tab', go: 'Address and search bar', closeTab: 'Close tab', reopenTab: 'Reopen closed tab', nextTab: 'Next tab', prevTab: 'Previous tab',
@@ -106,21 +106,20 @@ function render() {
 
   const tabs = spaceTabs(), maxAge = (S.settings.archiveAfterHours || 24) * 3600e3;
   $('#pins').innerHTML = tabs.filter((t) => t.pinned).map((t) => `<div class="pin ${t.id === S.activeTab ? 'active' : ''}" data-tab="${t.id}" title="${esc(t.title)}">${favHtml(t)}</div>`).join('');
-  $('#tabs').innerHTML = `<div class="tab newtab" data-do="newTab"><span class="fav" style="color:var(--dim)">${ic('plus')}</span><span class="t">New tab</span><kbd>Ctrl T</kbd></div>`
-    + tabs.filter((t) => !t.pinned).map((t) => {
-      const idle = t.id === S.activeTab ? 0 : Math.min(1, (S.now - t.lastActive) / maxAge);
-      return `<div class="tab ${t.id === S.activeTab ? 'active' : ''} ${t.asleep ? 'asleep' : ''} ${t.id === S.split ? 'split' : ''} ${t.private ? 'private' : ''}" data-tab="${t.id}" style="opacity:${(1 - idle * 0.5).toFixed(2)}" title="${esc(t.title)}${t.url === HOME ? '' : '\n' + esc(t.url)}">
-        ${favHtml(t)}<span class="t">${esc(t.title || 'New tab')}</span>${t.audible || t.muted ? `<button class="aud" data-mute="${t.id}" title="${t.muted ? 'Unmute' : 'Mute'}">${ic(t.muted ? 'mute' : 'vol')}</button>` : ''}<button class="x" data-close="${t.id}">${ic('x')}</button></div>`;
-    }).join('');
-  const total = S.tabs.length, max = S.settings.maxTabs;
-  $('#foot').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})" style="${sp.id === S.activeSpace ? `background:${sp.color}` : ''}">${sp.id === S.activeSpace ? esc(sp.name) : esc(sp.name[0] || '?')}</button>`).join('')
-    + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button><span class="sp"></span>`
-    + (S.extensions || []).filter((e) => e.popup).slice(0, 5).map((e) => `<button class="ibtn" title="${esc(e.name)}" data-extpop="${e.id}">${e.icon ? `<img src="${e.icon}" width="16" height="16" style="border-radius:4px">` : ic('box')}</button>`).join('')
-    + (S.updateReady ? `<button class="btn primary" data-do="update" style="height:24px;padding:0 10px;font-size:11.5px" title="Restart to install the update">Update</button>` : '')
-    + (S.settings.adblock ? `<span class="shield" title="Blocked by the uBlock Origin filter lists">${ic('shield')}<span>${S.blockedCount}</span></span>` : '')
-    + (S.budget.enabled ? `<button class="ram ${S.budget.over || S.budget.used > S.budget.cap * 0.9 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova / your budget of ${S.budget.cap} MB"><i style="width:${Math.min(100, Math.round(S.budget.used / S.budget.cap * 100))}%"></i><span>${S.budget.used} MB</span></button>` : '')
-    + `<span class="budget ${max && total >= max - 3 ? 'hot' : ''}" title="Open tabs / tab budget">${total}${max ? '/' + max : ''}</span>`
-    + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings');
+  const plain = tabs.filter((t) => !t.pinned), total = S.tabs.length, max = S.settings.maxTabs;
+  $('#tabhead').innerHTML = `<span class="lbl">Tabs</span><span class="count ${max && total >= max - 3 ? 'hot' : ''}" title="Open tabs / tab budget">${total}${max ? ' / ' + max : ''}</span><button class="ibtn sm" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}</button>`;
+  $('#tabs').innerHTML = plain.map((t) => {
+    const idle = t.id === S.activeTab ? 0 : Math.min(1, (S.now - t.lastActive) / maxAge);
+    return `<div class="tab ${t.id === S.activeTab ? 'active' : ''} ${t.asleep ? 'asleep' : ''} ${t.id === S.split ? 'split' : ''} ${t.private ? 'private' : ''}" data-tab="${t.id}" style="--idle:${(1 - idle * 0.45).toFixed(2)}" title="${esc(t.title)}${t.url === HOME ? '' : '\n' + esc(t.url)}">
+      ${favHtml(t)}<span class="t">${esc(t.title || 'New tab')}</span>${t.asleep ? `<span class="zz" title="Asleep: reloads when opened">${ic('moon')}</span>` : ''}${t.audible || t.muted ? `<button class="aud" data-mute="${t.id}" title="${t.muted ? 'Unmute' : 'Mute'}">${ic(t.muted ? 'mute' : 'vol')}</button>` : ''}<button class="x" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`;
+  }).join('') || '<div class="emptytabs">No other tabs in this space</div>';
+  $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
+  const bud = S.budget, pct = bud.enabled && bud.cap ? Math.min(100, Math.round(bud.used / bud.cap * 100)) : 0;
+  $('#tools').innerHTML = (S.extensions || []).filter((e) => e.popup).slice(0, 4).map((e) => `<button class="ibtn" title="${esc(e.name)}" data-extpop="${e.id}">${e.icon ? `<img src="${e.icon}" width="16" height="16" style="border-radius:4px">` : ic('box')}</button>`).join('')
+    + (S.updateReady ? `<button class="upd" data-do="update" title="Restart to install the update">Update</button>` : '')
+    + (S.settings.adblock ? `<span class="chip" title="Ads and trackers blocked">${ic('shield')}<b>${S.blockedCount}</b></span>` : '')
+    + (bud.enabled ? `<button class="ram ${bud.over || pct >= 90 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova of your ${bud.cap} MB budget"><span class="lab">RAM</span><b>${bud.used}</b><small>MB</small><i style="width:${pct}%"></i></button>` : '')
+    + `<span class="grow"></span>` + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings');
 }
 setInterval(() => { if (S) { S.now = Date.now(); render(); } }, 20000);
 
@@ -327,224 +326,3 @@ async function overview(o) {
   overview.redraw = draw; draw(); qi.focus();
 }
 
-// ---------- settings ----------
-const PROFILE_INFO = [
-  ['ultra', 'Ultra Performance', 'The bare minimum. Search and tabs, nothing else.', ['No ad blocker, history or previews', 'No animations or effects', 'Memory limit 1 GB', 'As light as a browser can be']],
-  ['nova', 'Nova', 'Recommended. Light, with the essentials.', ['Ad blocker built in', 'Subtle effects, history and previews', 'Memory limit 2 GB', 'Extra tools stay off until you want them']],
-  ['complete', 'Complete', 'Everything switched on, for people who want it all.', ['Ad blocker and every extra tool', 'Private tabs, screenshots, PDF, picture-in-picture, translate', 'Memory limit 4 GB', 'More features, more resources']],
-];
-const NAV_GROUPS = [
-  ['General', [['Profile', 'user'], ['Appearance', 'palette']]],
-  ['Browsing', [['Tabs', 'layers'], ['Resource budget', 'gauge'], ['Search & privacy', 'shield']]],
-  ['Customize', [['Features', 'sliders'], ['Shortcuts', 'keyboard'], ['Extensions', 'box'], ['Custom code', 'code']]],
-  ['Data', [['Move in', 'imp'], ['Backup & updates', 'save']]],
-];
-const TAB_ALIAS = { Layout: 'Appearance', Theme: 'Appearance', Code: 'Custom code' };
-
-function settings(o, d) {
-  let tab = TAB_ALIAS[d.tab] || d.tab || 'Profile';
-  const patch = (p) => nova.cmd('settings', { patch: p });
-  const row = (label, ctl, hint = '') => `<div class="row"><div class="l">${label}${hint ? `<small>${hint}</small>` : ''}</div>${ctl}</div>`;
-  const sw = (k, on) => `<label class="sw"><input type="checkbox" data-k="${k}" ${on ? 'checked' : ''}><i></i></label>`;
-  const bsw = (k, on) => `<label class="sw"><input type="checkbox" data-bud="${k}" ${on ? 'checked' : ''}><i></i></label>`;
-  const fsw = (k, on) => `<label class="sw"><input type="checkbox" data-feat="${k}" ${on ? 'checked' : ''}><i></i></label>`;
-  const seg = (k, vals, cur) => `<div class="seg">${vals.map((v) => `<button data-seg="${k}" data-v="${v}" class="${cur === v ? 'on' : ''}">${v}</button>`).join('')}</div>`;
-  const rng = (k, min, max, step, unit = '') => `<div class="rng"><input type="range" min="${min}" max="${max}" step="${step}" value="${S.settings[k]}" data-k="${k}" data-num><span class="val">${S.settings[k]}${unit}</span></div>`;
-  const grp = (...rows) => `<div class="group">${rows.join('')}</div>`;
-  const head = (t, sub) => `<h2>${t}</h2><p class="sub">${sub}</p>`;
-  const pages = {
-    Profile: (s) => head('Profile', 'One choice that decides how much Nova does. Switch whenever you like.')
-      + `<div class="profiles">${PROFILE_INFO.map(([id, name, tag, bullets]) => `<div class="pcard ${s.profile === id ? 'on' : ''}"><div class="ph"><b>${name}</b>${id === 'nova' ? '<span class="tag">Recommended</span>' : ''}${s.profile === id ? '<span class="tag on">Active</span>' : ''}</div><p>${tag}</p><ul>${bullets.map((b) => `<li>${b}</li>`).join('')}</ul>${s.profile === id ? '' : `<button class="btn" data-profile="${id}">Use ${name}</button>`}</div>`).join('')}</div>`
-      + '<h4>Setup</h4>' + grp(row('Run the welcome setup again', '<button class="btn" id="rerun">Start setup</button>', 'Walk through profile, layout, search and extensions once more.')),
-    Appearance: (s) => head('Appearance', 'Theme, layout and type. Every part of Nova is adjustable.')
-      + `<div class="presets">${Object.entries(PRESETS).map(([n, p]) => `<button class="preset" data-preset="${n}"><div class="pv"><i style="background:${p.bg}"></i><i style="background:${p.surface2}"></i><i style="background:${p.accent}"></i></div><span>${n}</span></button>`).join('')}</div>`
-      + `<details class="more"><summary>Fine-tune colours</summary>${grp(...Object.keys(s.theme).map((k) => row(k[0].toUpperCase() + k.slice(1), `<input class="swatch" type="color" data-theme="${k}" value="${s.theme[k]}">`)))}</details>`
-      + '<h4>Layout</h4>' + grp(row('Tab bar', seg('layout', ['left', 'right', 'top'], s.layout)), row('Compact sidebar', sw('compact', s.compact), 'Icons only, for maximum page space.'), row('Sidebar width', rng('sidebarWidth', 180, 420, 4, 'px')))
-      + '<h4>Page frame</h4>' + grp(row('Gap around the page', rng('gap', 0, 24, 1, 'px')), row('Corner radius', rng('radius', 0, 28, 1, 'px')))
-      + '<h4>Type and motion</h4>' + grp(row('Interface font size', rng('fontSize', 11, 17, 1, 'px')), row('Interface font', `<input type="text" data-k="font" value="${esc(s.font)}" placeholder="Inter">`, 'Any installed font family. Inter is built in.'), row('Animations and blur', sw('effects', s.effects), 'Turn off for the leanest possible interface.')),
-    Tabs: (s) => head('Tabs', 'Nova keeps your tab list tidy so you never have to.') + grp(
-      row('Tab budget', `<input type="number" min="0" data-k="maxTabs" data-num value="${s.maxTabs}">`, 'Past this many tabs, the least recently used are archived. 0 means unlimited.'),
-      row('Sleep after (minutes)', `<input type="number" min="0" data-k="sleepAfterMin" data-num value="${s.sleepAfterMin}">`, 'Frees memory. A sleeping tab reloads when you open it.'),
-      row('Archive after (hours)', `<input type="number" min="0" data-k="archiveAfterHours" data-num value="${s.archiveAfterHours}">`, 'Unpinned tabs idle this long move to Stardust, still searchable from Ctrl K.'),
-      row('Reuse existing tabs', sw('dedupeTabs', s.dedupeTabs), 'Opening a page you already have open switches to it.')),
-    'Resource budget': (s) => head('Resource budget', 'Tell Nova how much memory it may use. It keeps itself under that limit on its own.')
-      + `<div class="group"><div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:baseline"><b id="bud-text">${S.budget.used} MB</b><span class="val" id="bud-of">of ${s.budget.enabled ? s.budget.ramMB + ' MB' : 'no limit'}</span></div><div class="meter"><i id="bud-fill" style="width:${s.budget.enabled ? Math.min(100, Math.round(S.budget.used / s.budget.ramMB * 100)) : 0}%"></i></div><small style="color:var(--dim)">Everything Nova uses: the interface, the ad blocker and every tab.</small></div></div><h4>Limit</h4>`
-      + grp(row('Keep Nova under a limit', bsw('enabled', s.budget.enabled), 'At the limit, the tabs you used longest ago go to sleep.'),
-        row('Preset', `<div class="seg">${[[1024, '1 GB'], [2048, '2 GB'], [4096, '4 GB']].map(([v, l]) => `<button data-bud="ramMB" data-v="${v}" class="${s.budget.ramMB === v ? 'on' : ''}">${l}</button>`).join('')}</div>`),
-        row('Custom limit', `<div class="rng"><input type="range" min="512" max="8192" step="128" value="${s.budget.ramMB}" data-bud="ramMB" data-num><span class="val">${s.budget.ramMB} MB</span></div>`))
-      + '<h4>Background CPU</h4>' + grp(row('CPU guard', bsw('cpuGuard', s.budget.cpuGuard), 'A background tab that keeps using a lot of CPU is put to sleep.'),
-        row('Guard threshold', `<div class="rng"><input type="range" min="5" max="80" step="5" value="${s.budget.cpuPct}" data-bud="cpuPct" data-num><span class="val">${s.budget.cpuPct}%</span></div>`))
-      + '<h4>Heaviest tabs right now</h4><div class="group" id="bud-list">' + budList() + '</div>',
-    'Search & privacy': (s) => head('Search & privacy', 'One search engine, one blocker, nothing else phoning home.') + grp(
-      row('Search engine', `<select id="eng">${Object.keys(ENGINES).map((n) => `<option ${ENGINES[n] === s.searchEngine ? 'selected' : ''}>${n}</option>`).join('')}<option value="custom" ${Object.values(ENGINES).includes(s.searchEngine) ? '' : 'selected'}>Custom</option></select>`),
-      row('Search URL', `<input type="text" data-k="searchEngine" value="${esc(s.searchEngine)}">`, 'Use %s where the query goes.'),
-      row('Ad and tracker blocker', sw('adblock', s.adblock), 'Network and cosmetic filtering from the uBlock Origin filter lists, EasyList and EasyPrivacy. Refreshed on every launch.'),
-      row('Keep browsing history', sw('keepHistory', s.keepHistory), 'Lets Ctrl K find pages you visited. Off keeps nothing.'),
-      row('Tab previews', sw('thumbnails', s.thumbnails), 'Small screenshots in the tab overview. Off saves a little CPU and memory.')),
-    Features: (s) => head('Features', 'Nova stays light. Everything beyond the essentials is off until you want it.')
-      + FEATURE_GROUPS.map(([g, keys]) => `<h4>${g}</h4>` + grp(...FEATURES.filter(([k]) => keys.includes(k)).map(([k, l, h]) => row(l, fsw(k, s.features[k]), h)))).join(''),
-    Shortcuts: (s) => head('Shortcuts', 'Separate several shortcuts with “ | ”, for example Ctrl+Shift+T | F9.') + grp(...Object.entries(ACTIONS).map(([k, l]) => row(l, `<input type="text" data-key="${k}" value="${esc((s.keys[k] || []).join(' | '))}">`))) + '<p style="margin-top:14px"><button class="btn" id="rk">Reset shortcuts</button></p>',
-    Extensions: () => head('Extensions', 'Nova ships bare. Add only what you want, installed in one click.') + extensionsHtml(),
-    'Custom code': (s) => head('Custom code', 'Nova is built from plain CSS variables. Rewrite anything.') + '<h4>CSS for the Nova interface</h4><p>Parts: <code>#chrome</code> <code>#tabs</code> <code>.tab</code> <code>.pin</code> <code>#urlbar</code> <code>#foot</code> <code>.card</code> <code>.box</code> <code>.item</code>. Variables: <code>--bg</code> <code>--surface</code> <code>--accent</code> <code>--radius</code></p>'
-      + `<textarea id="ccss" spellcheck="false">${esc(s.customCss)}</textarea><h4>CSS for every website</h4><textarea id="pcss" spellcheck="false" placeholder="Dark tweaks, hide a cookie banner, anything.">${esc(s.pageCss)}</textarea><h4>JavaScript for the Nova interface</h4><p>Runs at load with <code>nova</code> and <code>state</code> in scope.</p><textarea id="cjs" spellcheck="false">${esc(s.customJs)}</textarea><p style="margin-top:12px"><button class="btn primary" id="applycode">Apply</button></p>`,
-    'Move in': () => head('Move in', 'Switching browsers without starting from zero.') + '<div id="movein"><p>Looking for other browsers</p></div>',
-    'Backup & updates': (s) => head('Backup & updates', 'Your whole setup is one JSON document. Nova updates itself in the background.') + grp(row(`Nova ${esc(S.version || '')}`, '<button class="btn" id="chk">Check for updates</button>', 'Updates download quietly and install the next time Nova starts.'), row('Update feed', `<input type="text" data-k="updateFeed" value="${esc(s.updateFeed)}" placeholder="owner/repo or https://…/latest.json">`, 'A GitHub “owner/repo” or a URL to a latest.json file. Leave empty to use the default.'))
-      + `<h4>Settings JSON</h4><textarea id="bk" spellcheck="false">${esc(JSON.stringify(s, null, 2))}</textarea><p style="margin-top:12px;display:flex;gap:8px"><button class="btn primary" id="imp">Import</button><button class="btn danger" id="rst">Reset everything</button></p>`,
-  };
-
-  o.innerHTML = `<div class="box settings"><div class="sn"><div class="brand"><img src="mark.svg" alt="">Nova</div><div class="ssearch">${ic('search')}<input id="ss" placeholder="Search settings" autocomplete="off" spellcheck="false"></div><div class="nav" id="snav">${NAV_GROUPS.map(([g, items]) => `<div class="grp">${g}</div>${items.map(([n, i]) => `<button data-t="${n}">${ic(i)}${n}</button>`).join('')}`).join('')}</div><button id="sx" class="closebtn">${ic('x')}Close</button></div><div class="sb" id="sbody"></div></div>`;
-  const body = $('#sbody');
-  const mark = () => o.querySelectorAll('[data-t]').forEach((b) => b.classList.toggle('on', b.dataset.t === tab && !$('#ss').value));
-  const render = (keepScroll) => { const st = body.scrollTop; body.innerHTML = pages[tab](S.settings); body.scrollTop = keepScroll ? st : 0; mark(); bind(); };
-  const show = (name) => { tab = name; $('#ss').value = ''; render(false); };
-  const again = (ms = 40) => setTimeout(() => { if ($('#sbody') && !$('#ss').value) render(true); }, ms);
-
-  // search across every page's rows
-  let index = null;
-  const buildIndex = () => { index = []; for (const [name, fn] of Object.entries(pages)) { const t = document.createElement('div'); t.innerHTML = fn(S.settings); t.querySelectorAll('.row').forEach((r) => { const l = r.querySelector('.l'); if (l) index.push({ page: name, label: l.childNodes[0].textContent.trim(), hint: l.querySelector('small')?.textContent || '' }); }); } };
-  $('#ss').addEventListener('input', (e) => {
-    const q = e.target.value.trim(); mark();
-    if (!q) return render(false);
-    if (!index) buildIndex();
-    const hits = index.filter((i) => score(q, i.label, i.hint, i.page) >= 0).slice(0, 14);
-    body.innerHTML = `<h2>Search</h2><p class="sub">${hits.length ? hits.length + ' result' + (hits.length > 1 ? 's' : '') : 'Nothing matches that.'}</p>` + (hits.length ? `<div class="group">${hits.map((h, n) => `<button class="row hit" data-hit="${n}"><div class="l">${esc(h.label)}<small>${esc(h.page)}${h.hint ? ' · ' + esc(h.hint) : ''}</small></div></button>`).join('')}</div>` : '');
-    body.querySelectorAll('[data-hit]').forEach((b) => (b.onclick = () => { const h = hits[+b.dataset.hit]; show(h.page); const r = [...body.querySelectorAll('.row')].find((x) => x.querySelector('.l')?.childNodes[0]?.textContent.trim() === h.label); if (r) { r.scrollIntoView({ block: 'center' }); r.classList.add('flash'); } }));
-  });
-  o.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => show(b.dataset.t)));
-  $('#sx').onclick = () => nova.cmd('closeOverlay');
-
-  const bind = () => {
-    body.querySelectorAll('[data-k]').forEach((el) => (el.oninput = el.onchange = () => {
-      const v = el.type === 'checkbox' ? el.checked : el.type === 'range' || el.dataset.num !== undefined ? +el.value : el.value;
-      if (el.type === 'range') el.nextElementSibling.textContent = v + (el.nextElementSibling.textContent.match(/[a-z%]+$/)?.[0] || '');
-      patch({ [el.dataset.k]: v });
-    }));
-    body.querySelectorAll('[data-seg]').forEach((b) => (b.onclick = () => { patch({ [b.dataset.seg]: b.dataset.v }); body.querySelectorAll(`[data-seg="${b.dataset.seg}"]`).forEach((x) => x.classList.toggle('on', x === b)); }));
-    body.querySelectorAll('[data-theme]').forEach((el) => (el.oninput = () => patch({ theme: { ...S.settings.theme, [el.dataset.theme]: el.value } })));
-    body.querySelectorAll('[data-preset]').forEach((b) => (b.onclick = () => { patch({ theme: PRESETS[b.dataset.preset] }); again(120); }));
-    body.querySelectorAll('[data-key]').forEach((el) => (el.onchange = () => patch({ keys: { ...S.settings.keys, [el.dataset.key]: el.value.split('|').map((x) => x.trim()).filter(Boolean) } })));
-    body.querySelectorAll('[data-feat]').forEach((el) => (el.onchange = () => patch({ features: { ...S.settings.features, [el.dataset.feat]: el.checked } })));
-    body.querySelectorAll('[data-bud]').forEach((el) => {
-      const set = (v) => patch({ budget: { ...S.settings.budget, [el.dataset.bud]: v } });
-      if (el.tagName === 'BUTTON') el.onclick = () => { set(+el.dataset.v); again(120); };
-      else if (el.type === 'checkbox') el.onchange = () => set(el.checked);
-      else el.oninput = () => { const v = +el.value; el.nextElementSibling.textContent = v + (el.dataset.bud === 'cpuPct' ? '%' : ' MB'); set(v); };
-    });
-    body.querySelectorAll('[data-sleep]').forEach((b) => (b.onclick = () => nova.cmd('sleep', { id: +b.dataset.sleep })));
-    body.querySelectorAll('[data-profile]').forEach((b) => (b.onclick = () => { nova.cmd('applyProfile', { name: b.dataset.profile }); toast('Profile switched.'); again(150); }));
-    const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
-    if ($('#eng')) $('#eng').onchange = (e) => { if (ENGINES[e.target.value]) { patch({ searchEngine: ENGINES[e.target.value] }); again(); } };
-    on('#rk', () => { patch({ keys: {} }); again(120); }); on('#chk', () => nova.cmd('checkUpdate')); on('#rerun', () => nova.cmd('runSetup'));
-    on('#applycode', () => { patch({ customCss: $('#ccss').value, pageCss: $('#pcss').value, customJs: $('#cjs').value }); toast('Applied'); });
-    on('#imp', () => { try { patch(JSON.parse($('#bk').value)); toast('Imported'); } catch (e) { toast('Invalid JSON: ' + e.message); } });
-    on('#rst', () => window.confirm('Reset all settings to defaults?') && nova.cmd('resetSettings'));
-    if (tab === 'Extensions') bindExtensions(body, () => render(true));
-    if (tab === 'Move in') moveInHtml().then((h) => { const m = $('#movein'); if (m) { m.innerHTML = h; bindMoveIn(body, () => render(true)); } });
-  };
-  render(false);
-}
-
-// ---------- extensions, move-in (shared by Settings and the wizard) ----------
-const CATALOG = [
-  { id: 'ghmbeldphafepmbegfdlkpapadhbakde', name: 'Proton Pass', desc: 'Password manager with built-in aliases' },
-  { id: 'nngceckbapebfimnlniiiahkandclblb', name: 'Bitwarden', desc: 'Open-source password manager' },
-  { id: 'aeblfdkhhhdcdjpifhhbdiojplfjncoa', name: '1Password', desc: 'Password manager' },
-  { id: 'eimadpbcbfnmbkopoojfekhnkhdbieeh', name: 'Dark Reader', desc: 'Dark mode for every website' },
-  { id: 'mnjggcdmjocbbbhaepdhchncahnbgone', name: 'SponsorBlock', desc: 'Skip sponsors in YouTube videos' },
-  { id: 'gebbhagfogifgggkldgodflihgfeacdd', name: 'Return YouTube Dislike', desc: 'Brings the dislike count back' },
-];
-const SIGNINS = [['Google', 'https://accounts.google.com/'], ['YouTube', 'https://www.youtube.com/'], ['Microsoft', 'https://login.live.com/'], ['GitHub', 'https://github.com/login'], ['Discord', 'https://discord.com/login'], ['Spotify', 'https://accounts.spotify.com/login'], ['Reddit', 'https://www.reddit.com/login'], ['X', 'https://x.com/login'], ['Amazon', 'https://www.amazon.com/ap/signin'], ['Netflix', 'https://www.netflix.com/login']];
-const installedId = (id) => (S.extensions || []).some((e) => (e.path || '').replace(/\\/g, '/').endsWith('/' + id));
-function catalogHtml(ids) {
-  return `<div class="catalog">${CATALOG.filter((c) => !ids || ids.includes(c.id)).map((c) => `<div class="cat"><div><b>${esc(c.name)}</b><small>${esc(c.desc)}</small></div>${installedId(c.id) ? '<span class="done">Installed</span>' : `<button class="btn primary" data-install="${c.id}">Install</button>`}</div>`).join('')}</div>`;
-}
-function bindInstall(root, redraw) {
-  root.querySelectorAll('[data-install]').forEach((b) => (b.onclick = async () => {
-    b.textContent = 'Installing'; b.disabled = true;
-    const r = await nova.cmd('installExt', { id: b.dataset.install });
-    toast(r.ok ? `${r.name} is installed and ready.` : `Could not install: ${r.error}`);
-    setTimeout(redraw, 200);
-  }));
-}
-function extensionsHtml() {
-  const list = S.extensions || [];
-  return (list.length ? `<div class="group">${list.map((e) => `<div class="row"><div class="l" style="display:flex;gap:12px;align-items:center">${e.icon ? `<img src="${e.icon}" width="24" height="24" style="border-radius:6px">` : '<span class="fav" style="background:var(--surface2)">+</span>'}<div>${esc(e.name)}<small>Version ${esc(e.version)}</small></div></div><button class="btn danger" data-rmext="${esc(e.id)}">Remove</button></div>`).join('')}</div>` : '<p>No extensions yet.</p>')
-    + '<h4>Suggested, one click</h4>' + catalogHtml()
-    + `<h4>Install from the Chrome Web Store</h4><div class="group"><div class="row"><div class="l">Paste a Web Store link or extension ID<small>Nova downloads it and installs it right here.</small></div><div style="display:flex;gap:8px"><input type="text" id="storeid" placeholder="https://chromewebstore.google.com/detail/…" style="width:230px"><button class="btn primary" id="storego">Install</button></div></div></div>`
-    + '<p style="margin-top:12px;font-size:12px">Nova runs Chromium extensions, but Electron implements only part of the Chrome extension API. Simple extensions work best; if one misbehaves, remove it. <a href="#" id="unpacked" style="color:var(--accent)">Load an unpacked folder</a></p>';
-}
-function bindExtensions(root, redraw) {
-  bindInstall(root, redraw);
-  root.querySelectorAll('[data-rmext]').forEach((b) => (b.onclick = async () => { await nova.cmd('removeExt', { id: b.dataset.rmext }); setTimeout(redraw, 200); }));
-  const go = $('#storego'); if (go) go.onclick = async () => { const v = $('#storeid').value.trim(); if (!v) return; go.textContent = 'Installing'; const r = await nova.cmd('installExt', { id: v }); toast(r.ok ? `${r.name} is installed and ready.` : `Could not install: ${r.error}`); setTimeout(redraw, 200); };
-  const up = $('#unpacked'); if (up) up.onclick = (e) => { e.preventDefault(); nova.cmd('loadExtension'); };
-}
-async function moveInHtml() {
-  const found = await nova.cmd('detectBrowsers');
-  return `<h4>1 · Bookmarks</h4><div class="group"><div class="row"><div class="l">${found.length ? 'Found bookmarks in ' + found.map(esc).join(', ') : 'No Chrome, Edge or Brave profile found'}<small>Copied once from the browser's own bookmarks file. Nothing else is read.</small></div><div style="display:flex;gap:8px">${found.map((n) => `<button class="btn" data-bm="${esc(n)}">Import ${esc(n)}</button>`).join('')}</div></div></div>`
-    + `<h4>2 · Passwords</h4><div class="group"><div class="row"><div class="l">Export from your old browser, import into a password manager<small>Old browser: Settings › Passwords › Export. Then install a manager below and use its import. Nova never reads other browsers’ saved passwords or cookies; they are encrypted for good reason.</small></div></div></div><div style="margin-top:10px">${catalogHtml(CATALOG.slice(0, 3).map((c) => c.id))}</div>`
-    + `<h4>3 · Sign in once</h4><p style="margin-bottom:10px">Nova remembers sign-ins like any browser. Open a service and log in once.</p><div class="signins">${SIGNINS.map(([n, u]) => `<button class="btn" data-go="${u}">${n}</button>`).join('')}</div>`;
-}
-function bindMoveIn(root, redraw) {
-  bindInstall(root, redraw);
-  root.querySelectorAll('[data-bm]').forEach((b) => (b.onclick = async () => { b.disabled = true; await nova.cmd('importBookmarks', { name: b.dataset.bm }); b.textContent = 'Imported'; }));
-  root.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => nova.cmd('open', { text: b.dataset.go, newTab: true })));
-}
-
-function budList() {
-  const rows = Object.entries(S.budget.tabs).map(([id, mb]) => [S.tabs.find((t) => t.id === +id), mb]).filter(([t]) => t).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  return rows.length ? rows.map(([t, mb]) => `<div class="row"><div class="l" style="display:flex;gap:10px;align-items:center;min-width:0">${favHtml(t)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">${esc(t.title || 'New tab')}</span></div><div style="display:flex;gap:12px;align-items:center"><span class="val">${mb} MB</span>${t.id === S.activeTab ? '<span class="val">in use</span>' : `<button class="btn" data-sleep="${t.id}">Sleep</button>`}</div></div>`).join('') : '<div class="row"><div class="l" style="color:var(--dim)">No data yet.</div></div>';
-}
-function updateBudgetLive() {
-  const t = $('#bud-text'); if (!t) return; const b = S.settings.budget;
-  t.textContent = S.budget.used + ' MB'; $('#bud-of').textContent = 'of ' + (b.enabled ? b.ramMB + ' MB' : 'no limit'); $('#bud-fill').style.width = (b.enabled ? Math.min(100, Math.round(S.budget.used / b.ramMB * 100)) : 0) + '%';
-  const l = $('#bud-list'); if (l) { l.innerHTML = budList(); l.querySelectorAll('[data-sleep]').forEach((x) => (x.onclick = () => nova.cmd('sleep', { id: +x.dataset.sleep }))); }
-}
-
-// ---------- first-run wizard ----------
-function wizard(o) {
-  let i = 0;
-  const choice = { profile: S.settings.profile || 'nova', layout: S.settings.layout, theme: 'Nova', engine: 'DuckDuckGo' };
-  const opt = (g, v, t, sub = '') => `<button class="opt ${choice[g] === v ? 'on' : ''}" data-g="${g}" data-v="${v}">${t}<small>${sub}</small></button>`;
-  const defs = {
-    profile: ['How should Nova feel?', 'Pick a profile. It sets sensible defaults for everything, and you can switch later in Settings.', () => `<div class="pchoices" style="grid-column:1/-1">${PROFILE_INFO.map(([id, name, tag, bullets]) => `<button class="pchoice ${choice.profile === id ? 'on' : ''}" data-p="${id}"><div class="ph"><b>${name}</b>${id === 'nova' ? '<span class="tag">Recommended</span>' : ''}</div><p>${tag}</p><ul>${bullets.map((b) => `<li>${b}</li>`).join('')}</ul></button>`).join('')}</div>`, (root) => root.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => { choice.profile = b.dataset.p; nova.cmd('applyProfile', { name: choice.profile }); root.querySelectorAll('[data-p]').forEach((x) => x.classList.toggle('on', x === b)); }))],
-    layout: ['Where should your tabs live?', 'You can change this any time.', () => opt('layout', 'left', 'Sidebar left', 'Vertical tabs, the Nova way') + opt('layout', 'right', 'Sidebar right') + opt('layout', 'top', 'Tabs on top', 'The classic strip')],
-    look: ['Pick a look', 'Every colour stays editable.', () => Object.keys(PRESETS).map((n) => opt('theme', n, n)).join('')],
-    search: ['Choose your search', 'Used by the address bar and the home page.', () => Object.keys(ENGINES).map((n) => opt('engine', n, n)).join('')],
-    budget: ['How light should Nova be?', 'Nova keeps its memory use under a limit you choose, by quietly sleeping tabs you are not using.', () => [[1024, 'Light', 'Up to 1 GB'], [2048, 'Balanced', 'Up to 2 GB'], [4096, 'Roomy', 'Up to 4 GB'], [0, 'No limit', 'Never sleep tabs for memory']].map(([v, t, sub]) => `<button class="opt ${(S.settings.budget.enabled ? S.settings.budget.ramMB : 0) === v ? 'on' : ''}" data-b="${v}">${t}<small>${sub}</small></button>`).join(''), (root) => root.querySelectorAll('[data-b]').forEach((b) => (b.onclick = () => { const v = +b.dataset.b; nova.cmd('settings', { patch: { budget: { ...S.settings.budget, enabled: v > 0, ramMB: v || S.settings.budget.ramMB } } }); root.querySelectorAll('[data-b]').forEach((x) => x.classList.toggle('on', x === b)); }))],
-    bookmarks: ['Bring your bookmarks', 'Coming from Chrome, Edge or Brave? Copy your bookmarks over. Sign-ins and passwords are covered in Settings › Move in.', () => '<div id="wz-bm" style="grid-column:1/-1"></div>', async (root) => {
-      const found = await nova.cmd('detectBrowsers'); const el = root.querySelector('#wz-bm');
-      el.innerHTML = found.length ? `<div class="signins">${found.map((n) => `<button class="btn" data-bm="${esc(n)}">Import from ${esc(n)}</button>`).join('')}</div>` : '<p style="color:var(--dim)">No other browser found. Nothing to import.</p>';
-      bindMoveIn(root, () => {});
-    }],
-    extras: ['Add only what you need', 'The ad blocker is built in. Install a password manager with one click, right here.', () => catalogHtml(CATALOG.slice(0, 3).map((c) => c.id)).replace('class="catalog"', 'class="catalog" style="grid-column:1/-1"'), (root) => bindInstall(root, draw)],
-  };
-  const order = () => (choice.profile === 'ultra' ? ['profile', 'layout', 'search'] : ['profile', 'layout', 'look', 'search', 'budget', 'bookmarks', 'extras']);
-  function draw() {
-    const keys = order(); if (i >= keys.length) i = keys.length - 1;
-    const [h, sub, body, after] = defs[keys[i]];
-    o.innerHTML = `<div class="box wizard"><div class="wl"><div><img src="mark.svg" alt=""></div><div><h1>Welcome<br>to Nova</h1><p>A browser with nothing extra, built around how you actually use tabs.</p></div><div class="dots">${keys.map((_, n) => `<i class="${n === i ? 'on' : ''}"></i>`).join('')}</div></div><div class="wr"><h2>${h}</h2><p class="sub">${sub}</p><div class="opts">${body()}</div><div class="wnav"><button class="btn" id="wb" ${i ? '' : 'style="visibility:hidden"'}>Back</button><button class="btn primary" id="wn">${i === keys.length - 1 ? 'Start browsing' : 'Continue'}</button></div></div></div>`;
-    o.querySelectorAll('[data-g]').forEach((b) => (b.onclick = () => { choice[b.dataset.g] = b.dataset.v; if (b.dataset.g === 'layout') nova.cmd('settings', { patch: { layout: b.dataset.v } }); if (b.dataset.g === 'theme') nova.cmd('settings', { patch: { theme: PRESETS[b.dataset.v] } }); o.querySelectorAll(`[data-g="${b.dataset.g}"]`).forEach((x) => x.classList.toggle('on', x === b)); }));
-    if (after) after(o);
-    $('#wb').onclick = () => { i--; draw(); };
-    $('#wn').onclick = () => { if (keys[i] === 'search') nova.cmd('settings', { patch: { searchEngine: ENGINES[choice.engine] } }); if (i === keys.length - 1) nova.cmd('finishSetup'); else { i++; draw(); } };
-  }
-  draw();
-}
-
-// ---------- boot ----------
-nova.onState((s) => { S = s; render(); if (overlay?.kind === 'overview' && overview.redraw) overview.redraw(); if (overlay?.kind === 'settings') updateBudgetLive(); });
-nova.onOverlay((o) => { if (!o) return clearOverlay(); if (S) setOverlay(o.kind, o.data); });
-nova.onToast(toast);
-nova.state().then((s) => { S = s; render(); });
-
-// ---------- window dragging (frameless window: done by hand so it works across monitors) ----------
-const NODRAG = 'button,[data-tab],[data-do],#urlbar,input,textarea,select,.pin,.tab,.space,.item,.box,#menu,.card';
-let dragging = false;
-document.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 || overlay || !e.target.closest('#chrome') || e.target.closest(NODRAG)) return;
-  dragging = true; nova.cmd('dragStart');
-});
-const stopDrag = () => { if (dragging) { dragging = false; nova.cmd('dragEnd'); } };
-addEventListener('pointerup', stopDrag); addEventListener('pointercancel', stopDrag); addEventListener('blur', stopDrag); addEventListener('mouseup', stopDrag);
-document.addEventListener('dblclick', (e) => { if (!overlay && e.target.closest('#chrome') && !e.target.closest(NODRAG)) nova.cmd('win', { op: 'max' }); });
