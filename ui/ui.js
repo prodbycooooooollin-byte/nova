@@ -24,25 +24,45 @@ const PATHS = {
   gauge: '<path d="M12 14l4-5"/><path d="M3.3 17a9 9 0 1 1 17.4 0"/><circle cx="12" cy="14" r="1.2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   star: '<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>', rewind: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>', mute: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>', imp: '<path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
+  bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>', trash: '<path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>', open: '<path d="M14 3h7v7M21 3l-9 9M10 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4"/>',
   split: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>', globe: '<circle cx="12" cy="12" r="9"/><path d="M12 3a14 14 0 0 0 0 18 14 14 0 0 0 0-18M3 12h18"/>',
 };
 const ic = (n) => `<svg viewBox="0 0 24 24">${PATHS[n]}</svg>`;
+// bundled brand icon; falls back to a neutral globe tile, never a placeholder letter
+const brand = (file, cls = 'av') => `<img class="${cls} logo" src="icons/${file}.png" data-fb="${cls}" alt="">`;
+document.addEventListener('error', (e) => { const el = e.target; if (el.tagName === 'IMG' && el.dataset.fb) { const s = document.createElement('span'); s.className = el.dataset.fb + ' gl'; s.innerHTML = ic('globe'); el.replaceWith(s); } }, true);
 const ibtn = (n, title, id, cls = '') => `<button class="ibtn ${cls}" title="${esc(title)}" data-do="${id}">${ic(n)}</button>`;
 const STAR = '<span class="star"><svg viewBox="0 0 24 24"><path d="M12 1c.7 6.6 4.4 10.3 11 11-6.6.7-10.3 4.4-11 11-.7-6.6-4.4-10.3-11-11C7.6 11.3 11.3 7.6 12 1z"/></svg></span>';
 
 const PRESETS = {
-  Nova: { bg: '#0b0b12', page: '#161621', surface: '#13131c', surface2: '#1b1b27', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
-  Daylight: { bg: '#e9e8ee', page: '#ffffff', surface: '#f6f5f9', surface2: '#ffffff', text: '#1b1b22', dim: '#76758a', accent: '#5b4bf0', danger: '#d92d56' },
-  Nebula: { bg: '#100a1c', page: '#1b1230', surface: '#1a1229', surface2: '#251a39', text: '#f0e9fb', dim: '#9d8ebb', accent: '#c084fc', danger: '#ff6b8b' },
-  Supernova: { bg: '#130d0a', page: '#211812', surface: '#1d1511', surface2: '#2a1e18', text: '#f7ebe2', dim: '#a89283', accent: '#ff9a4d', danger: '#ff5d5d' },
-  Aurora: { bg: '#07100f', page: '#0f1d1b', surface: '#0e1a19', surface2: '#152624', text: '#e4f5f1', dim: '#7ea39b', accent: '#2dd4bf', danger: '#ff6b7a' },
-  Graphite: { bg: '#141414', page: '#202020', surface: '#1c1c1c', surface2: '#262626', text: '#eeeeee', dim: '#8e8e8e', accent: '#e5e5e5', danger: '#ff6b6b' },
+  'Nova': { bg: '#0b0b12', page: '#161621', surface: '#13131c', surface2: '#1c1c28', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
+  'Daylight': { bg: '#e9e8ee', page: '#ffffff', surface: '#f6f5f9', surface2: '#ffffff', text: '#1b1b22', dim: '#76758a', accent: '#5b4bf0', danger: '#ff6b7a' },
+  'Nebula': { bg: '#100a1c', page: '#1b1230', surface: '#1a1229', surface2: '#251a39', text: '#f0e9fb', dim: '#9d8ebb', accent: '#c084fc', danger: '#ff6b7a' },
+  'Supernova': { bg: '#130d0a', page: '#211812', surface: '#1d1511', surface2: '#2a1e18', text: '#f7ebe2', dim: '#a89283', accent: '#ff9a4d', danger: '#ff6b7a' },
+  'Aurora': { bg: '#07100f', page: '#0f1d1b', surface: '#0e1a19', surface2: '#152624', text: '#e4f5f1', dim: '#7ea39b', accent: '#2dd4bf', danger: '#ff6b7a' },
+  'Graphite': { bg: '#141414', page: '#202020', surface: '#1c1c1c', surface2: '#262626', text: '#eeeeee', dim: '#8e8e8e', accent: '#e5e5e5', danger: '#ff6b7a' },
+  'Midnight': { bg: '#060a14', page: '#0e1626', surface: '#0b1220', surface2: '#16213a', text: '#e6edf9', dim: '#7d8cab', accent: '#4da3ff', danger: '#ff6b7a' },
+  'Rosé': { bg: '#1a1015', page: '#28171f', surface: '#22141b', surface2: '#311d27', text: '#fbe9f0', dim: '#b08a99', accent: '#ff7aa8', danger: '#ff6b7a' },
+  'Forest': { bg: '#0a120d', page: '#14221a', surface: '#101b14', surface2: '#1b2f23', text: '#e6f5ea', dim: '#7fa38b', accent: '#5ddc88', danger: '#ff6b7a' },
+  'Ocean': { bg: '#05121a', page: '#0d2230', surface: '#0a1b26', surface2: '#12303f', text: '#e2f4fa', dim: '#77a3b3', accent: '#34d0e8', danger: '#ff6b7a' },
+  'Sakura': { bg: '#f4e9ee', page: '#fff8fa', surface: '#fbeff3', surface2: '#ffffff', text: '#3a2530', dim: '#9a7a8a', accent: '#e0508a', danger: '#ff6b7a' },
+  'Sand': { bg: '#ece6da', page: '#faf6ee', surface: '#f3eee3', surface2: '#ffffff', text: '#2d2820', dim: '#8a8072', accent: '#c2763a', danger: '#ff6b7a' },
+  'Mono': { bg: '#000000', page: '#0a0a0a', surface: '#0a0a0a', surface2: '#161616', text: '#ffffff', dim: '#9a9a9a', accent: '#ffffff', danger: '#ff6b7a' },
+  'Cyber': { bg: '#07070d', page: '#0f0f1c', surface: '#0c0c18', surface2: '#17172b', text: '#e9fff7', dim: '#7fb3a2', accent: '#00f0a8', danger: '#ff6b7a' },
+  'Tokyo Night': { bg: '#16161e', page: '#1a1b26', surface: '#16161e', surface2: '#24283b', text: '#c0caf5', dim: '#7982a9', accent: '#7aa2f7', danger: '#ff6b7a' },
+  'Dracula': { bg: '#1e1f29', page: '#282a36', surface: '#232532', surface2: '#343746', text: '#f8f8f2', dim: '#8a93b6', accent: '#bd93f9', danger: '#ff6b7a' },
+  'Nord': { bg: '#242933', page: '#2e3440', surface: '#2b303b', surface2: '#3b4252', text: '#eceff4', dim: '#9aa5ba', accent: '#88c0d0', danger: '#ff6b7a' },
+  'Catppuccin': { bg: '#181825', page: '#1e1e2e', surface: '#181825', surface2: '#313244', text: '#cdd6f4', dim: '#9399b2', accent: '#cba6f7', danger: '#ff6b7a' },
+  'Gruvbox': { bg: '#1d2021', page: '#282828', surface: '#232323', surface2: '#3c3836', text: '#ebdbb2', dim: '#a89984', accent: '#fabd2f', danger: '#ff6b7a' },
 };
+const WALL_OF = {'Nova': 'aurora', 'Daylight': 'paper', 'Nebula': 'nebula', 'Supernova': 'ember', 'Aurora': 'aurora', 'Graphite': '', 'Midnight': 'deep', 'Rosé': 'bloom', 'Forest': 'forest', 'Ocean': 'deep', 'Sakura': 'bloom', 'Sand': 'paper', 'Mono': '', 'Cyber': 'grid', 'Tokyo Night': 'deep', 'Dracula': 'nebula', 'Nord': '', 'Catppuccin': 'bloom', 'Gruvbox': 'ember'};
+const WIZARD_THEMES = ['Nova', 'Daylight', 'Nebula', 'Aurora', 'Midnight', 'Rosé', 'Forest', 'Tokyo Night', 'Graphite'];
+const WALLS = [['theme', 'Follow theme'], ['none', 'None'], ['aurora', 'Aurora'], ['nebula', 'Nebula'], ['ember', 'Ember'], ['deep', 'Deep'], ['bloom', 'Bloom'], ['forest', 'Forest'], ['grid', 'Grid'], ['paper', 'Paper']];
 const ACTIONS = {
   newTab: 'New tab', go: 'Address and search bar', closeTab: 'Close tab', reopenTab: 'Reopen closed tab', nextTab: 'Next tab', prevTab: 'Previous tab',
   overview: 'Tab overview', reload: 'Reload', back: 'Back', forward: 'Forward', toggleSidebar: 'Toggle sidebar', focusMode: 'Focus mode',
   find: 'Find in page', settings: 'Settings', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Reset zoom', devtools: 'Developer tools', pinTab: 'Pin or unpin tab',
-  cleanUp: 'Clean up tabs', screenshot: 'Take screenshot', privateTab: 'New private tab', space1: 'Space 1', space2: 'Space 2', space3: 'Space 3', space4: 'Space 4', space5: 'Space 5',
+  history: 'History', downloads: 'Downloads', bookmarks: 'Bookmarks', cleanUp: 'Clean up tabs', screenshot: 'Take screenshot', privateTab: 'New private tab', space1: 'Space 1', space2: 'Space 2', space3: 'Space 3', space4: 'Space 4', space5: 'Space 5',
 };
 const FEATURES = [
   ['tabSearch', 'Search inside open tabs', 'Start a Ctrl+K query with ? to find text on any open page.'],
@@ -68,6 +88,7 @@ function applySettings() {
   const s = S.settings, r = document.documentElement.style;
   for (const [k, v] of Object.entries(s.theme)) r.setProperty('--' + k, v);
   { const h = s.theme.accent.replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; const L = (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255; r.setProperty('--on-accent', L > 0.62 ? '#111118' : '#ffffff'); }
+  r.setProperty('--tab-h', { compact: '32px', comfortable: '38px', spacious: '45px' }[s.density] || '38px');
   r.setProperty('--radius', s.radius + 'px'); r.setProperty('--gap', s.gap + 'px'); r.setProperty('--side', (s.compact ? 56 : s.sidebarWidth) + 'px');
   r.setProperty('--fs', s.fontSize + 'px'); r.setProperty('--font', `${s.font || "'Inter'"}, 'Inter', system-ui, sans-serif`);
   $('#app').className = `layout-${s.layout}` + (s.compact ? ' compact' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects');
@@ -94,6 +115,7 @@ document.addEventListener('error', (e) => { const el = e.target; if (el.tagName 
 
 function render() {
   if (!S) return;
+  if (typeof dragTab !== 'undefined' && dragTab !== null) { deferredRender = true; return; }
   applySettings();
   const cur = S.tabs.find((t) => t.id === S.activeTab);
   $('#nav').innerHTML = `<img id="mark" src="mark.svg" alt="">` + ibtn('back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn('fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn('reload', 'Reload (Ctrl+R)', 'reload');
@@ -110,7 +132,7 @@ function render() {
   $('#tabhead').innerHTML = `<span class="lbl">Tabs</span><span class="count ${max && total >= max - 3 ? 'hot' : ''}" title="Open tabs / tab budget">${total}${max ? ' / ' + max : ''}</span><button class="ibtn sm" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}</button>`;
   $('#tabs').innerHTML = plain.map((t) => {
     const idle = t.id === S.activeTab ? 0 : Math.min(1, (S.now - t.lastActive) / maxAge);
-    return `<div class="tab ${t.id === S.activeTab ? 'active' : ''} ${t.asleep ? 'asleep' : ''} ${t.id === S.split ? 'split' : ''} ${t.private ? 'private' : ''}" data-tab="${t.id}" style="--idle:${(1 - idle * 0.45).toFixed(2)}" title="${esc(t.title)}${t.url === HOME ? '' : '\n' + esc(t.url)}">
+    return `<div draggable="true" class="tab ${t.id === S.activeTab ? 'active' : ''} ${t.asleep ? 'asleep' : ''} ${t.id === S.split ? 'split' : ''} ${t.private ? 'private' : ''}" data-tab="${t.id}" style="--idle:${(1 - idle * 0.45).toFixed(2)}" title="${esc(t.title)}${t.url === HOME ? '' : '\n' + esc(t.url)}">
       ${favHtml(t)}<span class="t">${esc(t.title || 'New tab')}</span>${t.asleep ? `<span class="zz" title="Asleep: reloads when opened">${ic('moon')}</span>` : ''}${t.audible || t.muted ? `<button class="aud" data-mute="${t.id}" title="${t.muted ? 'Unmute' : 'Mute'}">${ic(t.muted ? 'mute' : 'vol')}</button>` : ''}<button class="x" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`;
   }).join('') || '<div class="emptytabs">No other tabs in this space</div>';
   $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
@@ -119,7 +141,7 @@ function render() {
     + (S.updateReady ? `<button class="upd" data-do="update" title="Restart to install the update">Update</button>` : '')
     + (S.settings.adblock ? `<span class="chip" title="Ads and trackers blocked">${ic('shield')}<b>${S.blockedCount}</b></span>` : '')
     + (bud.enabled ? `<button class="ram ${bud.over || pct >= 90 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova of your ${bud.cap} MB budget"><span class="lab">RAM</span><b>${bud.used}</b><small>MB</small><i style="width:${pct}%"></i></button>` : '')
-    + `<span class="grow"></span>` + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings');
+    + `<span class="grow"></span>` + ibtn('bookmark', 'Library: bookmarks, history, downloads (Ctrl+H)', 'library') + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings');
 }
 setInterval(() => { if (S) { S.now = Date.now(); render(); } }, 20000);
 
@@ -129,7 +151,7 @@ document.addEventListener('click', (e) => {
   const d = e.target.closest('[data-do]')?.dataset.do;
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
-    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: () => { const n = window.prompt('Name of the new space'); n && nova.cmd('addSpace', { name: n }); } };
+    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
     return m[d]?.();
   }
   if (e.target.closest('#urlbar')) return nova.cmd('action', { name: 'go' });
@@ -172,11 +194,25 @@ function tabMenu(id) {
 function spaceMenu(id) {
   const sp = S.spaces.find((s) => s.id === id);
   return [
-    { label: 'Rename space', run: () => { const n = window.prompt('Space name', sp.name); n && nova.cmd('renameSpace', { id, name: n }); } },
-    { label: 'Change colour', run: () => { const n = window.prompt('Colour (hex)', sp.color); n && nova.cmd('renameSpace', { id, color: n }); } },
-    { label: 'Delete space and its tabs', run: () => window.confirm('Delete this space and close all its tabs?') && nova.cmd('deleteSpace', { id }) },
+    { label: 'Rename or recolour', run: async () => { const r = await askDialog({ title: 'Edit space', input: true, value: sp.name, ok: 'Save', colors: SPACE_COLORS, color: sp.color }); if (r) nova.cmd('renameSpace', { id, name: r.value, color: r.color }); } },
+    { label: 'Delete space and its tabs', run: async () => { if (S.spaces.length < 2) return toast('You need at least one space.'); const r = await askDialog({ title: 'Delete this space?', text: `“${sp.name}” and all of its tabs will be closed.`, ok: 'Delete', danger: true }); if (r) nova.cmd('deleteSpace', { id }); } },
   ];
 }
+// Electron has no window.prompt(), so Nova ships its own small dialog (also used for confirmations).
+let askResolve = null;
+const SPACE_COLORS = ['#8b7dff', '#ff7a90', '#ffb04d', '#4ddc9a', '#4db8ff', '#c084fc', '#ff6b6b', '#2dd4bf'];
+function askDialog(o) { return new Promise((res) => { askResolve = res; nova.cmd('overlay', { kind: 'ask', data: o }); }); }
+function ask(el, d) {
+  let color = d.color || (d.colors ? d.colors[0] : null);
+  el.innerHTML = `<div class="box ask"><h3>${esc(d.title)}</h3>${d.text ? `<p>${esc(d.text)}</p>` : ''}${d.input ? `<input id="ask-in" value="${esc(d.value || '')}" placeholder="${esc(d.placeholder || '')}" autocomplete="off" spellcheck="false">` : ''}${d.colors ? `<div class="cdots">${d.colors.map((c) => `<button class="cdot ${c === color ? 'on' : ''}" data-c="${c}" style="--c:${c}" title="${c}"></button>`).join('')}</div>` : ''}<div class="askbtns"><button class="btn ghost" id="ask-no">Cancel</button><button class="btn ${d.danger ? 'danger' : 'primary'}" id="ask-ok">${esc(d.ok || 'OK')}</button></div></div>`;
+  const input = $('#ask-in');
+  const finish = (v) => { const r = askResolve; askResolve = null; nova.cmd('closeOverlay'); if (r) r(v); };
+  el.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => { color = b.dataset.c; el.querySelectorAll('[data-c]').forEach((x) => x.classList.toggle('on', x === b)); }));
+  const ok = () => { if (input && !input.value.trim()) { input.focus(); return; } finish({ value: input ? input.value.trim() : true, color }); };
+  $('#ask-ok').onclick = ok; $('#ask-no').onclick = () => finish(null);
+  if (input) { input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); }); input.focus(); input.select(); } else $('#ask-ok').focus();
+}
+async function newSpaceFlow() { const r = await askDialog({ title: 'New space', text: 'Spaces keep different parts of your life apart: work, school, projects.', input: true, placeholder: 'Name, for example Work', ok: 'Create', colors: SPACE_COLORS }); if (r) nova.cmd('addSpace', { name: r.value, color: r.color }); }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 4500); }
 
 // ---------- overlay plumbing ----------
@@ -186,9 +222,9 @@ function setOverlay(kind, data) {
   if (kind === 'menu') return;
   const o = $('#overlay'); o.hidden = false; o.innerHTML = '';
   o.onmousedown = (e) => { if (e.target === o && kind !== 'wizard') nova.cmd('closeOverlay'); };
-  ({ palette, overview, settings, wizard, peek })[kind](o, data || {});
+  ({ palette, overview, settings, wizard, peek, ask, library })[kind](o, data || {});
 }
-function clearOverlay() { overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; }
+function clearOverlay() { if (askResolve) { const r = askResolve; askResolve = null; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; }
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && overlay) { e.preventDefault(); nova.cmd(overlay.kind === 'wizard' ? 'finishSetup' : 'closeOverlay'); } }, true);
 
 // ---------- command palette ----------
@@ -205,6 +241,8 @@ function commands() {
   const hr = new Date().getHours(), F = S.settings.features;
   return [
     { t: 'Tab overview', s: 'All tabs as cards, memory use, cleanup', k: 'Ctrl E', run: A('overview') },
+    { t: 'History', s: 'Pages you visited', k: 'Ctrl H', run: A('history') }, { t: 'Downloads', k: 'Ctrl J', run: A('downloads') }, { t: 'Bookmarks', k: 'Ctrl ⇧ O', run: A('bookmarks') },
+    { t: 'Clear browsing data', s: 'History, cookies, cache', run: () => nova.cmd('overlay', { kind: 'library', data: { tab: 'Clear data' } }) },
     { t: cur?.bookmarked ? 'Remove bookmark' : 'Bookmark this page', k: 'Ctrl D', run: A('bookmark') },
     ...(F.tabSearch ? [{ t: 'Search inside all open tabs', s: 'Or start your query with ?', run: () => nova.cmd('overlay', { kind: 'palette', data: { mode: 'go', text: '? ' } }) }] : []),
     ...(F.snooze ? [snz('in 1 hour', Date.now() + 3600e3), ...(hr < 17 ? [snz('this evening', at(18))] : []), snz('tomorrow morning', at(9, 0, 1)), snz('next Monday', nextMonday())] : []),
@@ -221,7 +259,7 @@ function commands() {
     { t: cur?.pinned ? 'Unpin tab' : 'Pin tab', k: 'Ctrl ⇧ P', run: A('pinTab') },
     { t: 'Find in page', k: 'Ctrl F', run: () => nova.cmd('overlay', { kind: 'palette', data: { mode: 'find', text: '' } }) },
     { t: 'Print', k: 'Ctrl P', run: A('print') }, { t: 'Full screen', k: 'F11', run: A('fullscreen') },
-    { t: 'New space', run: () => { nova.cmd('closeOverlay'); setTimeout(() => { const n = window.prompt('Name of the new space'); n && nova.cmd('addSpace', { name: n }); }, 50); } },
+    { t: 'New space', run: () => setTimeout(newSpaceFlow, 80) },
     { t: 'Toggle sidebar', k: 'Ctrl B', run: A('toggleSidebar') }, { t: 'Focus mode', s: 'Hide all interface', k: 'Ctrl ⇧ F', run: A('focusMode') },
     { t: 'Sidebar on the left', run: set({ layout: 'left' }) }, { t: 'Sidebar on the right', run: set({ layout: 'right' }) }, { t: 'Tabs on top', run: set({ layout: 'top' }) },
     { t: S.settings.compact ? 'Expand sidebar' : 'Compact sidebar', run: set({ compact: !S.settings.compact }) },
@@ -230,7 +268,7 @@ function commands() {
     { t: 'Move in from another browser', s: 'Bookmarks, sign-ins, extensions', run: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Move in' } }) },
     { t: 'Close split view', run: () => nova.cmd('split', { id: S.activeTab }) },
     { t: 'Check for updates', run: () => { nova.cmd('closeOverlay'); nova.cmd('checkUpdate'); } },
-    ...Object.keys(PRESETS).map((n) => ({ t: 'Theme: ' + n, run: set({ theme: PRESETS[n] }) })),
+    ...Object.keys(PRESETS).map((n) => ({ t: 'Theme: ' + n, run: set({ theme: PRESETS[n], wallpaper: S.settings.wallpaper.mode === 'theme' ? { ...S.settings.wallpaper, preset: WALL_OF[n] || '' } : S.settings.wallpaper }) })),
     ...S.spaces.map((sp) => ({ t: 'Go to space: ' + sp.name, run: () => { nova.cmd('closeOverlay'); nova.cmd('switchSpace', { id: sp.id }); } })),
   ];
 }
@@ -239,7 +277,7 @@ function palette(o, d) {
   const mode = d.mode || 'go';
   const ph = mode === 'find' ? 'Find in page' : mode === 'new' ? 'Open in a new tab: search or enter address' : 'Search, enter an address, or jump to a tab or command';
   o.innerHTML = `<div class="box palette"><div class="pinput">${ic('search')}<input id="q" placeholder="${ph}" autocomplete="off" spellcheck="false"></div><div class="list" id="list"></div><div class="hint"><span><kbd>↑</kbd><kbd>↓</kbd>select</span><span><kbd>Enter</kbd>${mode === 'find' ? 'next' : 'open'}</span>${mode === 'find' ? '<span id="found"></span>' : '<span><kbd>Alt Enter</kbd>new tab</span>'}<span><kbd>Esc</kbd>close</span></div></div>`;
-  const q = $('#q'), list = $('#list'); let items = [], sel = 0, seq = 0, extra = null, inside = null, timer;
+  const q = $('#q'), list = $('#list'); let items = [], sel = 0, seq = 0, extra = null, inside = null, timer, sugg = [], stimer;
   q.value = d.text || '';
   const draw = () => {
     list.innerHTML = items.map((it, i) => it.sec ? `<div class="sec">${esc(it.sec)}</div>` : `<div class="item ${i === sel ? 'sel' : ''}" data-i="${i}"><span class="ii">${it.icon || ''}</span><div class="m"><span class="a">${esc(it.t)}</span>${it.s ? `<span class="b">${esc(it.s)}</span>` : ''}</div>${it.k ? `<kbd>${esc(it.k)}</kbd>` : ''}</div>`).join('');
@@ -261,10 +299,11 @@ function palette(o, d) {
       sel = first(); return;
     }
     if (v) items.push({ kind: 'open', t: looksLikeUrl(v) ? `Open ${v}` : `Search “${v}”`, s: looksLikeUrl(v) ? '' : 'with your search engine', icon: ic(looksLikeUrl(v) ? 'globe' : 'search'), act: (nt) => nova.cmd('open', { text: v, newTab: nt || mode === 'new' }) });
+    if (sugg.length) items.push({ sec: 'Suggestions' }, ...sugg.map((x) => ({ t: x, icon: ic('search'), act: (nt) => nova.cmd('open', { text: x, newTab: nt || mode === 'new' }) })));
     const open = S.tabs.map((t) => ({ t, sc: v ? score(v, t.title, t.url) : t.id === S.activeTab ? -1 : 1 / (1 + (S.now - t.lastActive)) })).filter((x) => x.sc >= 0).sort((a, b) => b.sc - a.sc).slice(0, v ? 8 : 6);
     if (open.length) items.push({ sec: v ? 'Open tabs' : 'Recent tabs' }, ...open.map(({ t }) => { const sp = S.spaces.find((s) => s.id === t.spaceId); return { t: t.title || 'New tab', s: (S.spaces.length > 1 ? sp.name + '  ·  ' : '') + (t.url === HOME ? '' : hostOf(t.url)), icon: `<span class="dot" style="background:${sp.color}"></span>`, act: () => nova.cmd('activate', { id: t.id }) }; }));
-    if (extra?.bookmarks?.length) items.push({ sec: 'Bookmarks' }, ...extra.bookmarks.map((b) => ({ t: b.title || b.url, s: hostOf(b.url), icon: ic('star'), act: () => nova.cmd('open', { text: b.url, newTab: true }) })));
-    if (extra?.history?.length) items.push({ sec: 'History' }, ...extra.history.map((h) => ({ t: h.title || h.url, s: hostOf(h.url), icon: ic('clock'), act: () => nova.cmd('open', { text: h.url, newTab: true }) })));
+    if (extra?.bookmarks?.length) items.push({ sec: 'Bookmarks' }, ...extra.bookmarks.map((b) => ({ t: b.title || b.url, s: hostOf(b.url), icon: b.icon ? `<img class="fav" src="${b.icon}" alt="">` : ic('star'), act: () => nova.cmd('open', { text: b.url, newTab: true }) })));
+    if (extra?.history?.length) items.push({ sec: 'History' }, ...extra.history.map((h) => ({ t: h.title || h.url, s: hostOf(h.url), icon: h.icon ? `<img class="fav" src="${h.icon}" alt="">` : ic('clock'), act: () => nova.cmd('open', { text: h.url, newTab: true }) })));
     const arch = S.archive.map((a) => ({ a, sc: v ? score(v, a.title, a.url) : 1 })).filter((x) => x.sc >= 0).slice(0, v ? 5 : 3);
     if (arch.length) items.push({ sec: 'Stardust · recently closed' }, ...arch.map(({ a }) => ({ t: a.title || a.url, s: hostOf(a.url), icon: ic('archive'), act: () => nova.cmd('restore', { closedAt: a.closedAt }) })));
     if (extra?.downloads?.length) items.push({ sec: 'Downloads' }, ...extra.downloads.map((x) => ({ t: x.name, s: x.state === 'completed' ? 'Show in folder' : x.state, icon: ic('download'), act: () => nova.cmd('showDownload', { path: x.path }) })));
@@ -280,6 +319,7 @@ function palette(o, d) {
     if (S.settings.features.tabSearch && v.startsWith('?')) { inside = null; build(); draw(); timer = setTimeout(async () => { const r = await nova.cmd('searchTabs', { text: v.slice(1) }); if (my === seq) { inside = r || []; build(); draw(); } }, 280); return; }
     build(); draw();
     nova.cmd('query', { text: v }).then((r) => { if (my === seq) { extra = r; build(); draw(); } });
+    if (S.settings.suggestions && v.length > 1 && !looksLikeUrl(v)) { clearTimeout(stimer); stimer = setTimeout(async () => { const r = await nova.cmd('suggest', { q: v }); if (my === seq) { sugg = r || []; build(); draw(); } }, 160); } else sugg = [];
   };
   q.addEventListener('input', refresh);
   q.addEventListener('keydown', (e) => {

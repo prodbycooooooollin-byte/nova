@@ -50,9 +50,11 @@ function settings(o, d) {
     Profile: (s) => `<div class="profiles">${PROFILE_INFO.map(([id, name, icon, tag, bullets, speed, feat]) => `<div class="pcard ${s.profile === id ? 'on' : ''}"><div class="pic">${ic(icon)}</div><div class="ph"><b>${name}</b>${id === 'nova' ? '<span class="tag">Recommended</span>' : ''}</div><p>${tag}</p><div class="meters"><span>Speed</span><i class="dots d${speed}"></i><span>Features</span><i class="dots d${feat}"></i></div><ul>${bullets.map((b) => `<li>${b}</li>`).join('')}</ul>${s.profile === id ? '<div class="active"><span>' + ic('check') + 'Active</span></div>' : `<button class="btn" data-profile="${id}">Use ${name}</button>`}</div>`).join('')}</div>`
       + sect('Setup') + grp(row('Run the welcome setup again', '<button class="btn" id="rerun">Start setup</button>', 'Walk through profile, layout, search and extensions once more.', 'refresh')),
     Appearance: (s) => sect('Theme') + `<div class="themes">${Object.entries(PRESETS).map(([n, p]) => `<button class="theme ${s.theme.accent === p.accent && s.theme.bg === p.bg ? 'on' : ''}" data-preset="${n}">${mock('', p)}<span>${n}</span></button>`).join('')}</div>`
-      + `<details class="more"><summary>Fine-tune colours</summary>${grp(...Object.keys(s.theme).map((k) => row(k[0].toUpperCase() + k.slice(1), `<input class="swatch" type="color" data-theme="${k}" value="${s.theme[k]}">`)))}</details>`
+      + `<details class="more"><summary>Fine-tune colours</summary>${grp(...Object.keys(s.theme).filter((k) => k !== 'wall').map((k) => row(k[0].toUpperCase() + k.slice(1), `<input class="swatch" type="color" data-theme="${k}" value="${s.theme[k]}">`)))}</details>`
       + sect('Layout', 'Where your tabs live.') + `<div class="layouts">${[['left', 'Sidebar left'], ['right', 'Sidebar right'], ['top', 'Tabs on top']].map(([v, l]) => `<button class="lay ${s.layout === v ? 'on' : ''}" data-layout="${v}"><div class="lm ${v}"><i class="c"></i><i class="p"></i></div><span>${l}</span></button>`).join('')}</div>`
-      + grp(row('Compact sidebar', sw('compact', s.compact), 'Icons only, for maximum page space.', 'layout'), row('Sidebar width', rng('sidebarWidth', 180, 420, 4, 'px')))
+      + grp(row('Compact sidebar', sw('compact', s.compact), 'Icons only, for maximum page space.', 'layout'), row('Sidebar width', rng('sidebarWidth', 180, 420, 4, 'px')), row('Tab density', `<div class="seg">${['compact', 'comfortable', 'spacious'].map((v) => `<button data-dens="${v}" class="${s.density === v ? 'on' : ''}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div>`, 'How tall each tab row is.'))
+      + sect('Start page', 'The page you see in a new tab.') + `<div class="walls">${WALLS.map(([id, label]) => `<button class="wall ${(s.wallpaper.mode === 'theme' && id === 'theme') || (s.wallpaper.mode === 'none' && id === 'none') || (s.wallpaper.mode === 'preset' && s.wallpaper.preset === id) ? 'on' : ''}" data-wall="${id}"><div class="wpv" data-wall="${id === 'theme' ? (WALL_OF[Object.keys(PRESETS).find((n) => PRESETS[n].accent === s.theme.accent && PRESETS[n].bg === s.theme.bg)] || s.wallpaper.preset) : id}">${id === 'none' ? ic('x') : ''}</div><span>${label}</span></button>`).join('')}<button class="wall ${s.wallpaper.mode === 'image' ? 'on' : ''}" data-wall="image"><div class="wpv img">${ic('imp')}</div><span>Your image</span></button></div>`
+      + grp(...(s.wallpaper.mode === 'image' ? [row('Image dimming', `<div class="rng"><input type="range" min="0" max="80" step="5" value="${s.wallpaper.dim}" data-wp="dim" data-num><span class="val">${s.wallpaper.dim}%</span></div>`, 'Darken the image so text stays readable.'), row('Image blur', `<div class="rng"><input type="range" min="0" max="24" step="1" value="${s.wallpaper.blur}" data-wp="blur" data-num><span class="val">${s.wallpaper.blur}px</span></div>`)] : []), row('Show most visited sites', `<label class="sw"><input type="checkbox" data-sp="sites" ${s.startPage.sites ? 'checked' : ''}><i></i></label>`, 'Icons of the pages you open the most.'), row('Show greeting', `<label class="sw"><input type="checkbox" data-sp="greeting" ${s.startPage.greeting ? 'checked' : ''}><i></i></label>`))
       + sect('Page frame') + grp(row('Gap around the page', rng('gap', 0, 24, 1, 'px')), row('Corner radius', rng('radius', 0, 28, 1, 'px')))
       + sect('Type and motion') + grp(row('Interface font size', rng('fontSize', 11, 17, 1, 'px')), row('Interface font', `<input type="text" data-k="font" value="${esc(s.font)}" placeholder="Inter">`, 'Any installed font family. Inter is built in.'), row('Animations and blur', sw('effects', s.effects), 'Turn off for the leanest possible interface.')),
     Tabs: (s) => sect('Keep things tidy') + grp(
@@ -69,12 +71,15 @@ function settings(o, d) {
         + sect('Background CPU') + grp(row('CPU guard', bsw('cpuGuard', b.cpuGuard), 'A background tab that keeps using a lot of CPU is put to sleep.', 'zap'), row('Guard threshold', `<div class="rng"><input type="range" min="5" max="80" step="5" value="${b.cpuPct}" data-bud="cpuPct" data-num><span class="val">${b.cpuPct}%</span></div>`))
         + sect('Heaviest tabs right now') + `<div class="group" id="bud-list">${budList()}</div>`;
     },
-    'Search & privacy': (s) => sect('Search engine') + `<div class="engines">${Object.keys(ENGINES).map((n) => `<button class="engine ${ENGINES[n] === s.searchEngine ? 'on' : ''}" data-engine="${n}">${n}</button>`).join('')}</div>`
+    'Search & privacy': (s) => sect('Search engine') + `<div class="engines">${Object.keys(ENGINES).map((n) => `<button class="engine ${ENGINES[n] === s.searchEngine ? 'on' : ''}" data-engine="${n}">${brand('eng-' + n.toLowerCase())}${n}</button>`).join('')}</div>`
       + grp(row('Custom search URL', `<input type="text" data-k="searchEngine" value="${esc(s.searchEngine)}">`, 'Use %s where the query goes.', 'search2'))
       + sect('Privacy') + grp(
         row('Ad and tracker blocker', sw('adblock', s.adblock), `Filters from uBlock Origin, EasyList and EasyPrivacy, refreshed on every launch. ${S.blockedCount} blocked this session.`, 'shield'),
+        row('Block autoplay', sw('blockAutoplay', s.blockAutoplay), 'Videos and sound start only after you click. Saves a lot of CPU on news sites. Applies to tabs opened after you change it.', 'zap'),
+        row('Search suggestions', sw('suggestions', s.suggestions), 'Shows suggestions from your search engine while you type. This sends what you type to that engine, so it is off by default.', 'search2'),
         row('Keep browsing history', sw('keepHistory', s.keepHistory), 'Lets Ctrl K find pages you visited. Off keeps nothing.', 'clock'),
-        row('Tab previews', sw('thumbnails', s.thumbnails), 'Small screenshots in the tab overview. Off saves a little CPU and memory.', 'eye')),
+        row('Tab previews', sw('thumbnails', s.thumbnails), 'Small screenshots in the tab overview. Off saves a little CPU and memory.', 'eye'),
+        row('Clear browsing data', '<button class="btn" id="cleardata">Clear…</button>', 'History, cookies and cached files.', 'trash')),
     Features: (s) => FEATURE_GROUPS.map(([g, keys]) => sect(g) + grp(...FEATURES.filter(([k]) => keys.includes(k)).map(([k, l, h]) => row(l, fsw(k, s.features[k]), h, FEATURE_ICONS[k])))).join(''),
     Shortcuts: (s) => grp(...Object.entries(ACTIONS).map(([k, l]) => row(l, `<button class="keybtn" data-rec="${k}">${keyChips(s.keys[k] || [])}</button>`))) + '<p style="margin-top:16px"><button class="btn" id="rk">Reset all shortcuts</button></p>',
     Extensions: () => extensionsHtml(),
@@ -120,7 +125,11 @@ function settings(o, d) {
     body.querySelectorAll('[data-layout]').forEach((b) => (b.onclick = () => { patch({ layout: b.dataset.layout }); body.querySelectorAll('[data-layout]').forEach((x) => x.classList.toggle('on', x === b)); }));
     body.querySelectorAll('[data-engine]').forEach((b) => (b.onclick = () => { patch({ searchEngine: ENGINES[b.dataset.engine] }); body.querySelectorAll('[data-engine]').forEach((x) => x.classList.toggle('on', x === b)); const i = body.querySelector('[data-k=searchEngine]'); if (i) i.value = ENGINES[b.dataset.engine]; }));
     body.querySelectorAll('[data-theme]').forEach((el) => (el.oninput = () => patch({ theme: { ...S.settings.theme, [el.dataset.theme]: el.value } })));
-    body.querySelectorAll('[data-preset]').forEach((b) => (b.onclick = () => { patch({ theme: PRESETS[b.dataset.preset] }); body.querySelectorAll('[data-preset]').forEach((x) => x.classList.toggle('on', x === b)); }));
+    body.querySelectorAll('[data-preset]').forEach((b) => (b.onclick = () => { const n = b.dataset.preset; patch({ theme: PRESETS[n], wallpaper: S.settings.wallpaper.mode === 'theme' ? { ...S.settings.wallpaper, preset: WALL_OF[n] || '' } : S.settings.wallpaper }); body.querySelectorAll('[data-preset]').forEach((x) => x.classList.toggle('on', x === b)); again(200); }));
+    body.querySelectorAll('[data-dens]').forEach((b) => (b.onclick = () => { patch({ density: b.dataset.dens }); body.querySelectorAll('[data-dens]').forEach((x) => x.classList.toggle('on', x === b)); }));
+    body.querySelectorAll('[data-wall]').forEach((b) => (b.onclick = async () => { const id = b.dataset.wall, w = S.settings.wallpaper; if (id === 'image') { const ok = await nova.cmd('pickWallpaper'); if (ok) again(200); return; } patch({ wallpaper: id === 'theme' ? { ...w, mode: 'theme', preset: WALL_OF[Object.keys(PRESETS).find((n) => PRESETS[n].accent === S.settings.theme.accent && PRESETS[n].bg === S.settings.theme.bg)] || w.preset } : id === 'none' ? { ...w, mode: 'none' } : { ...w, mode: 'preset', preset: id } }); again(200); }));
+    body.querySelectorAll('[data-wp]').forEach((el) => (el.oninput = () => { el.nextElementSibling.textContent = el.value + (el.dataset.wp === 'blur' ? 'px' : '%'); patch({ wallpaper: { ...S.settings.wallpaper, [el.dataset.wp]: +el.value } }); }));
+    body.querySelectorAll('[data-sp]').forEach((el) => (el.onchange = () => patch({ startPage: { ...S.settings.startPage, [el.dataset.sp]: el.checked } })));
     body.querySelectorAll('[data-feat]').forEach((el) => (el.onchange = () => patch({ features: { ...S.settings.features, [el.dataset.feat]: el.checked } })));
     body.querySelectorAll('[data-bud]').forEach((el) => {
       const set = (v) => patch({ budget: { ...S.settings.budget, ...(el.dataset.bud === 'ramMB' ? { enabled: true } : {}), [el.dataset.bud]: v } });
@@ -134,12 +143,13 @@ function settings(o, d) {
     body.querySelectorAll('[data-rec]').forEach((b) => (b.onclick = () => recordKey(b)));
     body.querySelectorAll('[data-code]').forEach((b) => (b.onclick = () => { body.querySelectorAll('[data-code]').forEach((x) => x.classList.toggle('on', x === b)); body.querySelectorAll('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== b.dataset.code)); }));
     const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+    on('#cleardata', () => nova.cmd('overlay', { kind: 'library', data: { tab: 'Clear data' } }));
     on('#rk', () => { patch({ keys: {} }); again(150); }); on('#chk', () => { nova.cmd('checkUpdate'); const u = $('#upstate'); if (u) u.textContent = 'Checking…'; }); on('#rerun', () => nova.cmd('runSetup'));
     on('#applycode', () => { patch({ customCss: $('#ccss').value, pageCss: $('#pcss').value, customJs: $('#cjs').value }); toast('Applied'); });
     on('#imp', () => { try { patch(JSON.parse($('#bk').value)); toast('Imported'); } catch (e) { toast('Invalid JSON: ' + e.message); } });
-    on('#rst', () => window.confirm('Reset all settings to defaults?') && nova.cmd('resetSettings'));
+    on('#rst', async () => { if (await askDialog({ title: 'Reset everything?', text: 'All settings go back to the defaults. Your tabs and bookmarks stay.', ok: 'Reset', danger: true })) nova.cmd('resetSettings'); });
     if (tab === 'Extensions') bindExtensions(body, () => render(true));
-    if (tab === 'Move in') moveInHtml().then((h) => { const m = $('#movein'); if (m) { m.innerHTML = h; bindMoveIn(body, () => render(true)); } });
+    if (tab === 'Move in') renderMoveIn($('#movein'));
   };
   render(false, false);
 }

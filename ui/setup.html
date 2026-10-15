@@ -2,112 +2,112 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'">
 <title>Nova Setup</title>
 <style>
 @font-face { font-family:'Inter'; src:url(fonts/inter-latin-wght-normal.woff2) format('woff2'); font-weight:100 900; }
-:root { --bg:#0b0b12; --page:#12121b; --surface:#171722; --surface2:#1f1f2d; --text:#ececf3; --dim:#8b8ba0; --accent:#8b7dff; --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.15); --ease:cubic-bezier(.2,.8,.2,1); --spring:cubic-bezier(.34,1.56,.64,1); }
+:root { --bg:#0b0b12; --page:#101019; --text:#ececf3; --dim:#8b8ba0; --accent:#8b7dff; --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18); --ease:cubic-bezier(.2,.8,.2,1); --spring:cubic-bezier(.34,1.56,.64,1); --mono:'Cascadia Code',Consolas,'SFMono-Regular',ui-monospace,monospace; }
 * { box-sizing:border-box; margin:0; }
 html,body { height:100%; background:var(--bg); color:var(--text); font:450 13.5px/1.45 'Inter',system-ui,sans-serif; letter-spacing:-.006em; overflow:hidden; user-select:none; -webkit-font-smoothing:antialiased; }
 button { font:inherit; color:inherit; background:none; border:0; letter-spacing:inherit; cursor:default; }
 svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+.mono { font-family:var(--mono); font-weight:450; letter-spacing:.08em; text-transform:uppercase; font-size:10.5px; }
 #app { display:flex; height:100%; }
 
 /* ---- hero ---- */
-.hero { width:340px; position:relative; overflow:hidden; background:radial-gradient(120% 70% at 30% 0%,rgba(139,125,255,.3),transparent 60%),radial-gradient(90% 60% at 80% 100%,rgba(255,154,77,.12),transparent 60%),#08080e; flex:none; }
+.hero { width:350px; position:relative; overflow:hidden; background:radial-gradient(110% 60% at 20% 0%,rgba(139,125,255,.28),transparent 60%),#07070d; flex:none; }
 .small .hero { display:none; }
 canvas { position:absolute; inset:0; width:100%; height:100%; }
-.brand { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; padding:0 38px 30px; }
-.logo { position:relative; width:112px; height:112px; margin:0 0 26px -6px; display:grid; place-items:center; }
-.logo img { width:58px; position:relative; filter:drop-shadow(0 0 22px rgba(139,125,255,.8)); animation:pop 1s var(--spring) both; }
-.logo i { position:absolute; inset:0; border-radius:50%; border:1px solid rgba(139,125,255,.5); }
-.logo i:nth-child(1) { transform:rotate(0deg) scaleY(.38); } .logo i:nth-child(2) { transform:rotate(60deg) scaleY(.38); opacity:.7; } .logo i:nth-child(3) { transform:rotate(120deg) scaleY(.38); opacity:.5; }
-@keyframes pop { from { transform:scale(0) rotate(-120deg); opacity:0; } }
-.logo b { position:absolute; width:7px; height:7px; border-radius:50%; background:#ffd9a3; box-shadow:0 0 10px #ffd9a3; top:50%; left:50%; margin:-3px; animation:circ 6s linear infinite; } @keyframes circ { from { transform:rotate(0deg) translateX(54px) scaleY(.38) rotate(0deg); } to { transform:rotate(360deg) translateX(54px) scaleY(.38) rotate(-360deg); } }
-.brand h1 { font-size:40px; font-weight:650; letter-spacing:-.045em; line-height:1; animation:up .8s var(--ease) .2s both; }
-.brand p { color:var(--dim); margin-top:8px; font-size:14px; animation:up .8s var(--ease) .3s both; }
-.points { margin-top:30px; display:flex; flex-direction:column; gap:12px; color:#b6b6c8; font-size:13px; }
-.points div { display:flex; gap:11px; align-items:center; animation:up .7s var(--ease) both; } .points div:nth-child(1) { animation-delay:.5s; } .points div:nth-child(2) { animation-delay:.65s; } .points div:nth-child(3) { animation-delay:.8s; }
-.points svg { color:var(--accent); width:15px; height:15px; }
-.ver { position:absolute; left:38px; bottom:26px; color:var(--dim); font-size:11.5px; }
-@keyframes up { from { opacity:0; transform:translateY(14px); } }
+.frame { position:absolute; inset:14px; border:1px solid var(--line); pointer-events:none; background:
+  linear-gradient(var(--accent),var(--accent)) 0 0/12px 1.5px no-repeat, linear-gradient(var(--accent),var(--accent)) 0 0/1.5px 12px no-repeat,
+  linear-gradient(var(--accent),var(--accent)) 100% 100%/12px 1.5px no-repeat, linear-gradient(var(--accent),var(--accent)) 100% 100%/1.5px 12px no-repeat; }
+.hero .cl { position:absolute; color:var(--dim); } .hero .cl.tl { top:26px; left:30px; } .hero .cl.bl { bottom:26px; left:30px; } .hero .cl.br { bottom:26px; right:30px; }
+.brand { position:absolute; left:30px; right:20px; top:50%; transform:translateY(-54%); }
+.brand img { width:34px; display:block; margin-bottom:18px; animation:pop 1s var(--spring) .2s both; filter:drop-shadow(0 0 18px rgba(139,125,255,.7)); }
+.brand h1 { font-size:112px; line-height:.82; letter-spacing:-.065em; font-weight:700; margin-left:-3px; } .brand h1 span { display:inline-block; animation:weightIn 1.4s var(--ease) both; animation-delay:calc(var(--i) * 90ms + 300ms); }
+.brand p { margin-top:22px; color:var(--text); animation:up .8s var(--ease) 1.3s both; }
+@keyframes weightIn { from { opacity:0; font-weight:100; transform:translateY(50px) scale(.92); filter:blur(12px); letter-spacing:.2em; } 60% { opacity:1; } } @keyframes pop { from { transform:scale(0) rotate(-100deg); opacity:0; } } @keyframes up { from { opacity:0; transform:translateY(14px); } }
+.specs { position:absolute; left:30px; right:30px; bottom:62px; display:flex; flex-direction:column; }
+.specs div { display:flex; gap:10px; align-items:baseline; padding:9px 0; border-top:1px solid var(--line); animation:up .6s var(--ease) both; } .specs div:nth-child(1) { animation-delay:1.1s; } .specs div:nth-child(2) { animation-delay:1.2s; } .specs div:nth-child(3) { animation-delay:1.3s; }
+.specs span { color:var(--dim); width:70px; } .specs b { font-weight:600; font-size:12.5px; }
 
 /* ---- content ---- */
-.right { flex:1; position:relative; display:flex; flex-direction:column; background:var(--page); padding:34px 44px 30px; min-width:0; }
+.right { flex:1; position:relative; display:flex; flex-direction:column; background:var(--page); padding:42px 48px 34px; min-width:0; }
 .small .right { padding:26px 34px; justify-content:center; background:var(--bg); }
 .drag { position:absolute; inset:0 0 auto 0; height:42px; -webkit-app-region:drag; }
 .close { position:absolute; top:10px; right:10px; width:34px; height:28px; border-radius:7px; display:grid; place-items:center; color:var(--dim); -webkit-app-region:no-drag; } .close:hover { background:#e5484d; color:#fff; }
-.dotsbar { display:flex; gap:6px; margin-bottom:26px; } .dotsbar i { height:4px; width:22px; border-radius:4px; background:rgba(255,255,255,.1); transition:all .4s var(--ease); } .dotsbar i.on { width:40px; background:var(--accent); } .dotsbar i.done { background:rgba(139,125,255,.5); }
-.view { display:none; flex:1; flex-direction:column; min-height:0; } .view.on { display:flex; animation:viewIn .45s var(--ease); } @keyframes viewIn { from { opacity:0; transform:translateX(34px); } }
-h2 { font-size:27px; font-weight:650; letter-spacing:-.032em; line-height:1.12; } .sub { color:var(--dim); margin:8px 0 22px; max-width:46ch; font-size:14px; }
-.choices { display:flex; flex-direction:column; gap:12px; margin-bottom:auto; }
-.choice { position:relative; display:flex; align-items:center; gap:16px; padding:18px 20px; border-radius:16px; background:var(--surface); box-shadow:inset 0 0 0 1px var(--line); text-align:left; transition:transform .2s var(--ease),box-shadow .2s,background .2s; animation:up .55s var(--ease) both; }
-.choice:nth-child(1) { animation-delay:.1s; } .choice:nth-child(2) { animation-delay:.2s; }
-.choice:hover { transform:translateY(-3px); box-shadow:inset 0 0 0 1px var(--line2),0 14px 30px rgba(0,0,0,.3); background:var(--surface2); } .choice:active { transform:scale(.985); }
-.choice .ic { width:44px; height:44px; border-radius:13px; display:grid; place-items:center; background:rgba(139,125,255,.16); color:var(--accent); flex:none; } .choice .ic svg { width:21px; height:21px; }
-.choice b { display:block; font-size:15px; font-weight:600; letter-spacing:-.01em; } .choice small { color:var(--dim); font-size:12.5px; } .choice .go { margin-left:auto; color:var(--dim); transition:transform .2s var(--ease),color .2s; } .choice:hover .go { transform:translateX(4px); color:var(--text); }
+.steps { display:flex; gap:6px; margin-bottom:34px; } .steps i { height:2px; width:30px; background:rgba(255,255,255,.12); transition:all .4s var(--ease); } .steps i.on { width:56px; background:var(--accent); } .steps i.done { background:rgba(139,125,255,.5); }
+.view { display:none; flex:1; flex-direction:column; min-height:0; } .view.on { display:flex; animation:viewIn .5s var(--ease); } @keyframes viewIn { from { opacity:0; transform:translateX(34px); } }
+.eyebrow { color:var(--accent); } h2 { font-size:34px; font-weight:600; letter-spacing:-.04em; line-height:1.08; margin-top:8px; } .sub { color:var(--dim); margin:10px 0 28px; max-width:46ch; font-size:14px; }
+.rows { margin-bottom:auto; }
+.row { position:relative; display:flex; align-items:center; gap:20px; width:100%; padding:22px 4px; border-top:1px solid var(--line); text-align:left; overflow:hidden; animation:up .55s var(--ease) both; } .row:last-child { border-bottom:1px solid var(--line); }
+.row:nth-child(1) { animation-delay:.1s; } .row:nth-child(2) { animation-delay:.2s; }
+.row::before { content:''; position:absolute; inset:0; background:linear-gradient(90deg,rgba(139,125,255,.14),transparent); transform:translateX(-101%); transition:transform .45s var(--ease); } .row:hover::before { transform:none; }
+.row .n { position:relative; color:var(--accent); width:26px; } .row .t { position:relative; flex:1; } .row b { display:block; font-size:19px; font-weight:600; letter-spacing:-.025em; } .row small { color:var(--dim); font-size:13px; } .row .go { position:relative; color:var(--dim); transition:transform .3s var(--ease),color .2s; width:20px; height:20px; } .row:hover .go { transform:translateX(6px); color:var(--text); } .row:active { background:rgba(255,255,255,.03); }
 .scroll { flex:1; overflow-y:auto; margin:0 -14px; padding:0 14px; min-height:0; } .scroll::-webkit-scrollbar { width:8px; } .scroll::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:8px; }
-.lbl { font-size:11px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); margin:18px 0 9px; } .lbl:first-child { margin-top:0; }
-.field { display:flex; align-items:center; gap:10px; padding:6px 6px 6px 14px; border-radius:12px; background:var(--surface); box-shadow:inset 0 0 0 1px var(--line); } .field span.p { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left; } .field small { color:var(--dim); white-space:nowrap; }
-.btn { height:34px; padding:0 15px; border-radius:9px; background:var(--surface2); box-shadow:inset 0 0 0 1px var(--line); font-weight:550; transition:background .12s,transform .1s; } .btn:hover { background:#2a2a3b; } .btn:active { transform:scale(.97); }
-.btn.primary { background:var(--accent); color:#fff; box-shadow:none; height:44px; padding:0 14px 0 26px; border-radius:13px; font-weight:600; font-size:14px; display:inline-flex; align-items:center; gap:14px; } .btn.primary:hover { filter:brightness(1.08); } .btn.primary .arr { width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,.22); display:grid; place-items:center; transition:transform .2s var(--ease); } .btn.primary:hover .arr { transform:translateX(3px); } .btn.primary .arr svg { width:14px; height:14px; }
-.btn.ghost { background:transparent; box-shadow:none; color:var(--dim); } .btn.ghost:hover { color:var(--text); background:rgba(255,255,255,.06); } .btn.danger { background:#d9444a; color:#fff; box-shadow:none; height:44px; padding:0 26px; border-radius:13px; font-weight:600; }
-.profs { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
-.prof { position:relative; display:flex; flex-direction:column; gap:6px; padding:14px; border-radius:14px; background:var(--surface); box-shadow:inset 0 0 0 1px var(--line); text-align:left; transition:transform .2s var(--ease),box-shadow .2s,background .2s; } .prof:hover { transform:translateY(-2px); background:var(--surface2); }
-.prof.on { box-shadow:inset 0 0 0 2px var(--accent); background:rgba(139,125,255,.1); } .prof svg { width:18px; height:18px; color:var(--accent); } .prof b { font-size:13.5px; font-weight:600; } .prof small { color:var(--dim); font-size:11.5px; line-height:1.35; } .prof .rec { position:absolute; top:10px; right:10px; font-size:9.5px; font-weight:700; letter-spacing:.06em; color:var(--accent); text-transform:uppercase; }
+.lbl { color:var(--dim); margin:22px 0 10px; } .lbl:first-child { margin-top:0; }
+.field { display:flex; align-items:center; gap:12px; padding:5px 5px 5px 14px; border:1px solid var(--line2); border-radius:10px; } .field span.p { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left; font-family:var(--mono); font-size:12px; } .field small { color:var(--dim); white-space:nowrap; }
+.btn { height:32px; padding:0 14px; border-radius:8px; background:rgba(255,255,255,.07); font-weight:550; transition:background .12s,transform .1s; } .btn:hover { background:rgba(255,255,255,.12); } .btn:active { transform:scale(.97); }
+.btn.primary { background:var(--accent); color:#fff; height:46px; padding:0 14px 0 26px; border-radius:12px; font-weight:600; font-size:14px; display:inline-flex; align-items:center; gap:14px; } .btn.primary:hover { filter:brightness(1.1); } .btn.primary .arr { width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,.22); display:grid; place-items:center; transition:transform .25s var(--ease); } .btn.primary:hover .arr { transform:translateX(3px); } .btn.primary .arr svg { width:14px; height:14px; }
+.btn.ghost { background:transparent; color:var(--dim); } .btn.ghost:hover { color:var(--text); background:rgba(255,255,255,.06); } .btn.danger { background:#d9444a; color:#fff; height:46px; padding:0 26px; border-radius:12px; font-weight:600; }
+.profs { display:grid; grid-template-columns:repeat(3,1fr); border:1px solid var(--line2); border-radius:12px; overflow:hidden; }
+.prof { position:relative; display:flex; flex-direction:column; gap:6px; padding:15px 14px 16px; text-align:left; transition:background .2s; } .prof + .prof { border-left:1px solid var(--line); } .prof:hover { background:rgba(255,255,255,.04); }
+.prof::after { content:''; position:absolute; left:0; right:0; bottom:0; height:2px; background:var(--accent); transform:scaleX(0); transform-origin:left; transition:transform .35s var(--ease); } .prof.on { background:rgba(139,125,255,.1); } .prof.on::after { transform:none; }
+.prof svg { width:18px; height:18px; color:var(--accent); } .prof b { font-size:13.5px; font-weight:600; } .prof small { color:var(--dim); font-size:11.5px; line-height:1.4; } .prof .rec { position:absolute; top:12px; right:12px; color:var(--accent); font-size:9px; }
 .opts { display:flex; flex-direction:column; }
-.opt { display:flex; align-items:center; gap:14px; padding:10px 2px; cursor:default; } .opt input { display:none; }
-.opt .tg { width:38px; height:22px; border-radius:22px; background:rgba(255,255,255,.12); position:relative; transition:background .2s; flex:none; } .opt .tg::after { content:''; position:absolute; left:3px; top:3px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .28s var(--spring); } .opt input:checked + .tg { background:var(--accent); } .opt input:checked + .tg::after { transform:translateX(16px); }
+.opt { display:flex; align-items:center; gap:14px; padding:11px 2px; border-top:1px solid var(--line); cursor:default; } .opt:first-child { border-top:0; } .opt input { display:none; }
+.opt .tg { width:38px; height:22px; border-radius:22px; background:rgba(255,255,255,.14); position:relative; transition:background .2s; flex:none; } .opt .tg::after { content:''; position:absolute; left:3px; top:3px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .28s var(--spring); } .opt input:checked + .tg { background:var(--accent); } .opt input:checked + .tg::after { transform:translateX(16px); }
 .opt b { font-weight:550; display:block; } .opt small { color:var(--dim); font-size:12px; }
 .foot { display:flex; justify-content:space-between; align-items:center; padding-top:18px; }
-.foot small { color:var(--dim); font-size:12px; }
+.foot small { color:var(--dim); }
 
 /* ---- progress ---- */
-.prog { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; text-align:center; }
-.pring { position:relative; width:190px; height:190px; } .pring svg { width:100%; height:100%; transform:rotate(-90deg); } .pring circle { fill:none; stroke-width:7; } .pring .t { stroke:rgba(255,255,255,.08); } .pring .v { stroke:var(--accent); stroke-linecap:round; stroke-dasharray:0 400; transition:stroke-dasharray .2s linear; filter:drop-shadow(0 0 8px rgba(139,125,255,.6)); }
-.pring .mid { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; } .pring .mid b { font-size:46px; font-weight:250; letter-spacing:-.05em; font-variant-numeric:tabular-nums; } .pring .mid span { color:var(--dim); font-size:12px; }
-.pmsg { font-size:16px; font-weight:550; letter-spacing:-.01em; min-height:24px; } .pfile { color:var(--dim); font-size:12px; max-width:380px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; direction:rtl; min-height:18px; }
+.prog { flex:1; display:flex; flex-direction:column; justify-content:center; }
+.big { font-size:128px; line-height:.9; font-weight:200; letter-spacing:-.07em; font-variant-numeric:tabular-nums; } .big small { font-size:30px; font-weight:400; letter-spacing:-.02em; color:var(--dim); margin-left:6px; }
+.bar { height:2px; background:rgba(255,255,255,.1); margin:26px 0 18px; position:relative; } .bar i { position:absolute; inset:0 auto 0 0; width:0; background:var(--accent); box-shadow:0 0 14px var(--accent); transition:width .15s linear; }
+.pmsg { font-size:17px; font-weight:550; letter-spacing:-.015em; margin-bottom:12px; }
+.log { font-family:var(--mono); font-size:11.5px; color:var(--dim); height:104px; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; mask-image:linear-gradient(transparent,#000 70%); } .log div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:2px 0; } .log div:last-child { color:var(--text); }
 .err { color:#ff8a93; margin-top:8px; font-size:12.5px; }
-.small .pring { width:120px; height:120px; } .small .pring .mid b { font-size:30px; }
-.small .prog { flex-direction:row; justify-content:flex-start; gap:26px; text-align:left; } .small .prog > div:last-child { display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
+.small .big { font-size:64px; } .small .prog { flex-direction:row; align-items:center; gap:28px; } .small .log { display:none; } .small .bar { margin:12px 0 10px; width:260px; }
 
 /* ---- done ---- */
-.done { flex:1; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:6px; }
-.check { width:72px; height:72px; margin-bottom:20px; stroke:var(--accent); stroke-width:3; fill:none; } .check circle { stroke-dasharray:220; stroke-dashoffset:220; animation:draw .8s var(--ease) .1s forwards; } .check path { stroke-dasharray:60; stroke-dashoffset:60; animation:draw .5s var(--ease) .7s forwards; } @keyframes draw { to { stroke-dashoffset:0; } }
-.sums { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 24px; } .sums span { padding:6px 12px; border-radius:20px; background:rgba(255,255,255,.07); font-size:12.5px; font-weight:550; animation:up .5s var(--ease) both; }
-.sums span:nth-child(2) { animation-delay:.1s; } .sums span:nth-child(3) { animation-delay:.2s; } .sums span:nth-child(4) { animation-delay:.3s; }
+.done { flex:1; display:flex; flex-direction:column; justify-content:center; }
+.done h2 { font-size:76px; line-height:.95; letter-spacing:-.055em; font-weight:650; margin:10px 0 22px; }
+.sumtab { margin-bottom:26px; } .sumtab div { display:flex; gap:14px; padding:10px 0; border-top:1px solid var(--line); animation:up .5s var(--ease) both; } .sumtab div:last-child { border-bottom:1px solid var(--line); } .sumtab span { color:var(--dim); width:96px; } .sumtab b { font-weight:600; }
+.sumtab div:nth-child(1) { animation-delay:.2s; } .sumtab div:nth-child(2) { animation-delay:.3s; } .sumtab div:nth-child(3) { animation-delay:.4s; } .sumtab div:nth-child(4) { animation-delay:.5s; }
 .acts { display:flex; gap:10px; align-items:center; }
 </style>
 </head>
 <body>
 <div id="app">
-  <div class="hero"><canvas id="sky"></canvas>
-    <div class="brand"><div class="logo"><i></i><i></i><i></i><b></b><img src="mark.svg" alt=""></div><h1>Nova</h1><p>Browse. Nothing else.</p>
-      <div class="points"><div><svg viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>Ad blocker built in</div><div><svg viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>Tabs that tidy themselves</div><div><svg viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg>Light on CPU and memory</div></div></div>
-    <div class="ver" id="ver"></div></div>
+  <div class="hero"><canvas id="sky"></canvas><div class="frame"></div>
+    <div class="cl tl mono">NOVA — SETUP</div>
+    <div class="brand"><img id="bmark" src="mark.svg" alt=""><h1 id="word"></h1><p class="mono">A browser, reduced.</p></div>
+    <div class="specs mono" id="specs"></div>
+    <div class="cl bl mono" id="ver"></div><div class="cl br mono">WINDOWS</div></div>
   <div class="right">
     <div class="drag"></div>
     <button class="close" id="x" title="Close"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-    <div class="dotsbar" id="dots"><i></i><i></i><i></i><i></i></div>
+    <div class="steps" id="dots"><i></i><i></i><i></i><i></i></div>
 
     <section class="view" id="v-welcome">
-      <h2 id="w-title">Install Nova</h2>
-      <p class="sub" id="w-sub">A fast, quiet browser built around how you use tabs. Installs just for you; no administrator rights needed.</p>
-      <div class="choices">
-        <button class="choice" id="quick"><span class="ic"><svg viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg></span><span><b>Quick install</b><small>Recommended settings. Ready in seconds.</small></span><svg class="go" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
-        <button class="choice" id="custom"><span class="ic"><svg viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></svg></span><span><b>Customize</b><small>Choose location, profile and shortcuts.</small></span><svg class="go" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+      <span class="mono eyebrow" id="w-eye">01 — Install</span><h2 id="w-title">Install Nova</h2>
+      <p class="sub" id="w-sub">A fast, quiet browser built around how you use tabs. It installs just for you, so no administrator rights are needed.</p>
+      <div class="rows">
+        <button class="row" id="quick"><span class="n mono">01</span><span class="t"><b id="q-t">Quick install</b><small id="q-s">Recommended settings. Ready in seconds.</small></span><svg class="go" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        <button class="row" id="custom"><span class="n mono">02</span><span class="t"><b>Customize</b><small>Choose the folder, your profile and shortcuts.</small></span><svg class="go" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       </div>
       <div class="foot"><small>Updates install in the background.</small></div>
     </section>
 
     <section class="view" id="v-custom">
-      <h2>Make it yours</h2><p class="sub">You can change all of this later inside Nova.</p>
+      <span class="mono eyebrow">02 — Customize</span><h2>Make it yours</h2><p class="sub">All of this can be changed later inside Nova.</p>
       <div class="scroll">
-        <div class="lbl">Where</div>
-        <div class="field"><span class="p" id="dir"></span><small id="space"></small><button class="btn" id="browse">Change</button></div>
-        <div class="lbl">Profile</div>
+        <div class="lbl mono">Where</div>
+        <div class="field"><span class="p" id="dir"></span><small class="mono" id="space"></small><button class="btn" id="browse">Change</button></div>
+        <div class="lbl mono">Profile</div>
         <div class="profs" id="profs"></div>
-        <div class="lbl">Options</div>
+        <div class="lbl mono">Options</div>
         <div class="opts">
           <label class="opt"><input type="checkbox" id="o-desktop" checked><i class="tg"></i><span><b>Desktop shortcut</b></span></label>
           <label class="opt"><input type="checkbox" id="o-start" checked><i class="tg"></i><span><b>Start menu shortcut</b></span></label>
@@ -116,86 +116,79 @@ h2 { font-size:27px; font-weight:650; letter-spacing:-.032em; line-height:1.12; 
           <label class="opt"><input type="checkbox" id="o-launch" checked><i class="tg"></i><span><b>Open Nova when finished</b></span></label>
         </div>
       </div>
-      <div class="foot"><button class="btn ghost" id="back">Back</button><button class="btn primary" id="go">Install<span class="arr"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span></button></div>
+      <div class="foot"><button class="btn ghost" id="back">Back</button><button class="btn primary" id="go">Install<span class="arr"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></button></div>
     </section>
 
     <section class="view" id="v-progress">
       <div class="prog">
-        <div class="pring"><svg viewBox="0 0 120 120"><circle class="t" cx="60" cy="60" r="54"/><circle class="v" id="ring" cx="60" cy="60" r="54"/></svg><div class="mid"><b id="pct">0</b><span>percent</span></div></div>
-        <div><div class="pmsg" id="pmsg">Getting ready</div><div class="pfile" id="file"></div><div class="err" id="err"></div></div>
+        <div class="big"><span id="pct">0</span><small>%</small></div>
+        <div class="bar"><i id="fill"></i></div>
+        <div><div class="pmsg" id="pmsg">Getting ready</div><div class="log" id="log"></div><div class="err" id="err"></div></div>
       </div>
     </section>
 
     <section class="view" id="v-done">
       <div class="done">
-        <svg class="check" viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><path d="m24 41 11 11 22-24"/></svg>
-        <h2>Nova is ready</h2><p class="sub" id="d-sub" style="margin-bottom:12px">Open it from your desktop or the Start menu.</p>
-        <div class="sums" id="sums"></div>
-        <div class="acts"><button class="btn primary" id="launch">Launch Nova<span class="arr"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span></button><button class="btn ghost" id="defaults">Default apps</button><button class="btn ghost" id="close2">Close</button></div>
+        <span class="mono eyebrow">Setup complete</span><h2>Ready.</h2>
+        <div class="sumtab" id="sums"></div>
+        <div class="acts"><button class="btn primary" id="launch">Launch Nova<span class="arr"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></button><button class="btn ghost" id="defaults">Default apps</button><button class="btn ghost" id="close2">Close</button></div>
       </div>
     </section>
 
     <section class="view" id="v-uninstall">
-      <h2>Uninstall Nova?</h2><p class="sub">Nova will be removed from this computer. Your tabs, settings and history stay unless you choose otherwise.</p>
+      <span class="mono eyebrow">Uninstall</span><h2>Remove Nova?</h2><p class="sub">Nova will be removed from this computer. Your tabs, settings and history stay unless you choose otherwise.</p>
       <div class="opts" style="margin-bottom:auto"><label class="opt"><input type="checkbox" id="o-data"><i class="tg"></i><span><b>Also delete my Nova data</b><small id="datadir"></small></span></label></div>
       <div class="foot"><button class="btn ghost" id="keep">Keep Nova</button><button class="btn danger" id="rm">Uninstall</button></div>
     </section>
 
     <section class="view" id="v-removed">
-      <div class="done"><svg class="check" viewBox="0 0 80 80"><circle cx="40" cy="40" r="34"/><path d="m24 41 11 11 22-24"/></svg><h2>Nova was removed</h2><p class="sub">Thanks for trying it. You can reinstall any time.</p><div class="acts"><button class="btn primary" id="bye">Close<span class="arr"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span></button></div></div>
+      <div class="done"><span class="mono eyebrow">Uninstalled</span><h2>Gone.</h2><p class="sub">Thanks for trying it. You can reinstall any time.</p><div class="acts"><button class="btn primary" id="bye">Close<span class="arr"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></button></div></div>
     </section>
   </div>
 </div>
+<script src="sky.js"></script>
 <script>
 const $ = (s) => document.querySelector(s);
 const show = (id) => { document.querySelectorAll('.view').forEach((v) => v.classList.toggle('on', v.id === 'v-' + id)); const step = { welcome: 0, custom: 1, progress: 2, done: 3 }[id]; document.querySelectorAll('#dots i').forEach((d, n) => { d.className = step === undefined ? '' : n < step ? 'done' : n === step ? 'on' : ''; }); $('#dots').style.visibility = step === undefined ? 'hidden' : 'visible'; };
-let info, dir, profile = 'nova', boost = 0, launchAfter = true;
-
-// hero: drifting starfield that speeds up while installing
-const c = $('#sky'), g = c.getContext('2d'); let W, H, stars = [];
-function size() { const r = c.getBoundingClientRect(); W = c.width = r.width * devicePixelRatio; H = c.height = r.height * devicePixelRatio; stars = Array.from({ length: 170 }, () => ({ x: Math.random() * W, y: Math.random() * H, z: Math.random() * .9 + .1, p: Math.random() * 6 })); }
-size(); addEventListener('resize', size);
-(function frame(t) {
-  g.clearRect(0, 0, W, H);
-  for (const s of stars) {
-    s.y += s.z * (.22 + boost * 9) * devicePixelRatio; if (s.y > H) { s.y = 0; s.x = Math.random() * W; }
-    g.globalAlpha = s.z * (.45 + .55 * Math.sin(t / 750 + s.p)); g.strokeStyle = g.fillStyle = s.z > .85 ? '#b9b0ff' : '#fff';
-    const len = boost * 70 * s.z * devicePixelRatio;
-    if (len > 2) { g.lineWidth = s.z * 1.4 * devicePixelRatio; g.beginPath(); g.moveTo(s.x, s.y); g.lineTo(s.x, s.y - len); g.stroke(); } else { g.beginPath(); g.arc(s.x, s.y, s.z * 1.3 * devicePixelRatio, 0, 6.283); g.fill(); }
-  }
-  requestAnimationFrame(frame);
-})(0);
+let info, dir, profile = 'nova', launchAfter = true, sky = null;
+$('#word').innerHTML = [...'Nova'].map((c, i) => `<span style="--i:${i}">${c}</span>`).join('');
+const mark = $('#bmark');
+sky = NovaSky($('#sky'), { origin: () => { const r = mark.getBoundingClientRect(), h = $('.hero').getBoundingClientRect(); return { x: r.left - h.left + r.width / 2, y: r.top - h.top + r.height / 2 }; } });
 
 const MSGS = [[0, 'Getting ready'], [.06, 'Unpacking the browser engine'], [.45, 'Copying interface files'], [.88, 'Creating shortcuts'], [.96, 'Final touches']];
-const PROFILES = [['ultra', 'Ultra Performance', 'The bare minimum. Nothing but search and tabs.', 'M13 2 3 14h9l-1 8 10-12h-9z'], ['nova', 'Nova', 'Light, with the essentials. Recommended.', 'M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z'], ['complete', 'Complete', 'Everything on, for people who want it all.', 'm12 2 10 5-10 5L2 7zM2 17l10 5 10-5M2 12l10 5 10-5']];
-$('#profs').innerHTML = PROFILES.map(([id, n, d, p]) => `<button class="prof ${id === profile ? 'on' : ''}" data-p="${id}">${id === 'nova' ? '<span class="rec">Recommended</span>' : ''}<svg viewBox="0 0 24 24"><path d="${p}"/></svg><b>${n}</b><small>${d}</small></button>`).join('');
+const PROFILES = [['ultra', 'Ultra Performance', 'Nothing but search and tabs.', 'M13 2 3 14h9l-1 8 10-12h-9z'], ['nova', 'Nova', 'Light, with the essentials.', 'M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z'], ['complete', 'Complete', 'Everything on, nothing held back.', 'm12 2 10 5-10 5L2 7zM2 17l10 5 10-5M2 12l10 5 10-5']];
+$('#profs').innerHTML = PROFILES.map(([id, n, d, p]) => `<button class="prof ${id === profile ? 'on' : ''}" data-p="${id}">${id === 'nova' ? '<span class="rec mono">Recommended</span>' : ''}<svg viewBox="0 0 24 24"><path d="${p}"/></svg><b>${n}</b><small>${d}</small></button>`).join('');
 document.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => { profile = b.dataset.p; document.querySelectorAll('[data-p]').forEach((x) => x.classList.toggle('on', x === b)); }));
+const lines = [];
 setup.onProgress(({ pct, text }) => {
-  $('#ring').setAttribute('stroke-dasharray', `${(pct * 339.3).toFixed(1)} 400`); $('#pct').textContent = Math.round(pct * 100); $('#file').textContent = text; boost = pct < 1 ? .3 + pct * .55 : 0;
+  $('#fill').style.width = (pct * 100).toFixed(1) + '%'; $('#pct').textContent = Math.round(pct * 100); sky.setBoost(pct < 1 ? .3 + pct * .55 : 0);
   const m = [...MSGS].reverse().find(([p]) => pct >= p); if (m && !document.body.classList.contains('small')) $('#pmsg').textContent = m[1];
+  if (text && text !== lines[lines.length - 1]) { lines.push(text); if (lines.length > 6) lines.shift(); $('#log').innerHTML = lines.map((l) => `<div>${l.replace(/[<>&]/g, '')}</div>`).join(''); }
 });
 setup.onError((m) => { $('#err').textContent = m; });
 $('#x').onclick = () => setup.close();
 
 (async () => {
   info = await setup.init(); dir = info.previous || info.defaultDir;
-  $('#ver').textContent = 'Version ' + info.version;
+  $('#ver').textContent = 'V' + info.version;
+  $('#specs').innerHTML = `<div><span>Engine</span><b>Chromium</b></div><div><span>Blocker</span><b>Built in</b></div><div><span>Disk</span><b>${info.sizeMB ? '~' + info.sizeMB + ' MB' : 'Small'}</b></div>`;
   if (info.mode === 'update') { document.body.classList.add('small'); $('#pmsg').textContent = 'Updating Nova to ' + info.version; show('progress'); return; }
   if (info.mode === 'uninstall') { $('#datadir').textContent = info.dataDir; show('uninstall'); return; }
-  if (info.previous) { $('#w-title').textContent = 'Update Nova'; $('#w-sub').textContent = 'Nova is already installed. This brings it to version ' + info.version + ' and keeps all your data.'; $('#quick b').textContent = 'Update now'; $('#quick small').textContent = 'Keeps your settings, tabs and extensions.'; }
+  if (info.previous) { $('#w-eye').textContent = '01 — Update'; $('#w-title').textContent = 'Update Nova'; $('#w-sub').textContent = 'Nova is already installed. This brings it to version ' + info.version + ' and keeps all your data.'; $('#q-t').textContent = 'Update now'; $('#q-s').textContent = 'Keeps your settings, tabs and extensions.'; }
   $('#dir').textContent = dir; $('#space').textContent = info.freeGB ? info.freeGB + ' GB free' : ''; show('welcome');
 })();
 $('#browse').onclick = async () => { const d = await setup.browse(); if (d) { dir = d; $('#dir').textContent = d; } };
 $('#custom').onclick = () => show('custom'); $('#back').onclick = () => show('welcome');
 async function run(o) {
-  show('progress'); $('#err').textContent = '';
+  show('progress'); $('#err').textContent = ''; lines.length = 0;
   const r = await setup.install({ dir, ...o });
-  if (!r.ok) { $('#err').textContent = r.error; $('#pmsg').textContent = 'Something went wrong'; boost = 0; setTimeout(() => show('welcome'), 3800); return; }
-  dir = r.dir; boost = 1.3; launchAfter = o.launch;
-  const names = { ultra: 'Ultra Performance', nova: 'Nova profile', complete: 'Complete profile' };
-  $('#sums').innerHTML = [names[o.profile || 'nova'], o.desktop ? 'Desktop shortcut' : null, o.startMenu ? 'Start menu' : null, o.startup ? 'Starts with Windows' : null].filter(Boolean).map((s) => `<span>${s}</span>`).join('');
+  if (!r.ok) { $('#err').textContent = r.error; $('#pmsg').textContent = 'Something went wrong'; sky.setBoost(0); setTimeout(() => show('welcome'), 3800); return; }
+  dir = r.dir; sky.setBoost(1.3); launchAfter = o.launch;
+  const names = { ultra: 'Ultra Performance', nova: 'Nova', complete: 'Complete' };
+  const rows = [['Profile', names[o.profile || 'nova'] || 'Your existing settings'], ['Location', dir], ['Shortcuts', [o.desktop && 'Desktop', o.startMenu && 'Start menu'].filter(Boolean).join(', ') || 'None'], ['Startup', o.startup ? 'With Windows' : 'Manual']];
+  $('#sums').innerHTML = rows.map(([k, v]) => `<div><span class="mono">${k}</span><b>${String(v).replace(/[<>&]/g, '')}</b></div>`).join('');
   $('#defaults').style.display = o.register ? '' : 'none';
-  setTimeout(() => { boost = 0; show('done'); if (launchAfter) setTimeout(() => setup.launch(dir), 2200); }, 700);
+  setTimeout(() => { sky.setBoost(0); sky.burst(); show('done'); if (launchAfter) setTimeout(() => setup.launch(dir), 2600); }, 700);
 }
 $('#quick').onclick = () => run({ desktop: true, startMenu: true, register: true, startup: false, launch: true, profile: info.previous ? undefined : 'nova' });
 $('#go').onclick = () => run({ desktop: $('#o-desktop').checked, startMenu: $('#o-start').checked, register: $('#o-reg').checked, startup: $('#o-run').checked, launch: $('#o-launch').checked, profile: info.previous && profile === 'nova' ? undefined : profile });

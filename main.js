@@ -1,5 +1,5 @@
 // Nova - minimal Chromium browser. Main process: window, tabs, spaces, sleeping/archiving, adblock.
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen } = require('electron');
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const updater = require('./updater');
@@ -18,10 +18,11 @@ const DEFAULT_KEYS = {
   overview: ['Ctrl+E'], reload: ['Ctrl+R', 'F5'], back: ['Alt+ArrowLeft'], forward: ['Alt+ArrowRight'],
   toggleSidebar: ['Ctrl+B'], focusMode: ['Ctrl+Shift+F'], find: ['Ctrl+F'], settings: ['Ctrl+,'],
   zoomIn: ['Ctrl+=', 'Ctrl++'], zoomOut: ['Ctrl+-'], zoomReset: ['Ctrl+0'], devtools: ['F12'],
-  pinTab: ['Ctrl+Shift+P'], cleanUp: ['Ctrl+Shift+K'], bookmark: ['Ctrl+D'], screenshot: ['Ctrl+Shift+S'], privateTab: ['Ctrl+Shift+N'], print: ['Ctrl+P'], fullscreen: ['F11'], lastTab: ['Ctrl+`'], copyClean: ['Ctrl+Shift+C'], darkPage: ['Ctrl+Shift+D'],
+  pinTab: ['Ctrl+Shift+P'], cleanUp: ['Ctrl+Shift+K'], bookmark: ['Ctrl+D'], history: ['Ctrl+H'], downloads: ['Ctrl+J'], bookmarks: ['Ctrl+Shift+O'], screenshot: ['Ctrl+Shift+S'], privateTab: ['Ctrl+Shift+N'], print: ['Ctrl+P'], fullscreen: ['F11'], lastTab: ['Ctrl+`'], copyClean: ['Ctrl+Shift+C'], darkPage: ['Ctrl+Shift+D'],
   space1: ['Alt+1'], space2: ['Alt+2'], space3: ['Alt+3'], space4: ['Alt+4'], space5: ['Alt+5'],
 };
 const DEFAULTS = {
+  suggestions: false, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'aurora', dim: 30, blur: 0 }, startPage: { sites: true, greeting: true },
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
   searchEngine: 'https://duckduckgo.com/?q=%s',
   layout: 'left', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
@@ -37,14 +38,14 @@ const DEFAULTS = {
 const HOME = 'nova://home';
 const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
 const isHome = (u) => u === HOME || (u || '').startsWith(HOME_FILE);
-const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, fx: settings.effects ? 1 : 0, sites: JSON.stringify(settings.keepHistory ? features.topSites(8) : []) });
+const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, fx: settings.effects ? 1 : 0, wall: settings.wallpaper.mode === 'none' ? '' : settings.wallpaper.preset });
 // Profiles: one switch that decides how much Nova does.
 const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'savePdf', 'translate', 'privateTabs'];
 const featureSet = (on) => Object.fromEntries(FEATURE_KEYS.map((k) => [k, on]));
 const PROFILES = {
-  ultra: { effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 1024, cpuGuard: true, cpuPct: 20 } },
-  nova: { effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(false), budget: { enabled: true, ramMB: 2048, cpuGuard: true, cpuPct: 20 } },
-  complete: { effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(true), budget: { enabled: true, ramMB: 4096, cpuGuard: true, cpuPct: 25 } },
+  ultra: { blockAutoplay: true, effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 1024, cpuGuard: true, cpuPct: 20 } },
+  nova: { blockAutoplay: true, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(false), budget: { enabled: true, ramMB: 2048, cpuGuard: true, cpuPct: 20 } },
+  complete: { blockAutoplay: false, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(true), budget: { enabled: true, ramMB: 4096, cpuGuard: true, cpuPct: 25 } },
 };
 let sessions = [], privSes = null;
 let win, ui, settings, state;
@@ -59,7 +60,7 @@ const writeJson = (f, v) => { try { fs.writeFileSync(userFile(f), JSON.stringify
 
 function loadSettings() {
   const s = readJson('settings.json', {});
-  settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
+  settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, wallpaper: { ...DEFAULTS.wallpaper, ...(s.wallpaper || {}) }, startPage: { ...DEFAULTS.startPage, ...(s.startPage || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
 }
 const saveSettings = () => writeJson('settings.json', settings);
 
@@ -95,7 +96,7 @@ function layout() {
   vis.forEach((t, i) => {
     const each = Math.floor((c.width - gapIn) / vis.length);
     t.view.setBounds({ x: c.x + i * (each + gapIn), y: c.y, width: each, height: c.height });
-    try { t.view.setBorderRadius(hidden ? 0 : settings.radius); } catch {}
+    try { t.view.setBorderRadius(hidden || t.playing ? 0 : settings.radius); } catch {} // a rounded mask makes video cost more CPU, so square corners while media plays
   });
   win.setBackgroundColor(settings.theme.bg);
   features.relayoutPeek();
@@ -156,18 +157,20 @@ function newTabObj(o) {
 }
 function wake(t) {
   if (t.view) return;
-  const view = new WebContentsView({ webPreferences: { partition: t.private ? 'nova-private' : 'persist:nova', sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: settings.profile !== 'ultra' } });
+  const view = new WebContentsView({ webPreferences: { partition: t.private ? 'nova-private' : 'persist:nova', sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: settings.profile !== 'ultra', autoplayPolicy: settings.blockAutoplay ? 'document-user-activation-required' : 'no-user-gesture-required' } });
   t.view = view;
   view.setBackgroundColor(settings.theme.page);
   const wc = view.webContents;
   const upd = () => { if (wc.isDestroyed()) return; const u = wc.getURL(); t.url = isHome(u) ? HOME : u || t.url; if (t.url === HOME) t.title = 'New tab'; t.canBack = wc.navigationHistory.canGoBack(); t.canForward = wc.navigationHistory.canGoForward(); push(); };
   wc.on('page-title-updated', (_e, title) => { t.title = isHome(t.url) ? 'New tab' : title; if (!isHome(t.url) && !t.private) features.recordVisit(wc.getURL(), title); push(); });
-  wc.on('page-favicon-updated', (_e, f) => { t.favicon = f[0] || ''; push(); });
+  wc.on('page-favicon-updated', (_e, f) => { t.favicon = f[0] || ''; if (!t.private && settings.keepHistory) features.setIcon(wc.getURL(), f[0]); push(); });
   wc.on('did-start-loading', () => { t.loading = true; push(); });
   wc.on('did-stop-loading', () => { t.loading = false; upd(); if (t.id === state.activeTab) setTimeout(() => capture(t), 1500); });
   wc.on('did-navigate', () => { upd(); applyZoom(wc); if (!t.private) features.recordVisit(wc.getURL(), wc.getTitle()); });
   wc.on('did-navigate-in-page', upd);
   wc.on('audio-state-changed', (e) => { t.audible = e.audible; features.onAudio(t); push(); });
+  wc.on('media-started-playing', () => { if (!t.playing) { t.playing = true; layout(); } });
+  wc.on('media-paused', () => { if (t.playing) { t.playing = false; layout(); } });
   wc.on('focus', () => { if (state.activeTab !== t.id && visibleTabs().includes(t)) activate(t.id, true); });
   wc.on('before-input-event', (e, input) => handleKey(e, input));
   wc.on('enter-html-full-screen', () => { pageFullscreen = true; win.setFullScreen(true); layout(); });
@@ -182,8 +185,38 @@ function wake(t) {
     openUrl(url, { background: false, afterId: t.id, private: t.private }); return { action: 'deny' };
   });
   wc.on('context-menu', (_e, p) => contextMenu(wc, p));
-  wc.on('did-finish-load', () => { applyPageCss(wc); if (t.dark) features.applyDark(t); });
+  wc.on('did-finish-load', () => {
+    applyPageCss(wc); if (t.dark) features.applyDark(t);
+    if (isHome(wc.getURL())) pushHome(wc);
+    if (isHome(wc.getURL()) && !t.private) wc.executeJavaScript(`window.novaSites && window.novaSites(${JSON.stringify(settings.keepHistory ? features.topSites(8) : [])})`).catch(() => {});
+  });
   persona.ready(wc).then(() => { if (!wc.isDestroyed()) wc.loadURL(isHome(t.url) ? homeUrl() : t.url).catch(() => {}); });
+}
+// ---- start page theme: colours, wallpaper and switches are pushed into every open start page ----
+let wallData = null;
+function wallImage() {
+  if (wallData !== null) return wallData;
+  try { wallData = 'data:image/jpeg;base64,' + fs.readFileSync(userFile('wallpaper.jpg')).toString('base64'); } catch { wallData = ''; }
+  return wallData;
+}
+function homeTheme() {
+  const w = settings.wallpaper, t = settings.theme;
+  return { bg: t.page, chrome: t.bg, accent: t.accent, text: t.text, dim: t.dim, wall: w.mode === 'none' ? '' : w.preset, dim_amount: w.dim, blur: w.blur, image: w.mode === 'image' ? wallImage() : '', stars: w.mode !== 'image', sites: settings.startPage.sites, greeting: settings.startPage.greeting };
+}
+function pushHome(wc) {
+  const js = `window.novaTheme && window.novaTheme(${JSON.stringify(homeTheme())})`;
+  const targets = wc ? [wc] : [...tabs.values()].filter((t) => t.view && isHome(t.url) && !t.view.webContents.isDestroyed()).map((t) => t.view.webContents);
+  for (const w of targets) w.executeJavaScript(js).catch(() => {});
+}
+async function pickWallpaper() {
+  const r = await dialog.showOpenDialog(win, { title: 'Choose a wallpaper for the start page', properties: ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }] });
+  if (r.canceled) return false;
+  try {
+    let img = nativeImage.createFromPath(r.filePaths[0]); if (img.isEmpty()) throw new Error('empty');
+    const { width } = img.getSize(); if (width > 2560) img = img.resize({ width: 2560, quality: 'good' });
+    fs.writeFileSync(userFile('wallpaper.jpg'), img.toJPEG(86)); wallData = null;
+    settings.wallpaper = { ...settings.wallpaper, mode: 'image' }; saveSettings(); pushHome(); push(); return true;
+  } catch (e) { toast('Could not use that image.'); return false; }
 }
 const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; } };
 function applyZoom(wc) { const z = settings.zoom?.[hostOf(wc.getURL())]; if (z !== undefined) wc.setZoomLevel(z); }
@@ -394,6 +427,9 @@ function runAction(action, arg) {
     case 'zoomOut': wc?.setZoomLevel(wc.getZoomLevel() - 0.5); saveZoom(wc); break;
     case 'zoomReset': wc?.setZoomLevel(0); saveZoom(wc); break;
     case 'bookmark': features.handle('bookmark', {}, t); push(); break;
+    case 'history': openOverlay('library', { tab: 'History' }); break;
+    case 'downloads': openOverlay('library', { tab: 'Downloads' }); break;
+    case 'bookmarks': openOverlay('library', { tab: 'Bookmarks' }); break;
     case 'screenshot': features.handle('screenshot', {}, t); break;
     case 'privateTab': features.handle('newPrivate', {}, t); break;
     case 'print': wc?.print(); break;
@@ -495,7 +531,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   for (const s of sessions) { s.setUserAgent(UA, persona.acceptLanguage()); s.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'shim-preload.js') }); }
   for (const s of sessions) s.webRequest.onBeforeSendHeaders({ urls: ['https://*/*'] }, (d, cb) => { const h = d.requestHeaders; for (const [k, v] of Object.entries(persona.hints)) if (!Object.keys(h).some((x) => x.toLowerCase() === k)) h[k] = v; cb({ requestHeaders: h }); });
   // every page (tabs, sign-in popups) presents the same regular-Chrome identity
-  app.on('web-contents-created', (_e, wc) => { if (sessions.includes(wc.session)) persona.apply(wc); });
+  if (!process.env.NOVA_NO_PERSONA) app.on('web-contents-created', (_e, wc) => { if (sessions.includes(wc.session)) persona.apply(wc); });
   features.init({
     app, ses, privSes, tabs, userFile, readJson, writeJson, userAgent: UA,
     state: () => state, settings: () => settings, saveSettings, win: () => win, ui: () => ui,
@@ -592,6 +628,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         if ('adblock' in a.patch) setAdblock(a.patch.adblock);
         saveSettings();
         if (prev !== JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss])) layout();
+        if (a.patch.theme || a.patch.wallpaper || a.patch.startPage) pushHome();
         if (a.patch.pageCss !== undefined) for (const x of tabs.values()) if (x.view) { applyPageCss(x.view.webContents); }
         push();
       } break;
@@ -608,6 +645,8 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'checkUpdate': updater.check(settings.updateFeed || updater.defaultFeed, { manual: true }); break;
       case 'applyUpdate': if (updater.apply()) app.quit(); break;
       case 'keysPause': keysPaused = !!a.on; break;
+      case 'reorder': { const arr = [...tabs.entries()], i = arr.findIndex(([k]) => k === a.id); if (i < 0) break; const [item] = arr.splice(i, 1); const j = arr.findIndex(([k]) => k === a.target); arr.splice(j < 0 ? arr.length : a.after ? j + 1 : j, 0, item); tabs.clear(); arr.forEach(([k, v]) => tabs.set(k, v)); push(); } break;
+      case 'pickWallpaper': return pickWallpaper();
       case 'dragStart': startDrag(); break;
       case 'dragEnd': endDrag(); break;
       case 'external': shell.openExternal(a.url); break;

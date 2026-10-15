@@ -1,14 +1,18 @@
 # Nova
 
-A minimal, fast Chromium browser with a better way to handle tabs.
+A fast, quiet Chromium browser with a better way to handle tabs.
 
-- Three profiles: Ultra Performance, Nova (recommended), Complete
-- Resource budget: you set a memory limit, Nova keeps itself under it
-- Built-in ad blocker using the uBlock Origin filter lists
-- Vertical tabs, spaces, command bar (Ctrl+K), tab overview
-- Fully customisable: theme, layout, shortcuts, custom CSS and JS
-- One-click extension install from the Chrome Web Store
-- Auto-updates from GitHub releases
+**Three pillars:** performance first, then customisation, then user experience.
+
+- **Three profiles:** Ultra Performance (bare minimum), Nova (recommended), Complete (everything on)
+- **Resource budget:** set a memory limit and Nova keeps itself under it; a CPU guard sleeps greedy background tabs
+- **Built-in ad blocker** using the uBlock Origin filter lists
+- **Tabs:** vertical or top, spaces, drag to reorder, sleeping and archiving, Ctrl+K command bar, tab overview
+- **Customisation:** 19 themes, start-page wallpapers (or your own image), layout, density, shortcuts, custom CSS and JS
+- **Move in:** bookmarks, history, extensions and search engine from Chrome, Edge, Brave or Vivaldi
+- **Library:** bookmarks, history, downloads, clear browsing data
+- **Extensions:** one-click install from the Chrome Web Store
+- **Auto-updates** from GitHub releases
 
 ## Develop
 
@@ -19,11 +23,11 @@ npm start
 
 ## Release
 
-Bump `version` in `package.json`, commit, then:
+Bump `version` in `package.json`, build the installer and publish it as a GitHub release:
 
 ```
-git tag v0.5.0
-git push --tags
+npx electron-builder --win portable --publish never
+gh release create v0.7.0 dist/Nova-Setup-0.7.0.exe --generate-notes
 ```
 
-GitHub Actions builds `Nova-Setup-<version>.exe` and attaches it to the release. Nova checks for it on startup.
+Installed copies of Nova check this repository's latest release on startup and update themselves.

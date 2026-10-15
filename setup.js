@@ -115,7 +115,8 @@ function run(mode) {
       const prev = await existingInstall();
       const def = path.join(process.env.LOCALAPPDATA, 'Programs', 'Nova'); let freeGB = 0;
       try { const st = ofs.statfsSync(path.parse(def).root); freeGB = Math.round(st.bavail * st.bsize / 1073741824); } catch {}
-      return { mode, version: pkg.version, defaultDir: def, previous: prev, dataDir: app.getPath('userData'), freeGB };
+      let sizeMB = 0; try { sizeMB = Math.round(walk(src).reduce((n, f) => n + f.size, 0) / 1048576); } catch {}
+      return { mode, version: pkg.version, defaultDir: def, previous: prev, dataDir: app.getPath('userData'), freeGB, sizeMB };
     });
     ipcMain.handle('setup:browse', async () => {
       const r = await dialog.showOpenDialog(win, { title: 'Choose where to install Nova', properties: ['openDirectory', 'createDirectory'] });

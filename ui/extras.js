@@ -5,12 +5,12 @@ const CATALOG = [
   { id: 'aeblfdkhhhdcdjpifhhbdiojplfjncoa', name: '1Password', desc: 'Password manager' },
   { id: 'eimadpbcbfnmbkopoojfekhnkhdbieeh', name: 'Dark Reader', desc: 'Dark mode for every website' },
   { id: 'mnjggcdmjocbbbhaepdhchncahnbgone', name: 'SponsorBlock', desc: 'Skip sponsors in YouTube videos' },
-  { id: 'gebbhagfogifgggkldgodflihgfeacdd', name: 'Return YouTube Dislike', desc: 'Brings the dislike count back' },
+  { id: 'nffaoalbilbmmfgbnbgppjihopabppdk', name: 'Video Speed Controller', desc: 'Speed up or slow down any video' },
 ];
-const SIGNINS = [['Google', 'https://accounts.google.com/'], ['YouTube', 'https://www.youtube.com/'], ['Microsoft', 'https://login.live.com/'], ['GitHub', 'https://github.com/login'], ['Discord', 'https://discord.com/login'], ['Spotify', 'https://accounts.spotify.com/login'], ['Reddit', 'https://www.reddit.com/login'], ['X', 'https://x.com/login'], ['Amazon', 'https://www.amazon.com/ap/signin'], ['Netflix', 'https://www.netflix.com/login']];
+const SIGNINS = [['Google', 'https://accounts.google.com/', 'google'], ['YouTube', 'https://www.youtube.com/', 'youtube'], ['Microsoft', 'https://login.live.com/', 'microsoft'], ['GitHub', 'https://github.com/login', 'github'], ['Discord', 'https://discord.com/login', 'discord'], ['Spotify', 'https://accounts.spotify.com/login', 'spotify'], ['Reddit', 'https://www.reddit.com/login', 'reddit'], ['X', 'https://x.com/login', 'x'], ['Amazon', 'https://www.amazon.com/ap/signin', 'amazon'], ['Netflix', 'https://www.netflix.com/login', 'netflix']];
 const installedId = (id) => (S.extensions || []).some((e) => (e.path || '').replace(/\\/g, '/').endsWith('/' + id));
 function catalogHtml(ids) {
-  return `<div class="catalog">${CATALOG.filter((c) => !ids || ids.includes(c.id)).map((c, n) => `<div class="cat" style="--i:${n}"><span class="av" style="background:hsl(${hue(c.name)} 45% 42%)">${esc(c.name[0])}</span><div class="cm"><b>${esc(c.name)}</b><small>${esc(c.desc)}</small></div>${installedId(c.id) ? `<span class="done">${ic('check')}Installed</span>` : `<button class="btn primary" data-install="${c.id}">Install</button>`}</div>`).join('')}</div>`;
+  return `<div class="catalog">${CATALOG.filter((c) => !ids || ids.includes(c.id)).map((c, n) => `<div class="cat" style="--i:${n}">${brand('ext-' + c.id)}<div class="cm"><b>${esc(c.name)}</b><small>${esc(c.desc)}</small></div>${installedId(c.id) ? `<span class="done">${ic('check')}Installed</span>` : `<button class="btn primary" data-install="${c.id}">Install</button>`}</div>`).join('')}</div>`;
 }
 function bindInstall(root, redraw) {
   root.querySelectorAll('[data-install]').forEach((b) => (b.onclick = async () => {
@@ -33,16 +33,50 @@ function bindExtensions(root, redraw) {
   const go = $('#storego'); if (go) go.onclick = async () => { const v = $('#storeid').value.trim(); if (!v) return; go.textContent = 'Installing'; const r = await nova.cmd('installExt', { id: v }); toast(r.ok ? `${r.name} is installed and ready.` : `Could not install: ${r.error}`); setTimeout(redraw, 200); };
   const up = $('#unpacked'); if (up) up.onclick = (e) => { e.preventDefault(); nova.cmd('loadExtension'); };
 }
-async function moveInHtml() {
-  const found = await nova.cmd('detectBrowsers');
-  return `<h4>1 · Bookmarks</h4><div class="group"><div class="row"><div class="l">${found.length ? 'Found bookmarks in ' + found.map(esc).join(', ') : 'No Chrome, Edge or Brave profile found'}<small>Copied once from the browser's own bookmarks file. Nothing else is read.</small></div><div style="display:flex;gap:8px">${found.map((n) => `<button class="btn" data-bm="${esc(n)}">Import ${esc(n)}</button>`).join('')}</div></div></div>`
-    + `<h4>2 · Passwords</h4><div class="group"><div class="row"><div class="l">Export from your old browser, import into a password manager<small>Old browser: Settings › Passwords › Export. Then install a manager below and use its import. Nova never reads other browsers’ saved passwords or cookies; they are encrypted for good reason.</small></div></div></div><div style="margin-top:10px">${catalogHtml(CATALOG.slice(0, 3).map((c) => c.id))}</div>`
-    + `<h4>3 · Sign in once</h4><p style="margin-bottom:10px">Nova remembers sign-ins like any browser. Open a service and log in once.</p><div class="signins">${SIGNINS.map(([n, u]) => `<button class="btn" data-go="${u}">${n}</button>`).join('')}</div>`;
-}
-function bindMoveIn(root, redraw) {
-  bindInstall(root, redraw);
-  root.querySelectorAll('[data-bm]').forEach((b) => (b.onclick = async () => { b.disabled = true; await nova.cmd('importBookmarks', { name: b.dataset.bm }); b.textContent = 'Imported'; }));
-  root.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => nova.cmd('open', { text: b.dataset.go, newTab: true })));
+// Move in: pick another browser, tick what to bring over, watch it happen.
+async function renderMoveIn(el, opts = {}) {
+  el.innerHTML = '<p class="mi-wait">Looking for other browsers…</p>';
+  const found = await nova.cmd('scanBrowsers');
+  const hub = opts.hub === false ? '' : `<div class="sect"><h4>Sign in once</h4><p>Nova remembers sign-ins like any browser. Open a service and log in.</p></div><div class="signins">${SIGNINS.map(([n, u, f]) => `<button class="btn withicon" data-go="${u}">${brand('site-' + f, 'mini')}${n}</button>`).join('')}</div>`;
+  const bindHub = () => el.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => nova.cmd('open', { text: b.dataset.go, newTab: true })));
+  if (!found.length) { el.innerHTML = `<div class="mi-empty">${ic('globe')}<div><b>No other browser found</b><span>Nova looks for Chrome, Edge, Brave and Vivaldi on this PC.</span></div></div>${hub}`; return bindHub(); }
+  const useful = (b) => b.bookmarks + b.extensions.length + (b.history ? 1 : 0);
+  let sel = [...found].sort((a, b) => useful(b) - useful(a))[0];
+  const pick = { bookmarks: true, history: true, extensions: true, search: true };
+  let exts = new Set(), busy = false, done = null;
+  const num = (n) => n.toLocaleString();
+  const draw = () => {
+    exts = new Set([...exts].filter((id) => sel.extensions.some((e) => e.id === id)));
+    const open = sel.extensions.filter((e) => !e.installed);
+    const rows = [
+      { k: 'bookmarks', ic: 'star', t: 'Bookmarks', d: sel.bookmarks ? `${num(sel.bookmarks)} saved pages` : 'None in this profile', off: !sel.bookmarks },
+      { k: 'history', ic: 'clock', t: 'Browsing history', d: sel.history ? 'Your most visited pages, so Ctrl+K and the start page know you from day one' : 'None found', off: !sel.history },
+      { k: 'extensions', ic: 'box', t: 'Extensions', d: open.length ? `${open.length} to install from the Chrome Web Store` : 'Nothing new to install', off: !open.length, extra: open.length ? `<details class="mi-ext"><summary>Choose which</summary>${open.map((e) => `<label class="mi-e"><input type="checkbox" data-e="${e.id}" ${exts.has(e.id) ? 'checked' : ''}><i></i><span>${esc(e.name)}</span></label>`).join('')}</details>` : '' },
+      ...(sel.search ? [{ k: 'search', ic: 'search2', t: 'Search engine', d: `Use ${esc(sel.search.name)} like in ${sel.browser}` }] : []),
+    ];
+    el.innerHTML = `<div class="mi-profiles">${found.map((b) => `<button class="mi-prof ${b.id === sel.id ? 'on' : ''}" data-pid="${esc(b.id)}">${brand('br-' + b.browser.toLowerCase())}<div><b>${esc(b.browser)}</b><span>${esc(b.label)}</span><small>${num(b.bookmarks)} bookmarks · ${b.extensions.length} extensions</small></div></button>`).join('')}</div>
+      <div class="mi-list">${rows.map((r) => `<div class="mi-row ${r.off ? 'off' : ''}" data-row="${r.k}"><label class="mi-chk"><input type="checkbox" data-k="${r.k}" ${pick[r.k] && !r.off ? 'checked' : ''} ${r.off || busy ? 'disabled' : ''}><i>${ic('check')}</i></label><span class="tile">${ic(r.ic)}</span><div class="mi-t"><b>${r.t}</b><span>${r.d}</span>${r.extra || ''}</div><span class="mi-st" data-st="${r.k}"></span></div>`).join('')}
+        <div class="mi-row info"><span class="mi-chk off"><i>${ic('lock')}</i></span><span class="tile">${ic('lock')}</span><div class="mi-t"><b>Passwords and sign-ins stay put</b><span>${esc(sel.browser)} locks them to itself, and moving them out is exactly what password stealers do. Export a CSV from ${esc(sel.browser)} (Settings › Passwords), import it into your password manager, and sign in below.</span></div></div></div>
+      <div class="mi-go"><button class="btn primary big" id="mi-run" ${busy ? 'disabled' : ''}>${done ? 'Done' : busy ? 'Bringing it over…' : 'Bring it over'}<span class="arr">${ic('fwd')}</span></button>${done ? `<span class="mi-sum">${done}</span>` : ''}</div>${hub}`;
+    el.querySelectorAll('[data-pid]').forEach((b) => (b.onclick = () => { if (busy) return; sel = found.find((f) => f.id === b.dataset.pid); done = null; draw(); }));
+    el.querySelectorAll('[data-k]').forEach((c) => (c.onchange = () => { pick[c.dataset.k] = c.checked; }));
+    el.querySelectorAll('[data-e]').forEach((c) => (c.onchange = () => (c.checked ? exts.add(c.dataset.e) : exts.delete(c.dataset.e))));
+    $('#mi-run').onclick = run; bindHub();
+  };
+  const st = (k, html, cls = '') => { const s = el.querySelector(`[data-st="${k}"]`); if (s) { s.className = 'mi-st ' + cls; s.innerHTML = html; } };
+  async function run() {
+    if (busy || done) return; busy = true; el.querySelectorAll('input').forEach((i) => (i.disabled = true)); $('#mi-run').disabled = true; $('#mi-run').firstChild.textContent = 'Bringing it over…';
+    const parts = []; const spin = '<span class="spinner"></span>';
+    if (pick.bookmarks && sel.bookmarks) { st('bookmarks', spin); const r = await nova.cmd('importPart', { id: sel.id, part: 'bookmarks' }); st('bookmarks', `${ic('check')}${num(r.n)} new`, 'ok'); parts.push(`${num(r.n)} bookmarks`); }
+    if (pick.history && sel.history) { st('history', spin); const r = await nova.cmd('importPart', { id: sel.id, part: 'history' }); if (r.n >= 0) { st('history', `${ic('check')}${num(r.n)} pages`, 'ok'); parts.push(`${num(r.n)} pages`); } else st('history', 'Could not read', 'bad'); }
+    if (pick.extensions && exts.size) { let ok = 0, fail = 0; for (const id of exts) { st('extensions', `${spin}${ok + fail + 1} of ${exts.size}`); const r = await nova.cmd('importPart', { part: 'extension', ext: id }); r.ok ? ok++ : fail++; } st('extensions', `${ic('check')}${ok} installed${fail ? `, ${fail} not available` : ''}`, fail && !ok ? 'bad' : 'ok'); if (ok) parts.push(`${ok} extensions`); }
+    if (pick.search && sel.search) { st('search', spin); const r = await nova.cmd('importPart', { id: sel.id, part: 'search' }); st('search', r.name ? `${ic('check')}${esc(r.name)}` : '—', r.name ? 'ok' : ''); if (r.name) parts.push('search engine'); }
+    busy = false; done = parts.length ? `Brought over ${parts.join(', ')}.` : 'Nothing was selected.';
+    const b = $('#mi-run'); if (b) { b.disabled = false; b.firstChild.textContent = 'Done'; const g = el.querySelector('.mi-go'); if (g && !g.querySelector('.mi-sum')) g.insertAdjacentHTML('beforeend', `<span class="mi-sum">${done}</span>`); }
+    toast(done);
+  }
+  exts = new Set(sel.extensions.filter((e) => !e.installed).map((e) => e.id));
+  const redraw = draw; draw();
 }
 
 function budList() {

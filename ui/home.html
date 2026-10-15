@@ -6,35 +6,47 @@
 <title>New tab</title>
 <style>
 @font-face { font-family:'Inter'; src:url(fonts/inter-latin-wght-normal.woff2) format('woff2'); font-weight:100 900; }
-:root { --bg:#161621; --chrome:#0b0b12; --accent:#8b7dff; --text:#ececf3; --dim:#8b8ba0; }
+:root { --bg:#161621; --chrome:#0b0b12; --accent:#8b7dff; --text:#ececf3; --dim:#8b8ba0; --dimv:.25; --blurv:0px; }
 * { box-sizing:border-box; margin:0; }
-html,body { height:100%; background:var(--bg); color:var(--text); font:450 14px/1.4 'Inter',system-ui,sans-serif; letter-spacing:-.006em; overflow:hidden; -webkit-font-smoothing:antialiased; user-select:none; }
-.bg { position:fixed; inset:0; background:radial-gradient(70% 55% at 50% 0%,color-mix(in srgb,var(--accent) 14%,transparent),transparent 70%),radial-gradient(50% 40% at 85% 100%,color-mix(in srgb,var(--accent) 7%,transparent),transparent 70%); }
-canvas { position:fixed; inset:0; width:100%; height:100%; opacity:.5; }
-.plain .bg, .plain canvas { display:none; }
+html,body { height:100%; background:var(--bg); color:var(--text); font:450 14px/1.4 'Inter',system-ui,sans-serif; letter-spacing:-.006em; overflow:hidden; -webkit-font-smoothing:antialiased; user-select:none; transition:background-color .35s,color .35s; }
+.wp, .wp2 { position:fixed; inset:0; transition:opacity .4s; }
+/* wallpaper presets, all built from the theme's accent colour */
+.wp[data-wall="aurora"] { background:radial-gradient(60% 50% at 18% 8%,color-mix(in srgb,var(--accent) 30%,transparent),transparent 70%),radial-gradient(45% 45% at 88% 22%,color-mix(in srgb,var(--accent) 45%,#2dd4bf 55%) 22%,transparent 70%),radial-gradient(70% 55% at 50% 112%,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%); }
+.wp[data-wall="nebula"] { background:radial-gradient(50% 60% at 25% 20%,color-mix(in srgb,var(--accent) 34%,transparent),transparent 70%),radial-gradient(55% 50% at 80% 75%,color-mix(in srgb,var(--accent) 40%,#ff5fa2 60%) 24%,transparent 70%); }
+.wp[data-wall="ember"] { background:radial-gradient(60% 55% at 80% 105%,color-mix(in srgb,var(--accent) 38%,transparent),transparent 70%),radial-gradient(40% 40% at 12% 12%,color-mix(in srgb,var(--accent) 18%,#ff3d6e 40%) 18%,transparent 70%); }
+.wp[data-wall="deep"] { background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 16%,transparent),transparent 55%),radial-gradient(70% 50% at 50% 100%,color-mix(in srgb,var(--accent) 28%,transparent),transparent 70%); }
+.wp[data-wall="bloom"] { background:radial-gradient(40% 45% at 20% 80%,color-mix(in srgb,var(--accent) 34%,transparent),transparent 70%),radial-gradient(45% 45% at 78% 18%,color-mix(in srgb,var(--accent) 42%,#ffd0a0 58%) 20%,transparent 70%); }
+.wp[data-wall="forest"] { background:radial-gradient(55% 55% at 15% 100%,color-mix(in srgb,var(--accent) 30%,transparent),transparent 70%),radial-gradient(50% 40% at 90% 0%,color-mix(in srgb,var(--accent) 40%,#2f8fff 60%) 14%,transparent 70%); }
+.wp[data-wall="grid"] { background-image:linear-gradient(color-mix(in srgb,var(--accent) 12%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--accent) 12%,transparent) 1px,transparent 1px),radial-gradient(60% 50% at 50% 0%,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%); background-size:44px 44px,44px 44px,100% 100%; mask-image:radial-gradient(90% 80% at 50% 30%,#000 30%,transparent 100%); }
+.wp[data-wall="paper"] { background:radial-gradient(70% 50% at 50% 0%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 70%); }
+.wp2 { background-size:cover; background-position:center; opacity:0; filter:blur(var(--blurv)); transform:scale(1.03); } .wp2.on { opacity:1; } .shade { position:fixed; inset:0; background:var(--bg); opacity:0; pointer-events:none; } .shade.on { opacity:var(--dimv); }
+canvas { position:fixed; inset:0; width:100%; height:100%; opacity:.5; transition:opacity .4s; }
+.nostars canvas { opacity:0; } .plain .wp, .plain .wp2, .plain .shade, .plain canvas { display:none; }
 main { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-bottom:7vh; }
 .top { display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:26px; animation:up .7s cubic-bezier(.2,.8,.2,1) both; }
 .mark { width:30px; height:30px; }
-#hi { color:var(--dim); font-size:14px; letter-spacing:.01em; }
+#hi { color:var(--dim); font-size:14px; letter-spacing:.01em; } .nogreet #hi { display:none; }
 form { position:relative; width:min(620px,88vw); animation:up .7s cubic-bezier(.2,.8,.2,1) .08s both; }
-input { width:100%; height:56px; border-radius:16px; border:0; outline:0; padding:0 70px 0 54px; font:inherit; font-size:16px; color:var(--text); background:color-mix(in srgb,var(--text) 6%,var(--bg)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 10%,transparent); transition:box-shadow .2s,background .2s; user-select:text; }
+input { width:100%; height:56px; border-radius:16px; border:0; outline:0; padding:0 70px 0 54px; font:inherit; font-size:16px; color:var(--text); background:color-mix(in srgb,var(--text) 6%,var(--bg)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 10%,transparent); transition:box-shadow .2s,background .2s,color .35s; user-select:text; backdrop-filter:blur(8px); }
 input::placeholder { color:var(--dim); }
 input:focus { background:color-mix(in srgb,var(--text) 8%,var(--bg)); box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 75%,transparent),0 0 0 5px color-mix(in srgb,var(--accent) 16%,transparent); }
 form svg { position:absolute; left:20px; top:19px; width:18px; height:18px; stroke:var(--dim); fill:none; stroke-width:1.75; stroke-linecap:round; }
 kbd { font:500 11px 'Inter'; color:var(--dim); background:color-mix(in srgb,var(--text) 8%,transparent); border-radius:6px; padding:3px 7px; letter-spacing:.02em; }
 form kbd { position:absolute; right:16px; top:18px; }
 .sites { display:grid; grid-template-columns:repeat(4,92px); gap:14px 18px; margin-top:34px; animation:up .7s cubic-bezier(.2,.8,.2,1) .16s both; }
+.nosites .sites { display:none; }
 .site { display:flex; flex-direction:column; align-items:center; gap:9px; padding:10px 4px; border-radius:16px; color:var(--dim); text-decoration:none; font-size:12px; transition:background .15s,transform .15s,color .15s; width:92px; }
 .site:hover { background:color-mix(in srgb,var(--text) 6%,transparent); color:var(--text); transform:translateY(-3px); } .site:active { transform:scale(.96); }
-.site .ic { width:48px; height:48px; border-radius:14px; display:grid; place-items:center; font-size:19px; font-weight:650; color:#fff; box-shadow:0 6px 18px rgba(0,0,0,.25); }
+.site .ic { width:52px; height:52px; border-radius:15px; display:grid; place-items:center; font-size:19px; font-weight:650; color:#fff; background:color-mix(in srgb,var(--text) 8%,var(--bg)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 10%,transparent),0 6px 18px rgba(0,0,0,.22); overflow:hidden; }
+.site .ic img { width:30px; height:30px; object-fit:contain; border-radius:6px; }
 .site span.n { max-width:84px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tips { display:flex; gap:22px; margin-top:34px; color:var(--dim); font-size:12.5px; animation:up .7s cubic-bezier(.2,.8,.2,1) .16s both; } .tips div { display:flex; align-items:center; gap:8px; }
 @keyframes up { from { opacity:0; transform:translateY(14px); } }
-.plain * { animation:none !important; transition:none !important; }
+.plain * { animation:none !important; transition:none !important; backdrop-filter:none !important; }
 </style>
 </head>
 <body>
-<div class="bg"></div>
+<div class="wp" id="wp"></div><div class="wp2" id="wp2"></div><div class="shade" id="shade"></div>
 <canvas id="sky"></canvas>
 <main>
   <div class="top"><img class="mark" src="mark.svg" alt=""><div id="hi"></div></div>
@@ -44,8 +56,11 @@ form kbd { position:absolute; right:16px; top:18px; }
 <script>
 const P = new URLSearchParams(location.search);
 const root = document.documentElement, rs = root.style;
-for (const k of ['bg', 'chrome', 'accent', 'text', 'dim']) if (P.get(k)) rs.setProperty('--' + k, P.get(k));
+const wp = document.getElementById('wp');
+const apply = (t) => { for (const k of ['bg', 'chrome', 'accent', 'text', 'dim']) if (t[k]) rs.setProperty('--' + k, t[k]); };
+apply(Object.fromEntries(['bg', 'chrome', 'accent', 'text', 'dim'].map((k) => [k, P.get(k)])));
 if (P.get('fx') === '0') root.classList.add('plain');
+wp.dataset.wall = P.get('wall') || '';
 const engine = P.get('engine') || 'https://duckduckgo.com/?q=%s';
 const h = new Date().getHours();
 document.getElementById('hi').textContent = h < 5 ? 'Still up?' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
@@ -54,24 +69,34 @@ document.getElementById('f').addEventListener('submit', (e) => {
   const t = document.getElementById('q').value.trim(); if (!t) return;
   location.href = /^(https?|file):/i.test(t) ? t : (!/\s/.test(t) && (/^localhost/i.test(t) || /^[^\s/]+\.[a-z]{2,}([:/?#]|$)/i.test(t))) ? 'https://' + t : engine.replace('%s', encodeURIComponent(t));
 });
-// most visited sites, or shortcut hints while there is no history yet
-let sites = []; try { sites = JSON.parse(P.get('sites') || '[]'); } catch {}
 const hue = (s) => { let n = 0; for (const c of s) n = (n * 31 + c.charCodeAt(0)) % 360; return n; };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const extra = document.getElementById('extra');
-if (sites.length) extra.innerHTML = `<div class="sites">${sites.slice(0, 8).map((s) => `<a class="site" href="${esc(s.url)}"><div class="ic" style="background:linear-gradient(135deg,hsl(${hue(s.host)} 50% 46%),hsl(${(hue(s.host) + 30) % 360} 50% 36%))">${esc((s.host[0] || '?').toUpperCase())}</div><span class="n">${esc(s.host.replace(/\.[a-z]+$/, ''))}</span></a>`).join('')}</div>`;
-else extra.innerHTML = '<div class="tips"><div><kbd>Ctrl</kbd><kbd>K</kbd>search anything</div><div><kbd>Ctrl</kbd><kbd>T</kbd>new tab</div><div><kbd>Ctrl</kbd><kbd>E</kbd>all tabs</div></div>';
-// a quiet field of stars, drawn once (no animation, so the page costs nothing)
-if (!root.classList.contains('plain')) {
-  const c = document.getElementById('sky'), g = c.getContext('2d'), d = devicePixelRatio || 1;
-  const paint = () => {
-    c.width = innerWidth * d; c.height = innerHeight * d;
-    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    const accent = getComputedStyle(root).getPropertyValue('--accent');
-    for (let i = 0; i < Math.round(innerWidth * innerHeight / 9000); i++) { const z = rnd() * .8 + .2; g.globalAlpha = z * .8; g.fillStyle = rnd() < .1 ? accent : '#fff'; g.beginPath(); g.arc(rnd() * c.width, rnd() * c.height, z * 1.1 * d, 0, 6.283); g.fill(); }
-  };
-  paint(); addEventListener('resize', paint);
-}
+const tips = '<div class="tips"><div><kbd>Ctrl</kbd><kbd>K</kbd>search anything</div><div><kbd>Ctrl</kbd><kbd>T</kbd>new tab</div><div><kbd>Ctrl</kbd><kbd>E</kbd>all tabs</div></div>';
+extra.innerHTML = tips;
+// the browser pushes your most visited sites (with their real icons) once this page has loaded
+window.novaSites = (sites) => {
+  if (!sites || !sites.length) { extra.innerHTML = tips; return; }
+  extra.innerHTML = `<div class="sites">${sites.slice(0, 8).map((s) => `<a class="site" href="${esc(s.url)}"><div class="ic" style="${s.icon ? '' : `background:linear-gradient(135deg,hsl(${hue(s.host)} 50% 46%),hsl(${(hue(s.host) + 30) % 360} 50% 36%))`}">${s.icon ? `<img src="${s.icon}" alt="">` : esc((s.host[0] || '?').toUpperCase())}</div><span class="n">${esc(s.host.replace(/\.[a-z]+$/, ''))}</span></a>`).join('')}</div>`;
+};
+// stars: drawn once, redrawn when the accent changes (no animation, so the page costs nothing)
+const c = document.getElementById('sky'), g = c.getContext('2d'), d = devicePixelRatio || 1;
+const paint = () => {
+  c.width = innerWidth * d; c.height = innerHeight * d; g.clearRect(0, 0, c.width, c.height);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const accent = getComputedStyle(root).getPropertyValue('--accent'), light = getComputedStyle(root).getPropertyValue('--text').trim();
+  for (let i = 0; i < Math.round(innerWidth * innerHeight / 9000); i++) { const z = rnd() * .8 + .2; g.globalAlpha = z * .8; g.fillStyle = rnd() < .1 ? accent : light; g.beginPath(); g.arc(rnd() * c.width, rnd() * c.height, z * 1.1 * d, 0, 6.283); g.fill(); }
+};
+if (!root.classList.contains('plain')) { paint(); addEventListener('resize', paint); }
+// live theme updates from the browser: colours, wallpaper, switches
+window.novaTheme = (t) => {
+  apply(t); wp.dataset.wall = t.wall || '';
+  rs.setProperty('--dimv', (t.dim_amount ?? 25) / 100); rs.setProperty('--blurv', (t.blur ?? 0) + 'px');
+  const img = document.getElementById('wp2'), shade = document.getElementById('shade');
+  if (t.image) { img.style.backgroundImage = `url(${t.image})`; img.classList.add('on'); shade.classList.add('on'); wp.style.opacity = 0; } else { img.classList.remove('on'); shade.classList.remove('on'); wp.style.opacity = 1; }
+  root.classList.toggle('nostars', t.stars === false || !!t.image); root.classList.toggle('nosites', t.sites === false); root.classList.toggle('nogreet', t.greeting === false);
+  if (!root.classList.contains('plain')) paint();
+};
 </script>
 </body>
 </html>
