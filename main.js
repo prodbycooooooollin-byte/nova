@@ -5,7 +5,8 @@ const { pathToFileURL } = require('url');
 const updater = require('./updater');
 const features = require('./features');
 const budget = require('./budget');
-const UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
+const persona = require('./persona');
+const UA = persona.UA;
 const setup = require('./setup');
 const setupMode = setup.detectMode();
 const gotLock = setupMode ? true : app.requestSingleInstanceLock();
@@ -171,10 +172,17 @@ function wake(t) {
   wc.on('enter-html-full-screen', () => { pageFullscreen = true; win.setFullScreen(true); layout(); });
   wc.on('leave-html-full-screen', () => { pageFullscreen = false; win.setFullScreen(false); layout(); });
   wc.on('found-in-page', (_e, r) => ui.webContents.send('found', r));
-  wc.setWindowOpenHandler(({ url }) => { openUrl(url, { background: false, afterId: t.id }); return { action: 'deny' }; });
+  wc.setWindowOpenHandler(({ url, disposition, features }) => {
+    // window.open(...) with a size is a login popup: it needs its opener, so it stays a real window
+    if (disposition === 'new-window' && features) {
+      const num = (k) => Number(new RegExp(k + '=(\d+)').exec(features)?.[1]) || undefined;
+      return { action: 'allow', overrideBrowserWindowOptions: { width: num('width') || 520, height: num('height') || 700, autoHideMenuBar: true, backgroundColor: settings.theme.bg, icon: path.join(__dirname, 'build', 'icon.ico'), webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } } };
+    }
+    openUrl(url, { background: false, afterId: t.id, private: t.private }); return { action: 'deny' };
+  });
   wc.on('context-menu', (_e, p) => contextMenu(wc, p));
   wc.on('did-finish-load', () => { applyPageCss(wc); if (t.dark) features.applyDark(t); });
-  wc.loadURL(isHome(t.url) ? homeUrl() : t.url).catch(() => {});
+  persona.ready(wc).then(() => { if (!wc.isDestroyed()) wc.loadURL(isHome(t.url) ? homeUrl() : t.url).catch(() => {}); });
 }
 const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; } };
 function applyZoom(wc) { const z = settings.zoom?.[hostOf(wc.getURL())]; if (z !== undefined) wc.setZoomLevel(z); }
@@ -430,19 +438,36 @@ async function initAdblock(list) {
       path: userFile('adblock.bin'), read: fs.promises.readFile, write: fs.promises.writeFile,
     });
     blocker.on('request-blocked', () => { blockedCount++; push(); });
-    if (settings.adblock) list.forEach((s) => blocker.enableBlockingInSession(s));
+    if (settings.adblock) list.forEach((s) => adblockEnable(s));
   } catch (e) { console.error('adblock failed', e); toast('Ad blocker lists could not be loaded (offline?).'); }
+}
+// The blocker library registers global IPC handlers per enable call, so only the main session uses it directly;
+// other sessions (private tabs) get the same filtering through the shared request hooks and preload.
+const extraAdblock = new Map();
+function adblockEnable(s) {
+  if (s === sessions[0]) { blocker.enableBlockingInSession(s); return; }
+  if (extraAdblock.has(s)) return;
+  s.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, blocker.onBeforeRequest);
+  s.webRequest.onHeadersReceived({ urls: ['<all_urls>'] }, blocker.onHeadersReceived);
+  let id; try { id = s.registerPreloadScript({ type: 'frame', filePath: require.resolve('@ghostery/adblocker-electron-preload') }); } catch {}
+  extraAdblock.set(s, id);
+}
+function adblockDisable(s) {
+  if (s === sessions[0]) { if (blocker.isBlockingEnabled(s)) blocker.disableBlockingInSession(s); return; }
+  if (!extraAdblock.has(s)) return;
+  s.webRequest.onBeforeRequest(null); s.webRequest.onHeadersReceived(null);
+  const id = extraAdblock.get(s); if (id) { try { s.unregisterPreloadScript(id); } catch {} } extraAdblock.delete(s);
 }
 function setAdblock(on) {
   settings.adblock = on;
   if (!blocker) return;
-  for (const s of sessions) { if (on) blocker.enableBlockingInSession(s); else if (blocker.isBlockingEnabled(s)) blocker.disableBlockingInSession(s); }
+  for (const s of sessions) { try { if (on) adblockEnable(s); else adblockDisable(s); } catch (e) { console.error('adblock toggle', e.message); } }
 }
 function applyProfile(name) {
   const p = PROFILES[name]; if (!p) return;
   const { features: f, budget: b, adblock, ...rest } = p;
   Object.assign(settings, rest, { profile: name, features: { ...f }, budget: { ...b } });
-  setAdblock(adblock); saveSettings(); layout(); push();
+  try { setAdblock(adblock); } finally { saveSettings(); layout(); push(); }
 }
 
 // ---------- extensions (Electron supports a subset of Chrome extension APIs) ----------
@@ -462,7 +487,10 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   const ses = session.fromPartition('persist:nova');
   privSes = session.fromPartition('nova-private'); // in memory only, never written to disk
   sessions = [ses, privSes];
-  for (const s of sessions) s.setUserAgent(UA); // a plain Chrome UA so sites like Google accept sign-in
+  for (const s of sessions) { s.setUserAgent(UA, persona.acceptLanguage()); s.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'shim-preload.js') }); }
+  for (const s of sessions) s.webRequest.onBeforeSendHeaders({ urls: ['https://*/*'] }, (d, cb) => { const h = d.requestHeaders; for (const [k, v] of Object.entries(persona.hints)) if (!Object.keys(h).some((x) => x.toLowerCase() === k)) h[k] = v; cb({ requestHeaders: h }); });
+  // every page (tabs, sign-in popups) presents the same regular-Chrome identity
+  app.on('web-contents-created', (_e, wc) => { if (sessions.includes(wc.session)) persona.apply(wc); });
   features.init({
     app, ses, privSes, tabs, userFile, readJson, writeJson, userAgent: UA,
     state: () => state, settings: () => settings, saveSettings, win: () => win, ui: () => ui,

@@ -19,11 +19,11 @@ npm start
 
 ## Release
 
-Bump `version` in `package.json`, build the installer and publish it as a GitHub release:
+Bump `version` in `package.json`, commit, then:
 
 ```
-npx electron-builder --win portable --publish never
-gh release create v0.5.0 dist/Nova-Setup-0.5.0.exe --generate-notes
+git tag v0.5.0
+git push --tags
 ```
 
-Installed copies of Nova check this repository's latest release on startup and update themselves.
+GitHub Actions builds `Nova-Setup-<version>.exe` and attaches it to the release. Nova checks for it on startup.
