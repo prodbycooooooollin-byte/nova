@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'">
+<title>New tab</title>
+<style>
+@font-face { font-family:'Inter'; src:url(fonts/inter-latin-wght-normal.woff2) format('woff2'); font-weight:100 900; }
+:root { --bg:#0b0b12; --accent:#8b7dff; --text:#ececf3; --dim:#8b8ba0; }
+* { box-sizing:border-box; margin:0; }
+html,body { height:100%; background:var(--bg); color:var(--text); font:450 14px/1.4 'Inter',system-ui,sans-serif; letter-spacing:-.006em; overflow:hidden; -webkit-font-smoothing:antialiased; }
+body::before { content:''; position:fixed; inset:0; background:radial-gradient(60% 50% at 50% 38%,color-mix(in srgb,var(--accent) 11%,transparent),transparent 70%); pointer-events:none; }
+.plain body::before, .plain canvas { display:none; }
+canvas { position:fixed; inset:0; width:100%; height:100%; opacity:.55; }
+main { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-bottom:9vh; }
+.mark { width:30px; height:30px; margin-bottom:26px; opacity:.95; }
+form { position:relative; width:min(600px,88vw); }
+input { width:100%; height:54px; border-radius:14px; border:0; outline:0; padding:0 64px 0 52px; font:inherit; font-size:15.5px; color:var(--text); background:color-mix(in srgb,var(--text) 5%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 9%,transparent); transition:box-shadow .18s,background .18s; }
+input::placeholder { color:var(--dim); }
+input:focus { background:color-mix(in srgb,var(--text) 7%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 70%,transparent),0 0 0 4px color-mix(in srgb,var(--accent) 16%,transparent); }
+form svg { position:absolute; left:19px; top:18px; width:18px; height:18px; stroke:var(--dim); fill:none; stroke-width:1.75; stroke-linecap:round; }
+kbd { position:absolute; right:14px; top:17px; font:500 11px 'Inter'; color:var(--dim); background:color-mix(in srgb,var(--text) 7%,transparent); border-radius:6px; padding:4px 7px; letter-spacing:.02em; }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+<main>
+  <img class="mark" src="mark.svg" alt="">
+  <form id="f"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search or enter address" autocomplete="off" spellcheck="false" autofocus><kbd>Ctrl K</kbd></form>
+</main>
+<script>
+const P = new URLSearchParams(location.search);
+const r = document.documentElement.style;
+for (const k of ['bg', 'accent', 'text', 'dim']) if (P.get(k)) r.setProperty('--' + k, P.get(k));
+if (P.get('fx') === '0') document.documentElement.classList.add('plain');
+const engine = P.get('engine') || 'https://duckduckgo.com/?q=%s';
+document.getElementById('f').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const t = document.getElementById('q').value.trim(); if (!t) return;
+  location.href = /^(https?|file):/i.test(t) ? t : (!/\s/.test(t) && (/^localhost/i.test(t) || /^[^\s/]+\.[a-z]{2,}([:/?#]|$)/i.test(t))) ? 'https://' + t : engine.replace('%s', encodeURIComponent(t));
+});
+// a quiet field of stars, drawn once (no animation, so the page costs nothing)
+const c = document.getElementById('sky'), g = c.getContext('2d'), d = devicePixelRatio || 1;
+function paint() {
+  c.width = innerWidth * d; c.height = innerHeight * d;
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < Math.round(innerWidth * innerHeight / 9000); i++) { const z = rnd() * .8 + .2; g.globalAlpha = z * .8; g.fillStyle = rnd() < .1 ? getComputedStyle(document.documentElement).getPropertyValue('--accent') : '#fff'; g.beginPath(); g.arc(rnd() * c.width, rnd() * c.height, z * 1.1 * d, 0, 6.283); g.fill(); }
+}
+if (!document.documentElement.classList.contains('plain')) { paint(); addEventListener('resize', paint); }
+</script>
+</body>
+</html>
