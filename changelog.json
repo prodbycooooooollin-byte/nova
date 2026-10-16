@@ -1,5 +1,24 @@
 [
   {
+    "version": "0.12.0",
+    "date": "2026-10-16",
+    "headline": {
+      "title": "A fresh start for Nova",
+      "text": "a new logo, a start page where your most visited sites orbit the search, downloads that live in the sidebar and settings that sit right beside your browser."
+    },
+    "notes": [
+      "Drag a tab out of the tab list into a window of its own, or choose Move to new window in the tab menu. Back to Nova puts it back.",
+      "A middle click or Ctrl+click on a link opens it in a background tab, and you stay where you are.",
+      "Downloads: a tray in the sidebar with progress, speed and time left, and a progress ring on the download button.",
+      "Settings sit beside the browser, so every change shows live. New Built in page for the tools that replace extensions.",
+      "Websites follow Windows, Light or Dark: decides whether sites with a dark theme of their own use it.",
+      "The extension hub has a way back to Settings and an Installed view.",
+      "Tab overview and library redesigned.",
+      "A calmer update screen with the main feature of each release first.",
+      "The dock is tidier: stats on top, buttons below."
+    ]
+  },
+  {
     "version": "0.11.0",
     "date": "2026-10-16",
     "notes": [

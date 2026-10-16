@@ -25,31 +25,33 @@ canvas { position:fixed; inset:0; width:100%; height:100%; pointer-events:none; 
 #shoot.go { animation:shoot .9s cubic-bezier(.3,.6,.4,1) forwards; } @keyframes shoot { from { opacity:0; transform:rotate(var(--a)) translateX(0); } 18% { opacity:.85; } to { opacity:0; transform:rotate(var(--a)) translateX(720px); } }
 
 .plain .wp, .plain .wp2, .plain .shade, .plain canvas { display:none; }
-main { position:relative; height:100%; display:grid; place-items:center; }
-.hero { position:relative; display:flex; flex-direction:column; align-items:center; }
-#extra { position:absolute; top:100%; left:50%; transform:translateX(-50%); width:max-content; padding-top:34px; }
-@media (max-height:700px) { main { display:flex; flex-direction:column; align-items:center; justify-content:center; } #extra { position:static; transform:none; padding-top:0; } }
-.top { display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:26px; animation:up .7s cubic-bezier(.2,.8,.2,1) both; }
-.mark { width:30px; height:30px; }
-#hi { color:var(--dim); font-size:14px; letter-spacing:.01em; } .nogreet #hi { display:none; }
-form { position:relative; width:min(620px,88vw); animation:up .7s cubic-bezier(.2,.8,.2,1) .08s both; }
-input { width:100%; height:56px; border-radius:16px; border:0; outline:0; padding:0 70px 0 54px; font:inherit; font-size:16px; color:var(--text); background:color-mix(in srgb,var(--bg) 58%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 11%,transparent),0 10px 30px -12px rgba(0,0,0,.45); transition:box-shadow .2s,background .2s,color .35s; user-select:text; backdrop-filter:blur(16px) saturate(1.2); }
+main { position:relative; height:100%; }
+.core { position:absolute; left:50%; top:50%; width:min(660px,86vw); transform:translate(-50%,-50%); z-index:2; }
+.top { position:absolute; left:0; right:0; bottom:100%; margin-bottom:38px; display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center; animation:up .8s cubic-bezier(.2,.8,.2,1) both; }
+.mark { width:76px; height:76px; margin-bottom:8px; filter:drop-shadow(0 0 24px color-mix(in srgb,var(--accent) 55%,transparent)); }
+#hi { font-size:28px; font-weight:620; letter-spacing:-.03em; color:var(--text); } #date { color:var(--dim); font-size:13.5px; } .nogreet #hi, .nogreet #date { display:none; }
+form { position:relative; animation:up .8s cubic-bezier(.2,.8,.2,1) .08s both; }
+input { width:100%; height:70px; border-radius:23px; border:0; outline:0; padding:0 88px 0 64px; font:inherit; font-size:18px; color:var(--text); background:color-mix(in srgb,var(--bg) 58%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 12%,transparent),0 14px 40px -14px rgba(0,0,0,.55); transition:box-shadow .2s,background .2s,color .35s; user-select:text; backdrop-filter:blur(18px) saturate(1.25); }
 .plain input { background:color-mix(in srgb,var(--text) 6%,var(--bg)); }
 input::placeholder { color:var(--dim); }
-input:focus { background:color-mix(in srgb,var(--bg) 46%,transparent); box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 75%,transparent),0 0 0 5px color-mix(in srgb,var(--accent) 16%,transparent); }
+input:focus { background:color-mix(in srgb,var(--bg) 46%,transparent); box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 75%,transparent),0 0 0 6px color-mix(in srgb,var(--accent) 16%,transparent); }
 .plain input:focus { background:color-mix(in srgb,var(--text) 8%,var(--bg)); }
-form svg { position:absolute; left:20px; top:19px; width:18px; height:18px; stroke:var(--dim); fill:none; stroke-width:1.75; stroke-linecap:round; }
+form svg { position:absolute; left:25px; top:25px; width:20px; height:20px; stroke:var(--dim); fill:none; stroke-width:1.75; stroke-linecap:round; }
 kbd { font:500 11px 'Inter'; color:var(--dim); background:color-mix(in srgb,var(--text) 8%,transparent); border-radius:6px; padding:3px 7px; letter-spacing:.02em; }
-form kbd { position:absolute; right:16px; top:18px; }
-.sites { display:grid; grid-template-columns:repeat(4,92px); gap:14px 18px; margin-top:0; animation:up .7s cubic-bezier(.2,.8,.2,1) .16s both; }
-.nosites .sites { display:none; }
-.site { display:flex; flex-direction:column; align-items:center; gap:9px; padding:10px 4px; border-radius:16px; color:var(--dim); text-decoration:none; font-size:12px; transition:background .15s,transform .15s,color .15s; width:92px; }
-.site:hover { background:color-mix(in srgb,var(--text) 6%,transparent); color:var(--text); transform:translateY(-3px); } .site:active { transform:scale(.96); }
-.site .ic { width:52px; height:52px; border-radius:15px; display:grid; place-items:center; font-size:19px; font-weight:650; color:#fff; background:color-mix(in srgb,var(--text) 8%,var(--bg)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 10%,transparent),0 6px 18px rgba(0,0,0,.22); overflow:hidden; }
-.site .ic img { width:30px; height:30px; object-fit:contain; border-radius:6px; }
-.site span.n { max-width:84px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tips { display:flex; gap:22px; margin-top:0; color:var(--dim); font-size:12.5px; animation:up .7s cubic-bezier(.2,.8,.2,1) .16s both; } .tips div { display:flex; align-items:center; gap:8px; }
+form kbd { position:absolute; right:20px; top:24px; }
+.stats { position:absolute; left:0; right:0; top:100%; margin-top:24px; display:flex; justify-content:center; flex-wrap:wrap; gap:8px; animation:up .8s cubic-bezier(.2,.8,.2,1) .24s both; } .nostats .stats { display:none; }
+.stat { display:inline-flex; align-items:baseline; gap:6px; padding:7px 14px; border-radius:20px; background:color-mix(in srgb,var(--text) 6%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 8%,transparent); font-size:12.5px; color:var(--dim); backdrop-filter:blur(8px); } .stat b { color:var(--text); font-weight:620; font-variant-numeric:tabular-nums; }
+#planets { position:absolute; inset:0; pointer-events:none; z-index:3; } #planets > * { pointer-events:auto; } .nosites #planets { display:none; }
+.pl { position:absolute; width:76px; margin-left:-38px; margin-top:-32px; display:flex; flex-direction:column; align-items:center; gap:7px; color:var(--dim); text-decoration:none; font-size:11.5px; animation:pop .65s cubic-bezier(.34,1.4,.64,1) both; animation-delay:calc(var(--i) * 80ms + .35s); transition:color .15s,transform .2s cubic-bezier(.2,.8,.2,1); }
+.pl:hover { color:var(--text); transform:translateY(-3px) scale(1.08); } .pl:active { transform:scale(.96); }
+.pl .ic { width:62px; height:62px; border-radius:50%; display:grid; place-items:center; font-size:22px; font-weight:650; color:#fff; background:color-mix(in srgb,var(--text) 9%,var(--bg)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 13%,transparent),0 10px 26px rgba(0,0,0,.34),0 0 0 6px color-mix(in srgb,var(--accent) 9%,transparent); overflow:hidden; }
+.pl .ic img { width:34px; height:34px; object-fit:contain; border-radius:8px; }
+.pl .n { max-width:88px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-shadow:0 1px 10px var(--bg),0 0 4px var(--bg); }
+#planets.flat { inset:auto; left:50%; top:calc(50% + 110px); transform:translateX(-50%); width:max-content; display:grid; grid-template-columns:repeat(4,96px); gap:14px 8px; } #planets.flat .pl { position:static; margin:0; width:96px; }
+.tips { position:absolute; left:0; right:0; bottom:26px; display:flex; justify-content:center; gap:22px; color:var(--dim); font-size:12.5px; animation:up .8s cubic-bezier(.2,.8,.2,1) .3s both; z-index:2; } .tips div { display:flex; align-items:center; gap:8px; }
+@media (max-height:700px) { .tips { display:none; } }
 @keyframes up { from { opacity:0; transform:translateY(14px); } }
+@keyframes pop { from { opacity:0; transform:scale(.55); } }
 .plain * { animation:none !important; transition:none !important; backdrop-filter:none !important; }
 </style>
 </head>
@@ -57,11 +59,13 @@ form kbd { position:absolute; right:16px; top:18px; }
 <div class="wp" id="wp"></div><div class="wp2" id="wp2"></div><div class="shade" id="shade"></div>
 <canvas id="sky"></canvas><div id="orrery" aria-hidden="true"><svg id="orings"></svg><div id="oglow"></div><div id="obodies"></div><div id="shoot"></div></div>
 <main>
-  <div class="hero">
-  <div class="top"><img class="mark" src="mark.svg" alt=""><div id="hi"></div></div>
-  <form id="f"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search or enter address" autocomplete="off" spellcheck="false" autofocus><kbd>Ctrl K</kbd></form>
-  <div id="extra"></div>
+  <div class="core">
+    <div class="top"><img class="mark" src="logo.svg" alt=""><div id="hi"></div><div id="date"></div></div>
+    <form id="f"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search or enter address" autocomplete="off" spellcheck="false" autofocus><kbd>Ctrl K</kbd></form>
+    <div class="stats" id="stats"></div>
   </div>
+  <div id="planets"></div>
+  <div class="tips"><div><kbd>Ctrl</kbd><kbd>K</kbd>search anything</div><div><kbd>Ctrl</kbd><kbd>T</kbd>new tab</div><div><kbd>Ctrl</kbd><kbd>E</kbd>all tabs</div></div>
 </main>
 <script>
 const P = new URLSearchParams(location.search);
@@ -74,6 +78,7 @@ wp.dataset.wall = P.get('wall') || '';
 const engine = P.get('engine') || 'https://duckduckgo.com/?q=%s';
 const h = new Date().getHours();
 document.getElementById('hi').textContent = h < 5 ? 'Still up?' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+document.getElementById('date').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
 document.getElementById('f').addEventListener('submit', (e) => {
   e.preventDefault();
   const t = document.getElementById('q').value.trim(); if (!t) return;
@@ -81,14 +86,38 @@ document.getElementById('f').addEventListener('submit', (e) => {
 });
 const hue = (s) => { let n = 0; for (const c of s) n = (n * 31 + c.charCodeAt(0)) % 360; return n; };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const extra = document.getElementById('extra');
-const tips = '<div class="tips"><div><kbd>Ctrl</kbd><kbd>K</kbd>search anything</div><div><kbd>Ctrl</kbd><kbd>T</kbd>new tab</div><div><kbd>Ctrl</kbd><kbd>E</kbd>all tabs</div></div>';
-extra.innerHTML = tips;
+const planets = document.getElementById('planets');
+let sitesData = [];
 // the browser pushes your most visited sites (with their real icons) once this page has loaded
-window.novaSites = (sites) => {
-  if (!sites || !sites.length) { extra.innerHTML = tips; requestAnimationFrame(() => running && buildOrrery()); return; }
-  extra.innerHTML = `<div class="sites">${sites.slice(0, 8).map((s) => `<a class="site" href="${esc(s.url)}"><div class="ic" style="${s.icon ? '' : `background:linear-gradient(135deg,hsl(${hue(s.host)} 50% 46%),hsl(${(hue(s.host) + 30) % 360} 50% 36%))`}">${s.icon ? `<img src="${s.icon}" alt="">` : esc((s.host[0] || '?').toUpperCase())}</div><span class="n">${esc(s.host.replace(/\.[a-z]+$/, ''))}</span></a>`).join('')}</div>`;
+window.novaSites = (sites) => { sitesData = (sites || []).slice(0, 8); placeSites(); };
+// and a few numbers about the browser itself
+window.novaStats = (s) => {
+  const el = document.getElementById('stats'), fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + ' GB' : Math.round(n) + ' MB');
+  if (!s) return root.classList.add('nostats');
+  const chips = [`<span class="stat"><b>${fmt(s.used)}</b>${s.cap ? ' of ' + fmt(s.cap) : ''} memory</span>`];
+  if (s.blocked) chips.push(`<span class="stat"><b>${s.blocked.toLocaleString('en-US')}</b> ads and trackers blocked</span>`);
+  if (s.asleep) chips.push(`<span class="stat"><b>${s.asleep}</b> tab${s.asleep > 1 ? 's' : ''} asleep</span>`);
+  el.innerHTML = chips.join('');
 };
+// where the two site rings run: around the middle of the page, outside the search box
+function geometry() {
+  const W = innerWidth, H = innerHeight, core = document.querySelector('.core').getBoundingClientRect(), half = core.width / 2;
+  const a1 = half + 92, a2 = a1 + 110;
+  return { W, H, cx: core.left + core.width / 2, cy: core.top + core.height / 2, a1, a2, k: .44, tilt: -8 };
+}
+// eight sites sit on the rings like planets: four on the inner ring beside the search box, four on the outer ring above and below it.
+// If the window is too small for that, or the background is not the orbit one, they become a plain grid under the search box.
+const SPOTS = [[-32, 0], [212, 0], [32, 0], [148, 0], [-66, 1], [246, 1], [66, 1], [114, 1]];
+function placeSites() {
+  if (!sitesData.length) { planets.innerHTML = ''; return; }
+  const g = geometry(), ph = g.tilt * Math.PI / 180;
+  const pts = sitesData.map((_, i) => { const [deg, ring] = SPOTS[i], a = ring ? g.a2 : g.a1, b = a * g.k, th = deg * Math.PI / 180, x = a * Math.cos(th), y = b * Math.sin(th); return [g.cx + x * Math.cos(ph) - y * Math.sin(ph), g.cy + x * Math.sin(ph) + y * Math.cos(ph)]; });
+  const fits = running && pts.every(([x, y]) => x > 60 && x < g.W - 60 && y > 80 && y < g.H - 90);
+  const list = fits ? sitesData : sitesData.slice(0, g.H < 760 ? 4 : 8); // a plain grid has less room than the rings: fewer sites in a short window
+  planets.innerHTML = list.map((s, i) => `<a class="pl" style="--i:${i}" href="${esc(s.url)}" title="${esc(s.host)}"><div class="ic" style="${s.icon ? '' : `background:linear-gradient(135deg,hsl(${hue(s.host)} 50% 46%),hsl(${(hue(s.host) + 30) % 360} 50% 36%))`}">${s.icon ? `<img src="${s.icon}" alt="">` : esc((s.host[0] || '?').toUpperCase())}</div><span class="n">${esc(s.host.replace(/^www\./, '').replace(/\.[a-z]+$/, ''))}</span></a>`).join('');
+  planets.classList.toggle('flat', !fits);
+  if (fits) [...planets.children].forEach((el, i) => { el.style.left = pts[i][0].toFixed(1) + 'px'; el.style.top = pts[i][1].toFixed(1) + 'px'; });
+}
 
 // ---- stars: a still field, redrawn only when size or colours change ----
 const sky = document.getElementById('sky'), sg = sky.getContext('2d'), D = Math.min(devicePixelRatio || 1, 1.5);
@@ -104,28 +133,25 @@ function paintStars() {
 
 // ---- orbit: a quiet orrery around the Nova mark. SVG rings plus CSS-animated bodies: the page costs next to no CPU ----
 const orrery = document.getElementById('orrery'), orings = document.getElementById('orings'), obodies = document.getElementById('obodies'), oglow = document.getElementById('oglow'), shoot = document.getElementById('shoot');
-const markEl = document.querySelector('.mark');
-const TILT = -17; // degrees
-const ORBITS = [ // r in design units, period in seconds, flatten, bodies {phase 0..1, size px, colour}
-  { r: 150, T: 70, f: .36, b: [{ p: .05, s: 4 }] },
-  { r: 250, T: 115, f: .36, b: [{ p: .38, s: 5, c: 'a' }] },
-  { r: 380, T: 180, f: .36, b: [{ p: .7, s: 6 }, { p: .2, s: 3 }] },
-  { r: 540, T: 270, f: .36, b: [{ p: .88, s: 4.5, c: 'w' }] },
-  { r: 740, T: 400, f: .36, b: [{ p: .5, s: 6.5 }] },
-  { r: 980, T: 560, f: .36, b: [{ p: .14, s: 4, c: 'a' }] },
-  { r: 470, T: 230, f: .2, tilt: 58, dash: true, b: [{ p: .3, s: 4.5, c: 'a' }] },
-];
 let running = false, shootTimer = 0, tickTimer = 0, live = [], lastInput = Date.now();
 const startTick = () => { if (!tickTimer && running && !document.hidden) tickTimer = setInterval(() => { if (Date.now() - lastInput > 60000) { stopTick(); return; } tick(); }, 167); };
 const stopTick = () => { clearInterval(tickTimer); tickTimer = 0; };
 function buildOrrery() {
-  const W = innerWidth, H = innerHeight, u = Math.min(W, H * 1.8) / 1000, m = markEl.getBoundingClientRect();
-  const cx = m.left + m.width / 2, cy = m.top + m.height / 2, accent = cssv('--accent'), light = cssv('--text'), now = performance.now() / 1000;
-  const rot = (x, y, deg) => { const r = deg * Math.PI / 180; return [cx + x * Math.cos(r) - y * Math.sin(r), cy + x * Math.sin(r) + y * Math.cos(r)]; };
+  const g = geometry(), { W, H, cx, cy } = g, accent = cssv('--accent'), light = cssv('--text');
+  const far = Math.max(W, H);
+  // rings: the two that carry the sites, one close around the search box, two far out, and one dashed ring tilted the other way
+  const ORBITS = [
+    { a: g.a1 * .72, T: 60, op: .1, b: [] },
+    { a: g.a1, T: 90, op: .3, b: [{ p: .05, s: 4.5 }] },
+    { a: g.a2, T: 140, op: .22, b: [{ p: .52, s: 5, c: 'a' }] },
+    { a: g.a2 * 1.4, T: 230, op: .13, b: [{ p: .8, s: 6 }, { p: .3, s: 3 }] },
+    { a: g.a2 * 1.9, T: 340, op: .09, b: [{ p: .15, s: 4.5, c: 'w' }] },
+    { a: Math.min(far * .62, g.a2 * 1.55), T: 260, op: .14, tilt: 62, k: .2, dash: true, b: [{ p: .3, s: 4.5, c: 'a' }] },
+  ];
   let rings = '', bodies = ''; const spec = [];
   for (const o of ORBITS) {
-    const a = o.r * u, b = a * o.f, tl = o.tilt ?? TILT, op = o.dash ? .14 : Math.max(.07, .2 - o.r / 6500);
-    rings += `<ellipse cx="${cx}" cy="${cy}" rx="${a}" ry="${b}" transform="rotate(${tl} ${cx} ${cy})" fill="none" stroke="${accent}" stroke-opacity="${op}" stroke-width="1"${o.dash ? ' stroke-dasharray="3 7"' : ''}/>`;
+    const a = o.a, b = a * (o.k || g.k), tl = o.tilt ?? g.tilt;
+    rings += `<ellipse cx="${cx}" cy="${cy}" rx="${a}" ry="${b}" transform="rotate(${tl} ${cx} ${cy})" fill="none" stroke="${accent}" stroke-opacity="${o.op}" stroke-width="1"${o.dash ? ' stroke-dasharray="3 7"' : ''}/>`;
     for (const bd of o.b) {
       const col = bd.c === 'a' ? accent : bd.c === 'w' ? '#ffd9a3' : light, sz = bd.s;
       bodies += `<i class="ob" style="--c:${col};--tail:${Math.round(40 + sz * 3)}px;width:${sz}px;height:${sz}px;margin:${-sz / 2}px 0 0 ${-sz / 2}px"></i>`; spec.push({ a, b, tl: tl * Math.PI / 180, T: o.T, p: bd.p });
@@ -133,7 +159,7 @@ function buildOrrery() {
   }
   orings.setAttribute('viewBox', `0 0 ${W} ${H}`); orings.innerHTML = rings; obodies.innerHTML = bodies;
   live = spec.map((o, i) => ({ ...o, el: obodies.children[i], cx, cy })); tick();
-  const R = 230 * u; oglow.style.cssText = `left:${cx - R}px;top:${cy - R}px;width:${R * 2}px;height:${R * 2}px`;
+  const R = g.a1 * .9; oglow.style.cssText = `left:${cx - R}px;top:${cy - R}px;width:${R * 2}px;height:${R * 2}px`;
 }
 function tick() { // ten updates a second: the bodies move a pixel or two per step, and the page stays idle in between
   const t = performance.now() / 1000;
@@ -161,7 +187,7 @@ function syncOrbit() {
   if (want) { buildOrrery(); if (!running) { running = true; root.classList.add('orb-on'); scheduleShoot(); } lastInput = Date.now(); startTick(); }
   else if (running) { running = false; clearTimeout(shootTimer); stopTick(); live = []; root.classList.remove('orb-on'); orings.innerHTML = ''; obodies.innerHTML = ''; }
 }
-const refresh = () => { if (!root.classList.contains('plain')) { paintStars(); } syncOrbit(); };
+const refresh = () => { if (!root.classList.contains('plain')) { paintStars(); } syncOrbit(); placeSites(); };
 document.addEventListener('visibilitychange', () => { stopTick(); if (!document.hidden && running) { lastInput = Date.now(); tick(); startTick(); } });
 let rz = 0; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(refresh, 120); });
 requestAnimationFrame(refresh); // after first layout, so the orbits find the mark
@@ -175,7 +201,7 @@ window.novaTheme = (t) => {
   const img = document.getElementById('wp2'), shade = document.getElementById('shade');
   if (t.image) { img.style.backgroundImage = `url(${t.image})`; img.classList.add('on'); shade.classList.add('on'); wp.style.opacity = 0; } else { img.classList.remove('on'); shade.classList.remove('on'); wp.style.opacity = 1; }
   root.classList.toggle('noimage', !!t.image);
-  root.classList.toggle('nostars', t.stars === false || !!t.image || !['orbit', 'stars'].includes(t.wall)); root.classList.toggle('nosites', t.sites === false); root.classList.toggle('nogreet', t.greeting === false);
+  root.classList.toggle('nostars', t.stars === false || !!t.image || !['orbit', 'stars'].includes(t.wall)); root.classList.toggle('nosites', t.sites === false); root.classList.toggle('nogreet', t.greeting === false); root.classList.toggle('nostats', t.stats === false);
   refresh();
 };
 if (!['orbit', 'stars'].includes(wp.dataset.wall)) root.classList.add('nostars');

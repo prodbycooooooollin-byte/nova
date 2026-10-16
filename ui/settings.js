@@ -14,7 +14,7 @@ const PROFILE_INFO = [
 const NAV_GROUPS = [
   ['Make it yours', [['Profile', 'user'], ['Appearance', 'palette'], ['Layout', 'layout'], ['Start page', 'grid']]],
   ['Browsing', [['Tabs', 'layers'], ['Search & privacy', 'shield'], ['Downloads', 'download'], ['Performance', 'gauge']]],
-  ['Tools', [['Features', 'sliders'], ['Extensions', 'box'], ['Shortcuts', 'keyboard'], ['Custom code', 'code'], ['Passwords', 'password']]],
+  ['Tools', [['Built in', 'zap'], ['Features', 'sliders'], ['Extensions', 'box'], ['Shortcuts', 'keyboard'], ['Custom code', 'code'], ['Passwords', 'password']]],
   ['Data', [['Move in', 'imp'], ['Backup & updates', 'save']]],
 ];
 const PAGE_INFO = {
@@ -26,6 +26,7 @@ const PAGE_INFO = {
   'Search & privacy': ['shield', 'One search engine, one blocker, nothing else phoning home.'],
   Downloads: ['download', 'Big files come down over several connections at once and survive a restart.'],
   Performance: ['gauge', 'Memory, sleeping tabs and disk cache. Nova keeps itself inside the limits you set.'],
+  'Built in': ['zap', 'What people usually add extensions for, already part of Nova. Switch on what you like.'],
   Features: ['sliders', 'Nova stays light. Everything beyond the essentials is off until you want it.'],
   Shortcuts: ['keyboard', 'Click a shortcut, then press the keys you want.'],
   Extensions: ['box', 'Nova ships bare. Add only what you want, installed in one click.'],
@@ -57,12 +58,14 @@ function settings(o, d) {
     return grp(...ord.map((id, i) => { const [, name, hint, icon, canHide] = BLOCKS.find((b) => b[0] === id); return row(name, `<div class="arr"><button class="ibtn sm up ${i === 0 || top ? 'off' : ''}" data-blk-mv="-1" data-b="${id}" title="Move up">${ic('back')}</button><button class="ibtn sm down ${i === ord.length - 1 || top ? 'off' : ''}" data-blk-mv="1" data-b="${id}" title="Move down">${ic('back')}</button>${canHide ? `<label class="sw"><input type="checkbox" data-blk-show="${id}" ${hid.includes(id) ? '' : 'checked'}><i></i></label>` : '<span class="fixed">Always shown</span>'}</div>`, hint, icon); }),
       row('Original arrangement', '<button class="btn" id="arrreset">Reset</button>', 'Puts every part back where it started and shows all of them.', 'refresh'));
   };
+  // what Nova tells websites about the colour scheme: they switch to a dark theme of their own when it is dark
+  const schemeRow = (s) => row('Websites follow', `<div class="seg">${[['system', 'Windows'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<button data-scheme="${v}" class="${(s.pageScheme || 'system') === v ? 'on' : ''}">${l}</button>`).join('')}</div>`, 'Sites with a dark theme of their own use it when this is Dark, or when it follows Windows and Windows is dark. Smart dark mode is separate: it darkens sites that have no dark theme.', 'moon');
   const pages = {
     Profile: (s) => `<div class="profiles">${PROFILE_INFO.map(([id, name, icon, tag, bullets, speed, feat]) => `<div class="pcard ${s.profile === id ? 'on' : ''}"><div class="pic">${ic(icon)}</div><div class="ph"><b>${name}</b>${id === 'nova' ? '<span class="tag">Recommended</span>' : ''}</div><p>${tag}</p><div class="meters"><span>Speed</span><i class="dots d${speed}"></i><span>Features</span><i class="dots d${feat}"></i></div><ul>${bullets.map((b) => `<li>${b}</li>`).join('')}</ul>${s.profile === id ? '<div class="active"><span>' + ic('check') + 'Active</span></div>' : `<button class="btn" data-profile="${id}">Use ${name}</button>`}</div>`).join('')}</div>`
       + sect('Setup') + grp(row('Run the welcome setup again', '<button class="btn" id="rerun">Start setup</button>', 'Walk through profile, layout, search and extensions once more.', 'refresh')),
     Appearance: (s) => sect('Theme', 'Pick a look. Every colour stays editable below.') + `<div class="themes">${Object.entries(PRESETS).map(([n, p]) => `<button class="theme ${s.theme.accent === p.accent && s.theme.bg === p.bg ? 'on' : ''}" data-preset="${n}">${mock('', p)}<span>${n}</span></button>`).join('')}</div>`
       + `<details class="more"><summary>Fine-tune colours</summary>${grp(row('Windows accent colour', '<button class="btn" id="winaccent">Use it</button>', 'Takes the accent colour from your Windows settings and leaves the rest as it is.', 'palette'), ...Object.keys(s.theme).filter((k) => k !== 'wall').map((k) => row(k[0].toUpperCase() + k.slice(1), `<input class="swatch" type="color" data-theme="${k}" value="${s.theme[k]}">`)))}</details>`
-      + sect('Type and motion') + grp(row('Interface font size', rng('fontSize', 11, 17, 1, 'px')), row('Interface font', `<input type="text" data-k="font" value="${esc(s.font)}" placeholder="Inter">`, 'Any installed font family. Inter is built in.'), row('Animations and blur', sw('effects', s.effects), 'Turn off for the leanest possible interface.')),
+      + sect('Type and motion') + grp(row('Interface font size', rng('fontSize', 11, 17, 1, 'px')), row('Interface font', `<input type="text" data-k="font" value="${esc(s.font)}" placeholder="Inter">`, 'Any installed font family. Inter is built in.'), row('Animations and blur', sw('effects', s.effects), 'Turn off for the leanest possible interface.'), schemeRow(s)),
     Layout: (s) => sect('Where tabs live', 'Changes show in Nova right beside this panel.') + `<div class="layouts">${[['left', 'Sidebar left'], ['right', 'Sidebar right'], ['top', 'Tabs on top']].map(([v, l]) => `<button class="lay ${s.layout === v ? 'on' : ''}" data-layout="${v}"><div class="lm ${v}"><i class="c"></i><i class="p"></i></div><span>${l}</span></button>`).join('')}</div>`
       + sect('Sidebar') + grp(row('Compact sidebar', sw('compact', s.compact), 'Icons only, for maximum page space.', 'layout'), row('Sidebar width', rng('sidebarWidth', 180, 420, 4, 'px')), row('Tab density', `<div class="seg">${['compact', 'comfortable', 'spacious'].map((v) => `<button data-dens="${v}" class="${s.density === v ? 'on' : ''}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div>`, 'How tall each tab row is.'))
       + sect('Sidebar parts', s.layout === 'top' ? 'Tabs on top has a fixed arrangement, so here you can only hide parts. Order applies to the sidebar layouts.' : 'Move the parts up and down. Switch a part off to hide it. You see the result at once.') + partsGroup(s)
@@ -70,7 +73,7 @@ function settings(o, d) {
       + sect('Window frame') + grp(row('Gap around the page', rng('gap', 0, 24, 1, 'px')), row('Corner radius', rng('radius', 0, 28, 1, 'px'))),
     'Start page': (s) => sect('Background', 'Used behind the search box in a new tab.') + `<div class="walls">${WALLS.map(([id, label]) => `<button class="wall ${(s.wallpaper.mode === 'theme' && id === 'theme') || (s.wallpaper.mode === 'none' && id === 'none') || (s.wallpaper.mode === 'preset' && s.wallpaper.preset === id) ? 'on' : ''}" data-wall="${id}"><div class="wpv" data-wall="${id === 'theme' ? (WALL_OF[Object.keys(PRESETS).find((n) => PRESETS[n].accent === s.theme.accent && PRESETS[n].bg === s.theme.bg)] || s.wallpaper.preset) : id}">${id === 'none' ? ic('x') : ''}</div><span>${label}</span></button>`).join('')}<button class="wall ${s.wallpaper.mode === 'image' ? 'on' : ''}" data-wall="image"><div class="wpv img">${ic('imp')}</div><span>Your image</span></button></div>`
       + (s.wallpaper.mode === 'image' ? sect('Your image') + grp(row('Image dimming', `<div class="rng"><input type="range" min="0" max="80" step="5" value="${s.wallpaper.dim}" data-wp="dim" data-num><span class="val">${s.wallpaper.dim}%</span></div>`, 'Darken the image so text stays readable.'), row('Image blur', `<div class="rng"><input type="range" min="0" max="24" step="1" value="${s.wallpaper.blur}" data-wp="blur" data-num><span class="val">${s.wallpaper.blur}px</span></div>`), row('Colours from this image', '<button class="btn" id="wallcolors">Use its colours</button>', 'Rebuilds Nova’s whole colour set around the main colour of your image.', 'palette'), row('Follow the image', `<label class="sw"><input type="checkbox" data-wfollow ${s.wallpaper.follow ? 'checked' : ''}><i></i></label>`, 'Every new image you pick recolours Nova to match.', 'refresh')) : '')
-      + sect('On the page') + grp(row('Show most visited sites', `<label class="sw"><input type="checkbox" data-sp="sites" ${s.startPage.sites ? 'checked' : ''}><i></i></label>`, 'Icons of the pages you open the most.'), row('Show greeting', `<label class="sw"><input type="checkbox" data-sp="greeting" ${s.startPage.greeting ? 'checked' : ''}><i></i></label>`)),
+      + sect('On the page') + grp(row('Show most visited sites', `<label class="sw"><input type="checkbox" data-sp="sites" ${s.startPage.sites ? 'checked' : ''}><i></i></label>`, 'Icons of the pages you open the most.'), row('Show greeting', `<label class="sw"><input type="checkbox" data-sp="greeting" ${s.startPage.greeting ? 'checked' : ''}><i></i></label>`), row('Show Nova’s numbers', `<label class="sw"><input type="checkbox" data-sp="stats" ${s.startPage.stats !== false ? 'checked' : ''}><i></i></label>`, 'Memory in use, ads blocked and tabs asleep, under the search box.')),
     Tabs: (s) => sect('Keep things tidy') + grp(
       row('Tab budget', stepper('maxTabs', s.maxTabs, 0, 200), 'Past this many tabs, the least recently used are archived. 0 means unlimited.', 'layers'),
       row('Sleep after', `<div class="unit">${stepper('sleepAfterMin', s.sleepAfterMin, 0, 1440)}<span>min</span></div>`, 'Frees memory. A sleeping tab reloads when you open it. Smart sleep (under Performance) can sleep tabs sooner. 0 means never.', 'moon'),
@@ -101,7 +104,7 @@ function settings(o, d) {
       return sect('Accelerated downloads', 'Nova checks every file you download. If the server allows it, the file is fetched in several pieces at once, which is often much faster than a single connection. Anything else downloads the normal way.')
         + grp(
           row('Accelerate downloads', dsw('fast', d.fast !== false), 'Pause, resume and keep going after a restart come with it. Private tabs always use the normal download.', 'download'),
-          row('Open the panel when a download starts', dsw('panel', !!d.panel), 'Off: the download button next to reload just shows the progress, and you click it for the details.', 'download'),
+          row('Open the panel for tabs on top and the compact sidebar', dsw('panel', !!d.panel), 'In the normal sidebar the downloads tray slides up by itself. This is for tabs on top and the compact sidebar: open the downloads panel when a download starts.', 'download'),
           row('Connections per file', `<div class="unit">${stepper('connections', d.connections || 8, 2, 16, 1, 'data-dl')}<span>at once</span></div>`, 'More is faster until the server or your line is the limit. Eight is a good balance, a server that refuses is backed off from automatically.', 'layers'),
           row('Only for files bigger than', `<div class="unit">${stepper('minMB', d.minMB || 8, 1, 4096, 1, 'data-dl')}<span>MB</span></div>`, 'Small files finish too quickly to gain anything.', 'file'),
           row('Speed limit', `<div class="unit">${stepper('limitMBs', d.limitMBs || 0, 0, 1000, 1, 'data-dl')}<span>MB/s</span></div>`, 'Keeps the rest of your connection free. 0 means no limit.', 'gauge'))
@@ -118,9 +121,17 @@ function settings(o, d) {
         row('Keep browsing history', sw('keepHistory', s.keepHistory), 'Lets Ctrl K find pages you visited. Off keeps nothing.', 'clock'),
         row('Tab previews', sw('thumbnails', s.thumbnails), 'Small screenshots in the tab overview. Off saves a little CPU and memory.', 'eye'),
         row('Clear browsing data', '<button class="btn" id="cleardata">Clear…</button>', 'History, cookies and cached files.', 'trash')),
+    'Built in': (s) => {
+      const on = BUILT_IN.filter(([k]) => s.features[k]).length;
+      return `<div class="bihero"><div><b>Already part of Nova</b><span>The jobs people usually add extensions for, built in. No extra process, and nothing running while a tool is off.</span></div><div class="bicount"><b>${on}</b><span>of ${BUILT_IN.length} on</span></div></div>`
+        + `<div class="fgrid">${BUILT_IN.map(([k, rep]) => { const f = FEATURES.find((x) => x[0] === k); return `<label class="fcard big ${s.features[k] ? 'on' : ''}"><span class="tile">${ic(FEATURE_ICONS[k] || 'sliders')}</span><span class="ft"><b>${f[1]}</b><small>${f[2]}</small><em class="rep">Replaces ${rep}</em></span><span class="sw"><input type="checkbox" data-feat="${k}" ${s.features[k] ? 'checked' : ''}><i></i></span></label>`; }).join('')}</div>`
+        + (s.features.darkSite && (s.darkSites || []).length ? '<div style="margin-top:10px">' + grp(row('Sites in dark mode', '<button class="btn" id="darkclear">Turn off everywhere</button>', esc(s.darkSites.slice(0, 4).join(', ') + (s.darkSites.length > 4 ? ` and ${s.darkSites.length - 4} more` : '')), 'contrast')) + '</div>' : '')
+        + sect('Websites with a dark theme of their own', 'Some sites switch to a dark theme by themselves. This decides what Nova tells them.') + grp(schemeRow(s))
+        + (s.features.passwords ? sect('Passwords') + grp(row('Saved passwords and import', '<button class="btn" data-tab-go="Passwords">Open</button>', 'Manage what the password saver has kept.', 'lock')) : '');
+    },
     Features: (s) => {
-      const on = FEATURES.filter(([k]) => s.features[k]).length;
-      return `<p class="fsum"><b>${on}</b> of ${FEATURES.length} are on. A feature that is off costs nothing.</p>` + FEATURE_GROUPS.map(([g, keys]) => sect(g)
+      const shown = FEATURES.filter(([k]) => FEATURE_GROUPS.some(([, keys]) => keys.includes(k))), on = shown.filter(([k]) => s.features[k]).length;
+      return `<div class="hubbanner"><span class="tile big">${ic('zap')}</span><div><b>Looking for dark mode, SponsorBlock or the password saver?</b><small>They moved to Built in, so they are easy to find.</small></div><button class="btn primary" data-tab-go="Built in">Open Built in</button></div><p class="fsum" style="margin-top:16px"><b>${on}</b> of ${shown.length} are on. A feature that is off costs nothing.</p>` + FEATURE_GROUPS.map(([g, keys]) => sect(g)
         + `<div class="fgrid">${FEATURES.filter(([k]) => keys.includes(k)).map(([k, l, h]) => `<label class="fcard ${s.features[k] ? 'on' : ''}"><span class="tile">${ic(FEATURE_ICONS[k] || 'sliders')}</span><span class="ft"><b>${l}</b><small>${h}</small></span><span class="sw"><input type="checkbox" data-feat="${k}" ${s.features[k] ? 'checked' : ''}><i></i></span></label>`).join('')}</div>`
         + (keys.includes('darkSite') && s.features.darkSite && (s.darkSites || []).length ? '<div style="margin-top:10px">' + grp(row('Sites in dark mode', '<button class="btn" id="darkclear">Turn off everywhere</button>', esc(s.darkSites.slice(0, 4).join(', ') + (s.darkSites.length > 4 ? ` and ${s.darkSites.length - 4} more` : '')), 'contrast')) + '</div>' : '')).join('');
     },
@@ -143,7 +154,7 @@ function settings(o, d) {
   const header = (name) => { const [ico, sub] = PAGE_INFO[name] || ['sliders', '']; return `<div class="pghead">${tile(ico).replace('tile', 'tile big')}<div><h2>${name}</h2><p>${sub}</p></div></div>`; };
   const mark = () => o.querySelectorAll('[data-t]').forEach((b) => b.classList.toggle('on', b.dataset.t === tab && !$('#ss').value));
   const render = (keepScroll, swap) => { const st = body.scrollTop; body.innerHTML = header(tab) + `<div class="pgbody ${swap ? 'swap' : ''}">${(() => { try { return pages[tab](S.settings); } catch (e) { console.error('settings page', tab, e); return `<div class="lempty">${ic('info')}<b>This page could not be drawn</b><span>${esc(e.message)}</span></div>`; } })()}</div>`; body.scrollTop = keepScroll ? st : 0; mark(); bind(); };
-  const show = (name) => { if (name === 'Extensions') return nova.cmd('action', { name: 'hub' }); tab = name; $('#ss').value = ''; render(false, true); };
+  const show = (name) => { if (name === 'Extensions') return nova.cmd('overlay', { kind: 'hub', data: { from: 'settings' } }); tab = name; $('#ss').value = ''; render(false, true); };
   const again = (ms = 40) => setTimeout(() => { if ($('#sbody') && !$('#ss').value) render(true); }, ms);
 
   let index = null;
@@ -176,7 +187,7 @@ function settings(o, d) {
     body.querySelectorAll('[data-adretry]').forEach((b) => (b.onclick = () => { nova.cmd('adblockRetry'); toast('Loading the ad blocker lists…'); }));
     body.querySelectorAll('[data-wp]').forEach((el) => (el.oninput = () => { el.nextElementSibling.textContent = el.value + (el.dataset.wp === 'blur' ? 'px' : '%'); patch({ wallpaper: { ...S.settings.wallpaper, [el.dataset.wp]: +el.value } }); }));
     body.querySelectorAll('[data-sp]').forEach((el) => (el.onchange = () => patch({ startPage: { ...S.settings.startPage, [el.dataset.sp]: el.checked } })));
-    body.querySelectorAll('[data-feat]').forEach((el) => (el.onchange = () => { patch({ features: { ...S.settings.features, [el.dataset.feat]: el.checked } }); const c = el.closest('.fcard'); if (c) c.classList.toggle('on', el.checked); const sm = body.querySelector('.fsum b'); if (sm) sm.textContent = body.querySelectorAll('[data-feat]:checked').length; }));
+    body.querySelectorAll('[data-feat]').forEach((el) => (el.onchange = () => { patch({ features: { ...S.settings.features, [el.dataset.feat]: el.checked } }); const c = el.closest('.fcard'); if (c) c.classList.toggle('on', el.checked); const sm = body.querySelector('.fsum b, .bicount b'); if (sm) sm.textContent = body.querySelectorAll('[data-feat]:checked').length; }));
     body.querySelectorAll('[data-bud]').forEach((el) => {
       const set = (v) => patch({ budget: { ...S.settings.budget, ...(el.dataset.bud === 'ramMB' ? { enabled: true } : {}), [el.dataset.bud]: v } });
       if (el.tagName === 'BUTTON') el.onclick = () => { set(+el.dataset.v); again(140); };
@@ -195,6 +206,8 @@ function settings(o, d) {
       else el.onchange = () => set(el.checked);
     });
     if ($('#cache-size')) nova.cmd('cacheInfo').then((r) => { const el = $('#cache-size'); if (el && r) el.textContent = `${fmtBytes(r.size)} on disk, limit ${fmtBytes(r.limit)}`; });
+    body.querySelectorAll('[data-tab-go]').forEach((b) => (b.onclick = () => show(b.dataset.tabGo)));
+    body.querySelectorAll('[data-scheme]').forEach((b) => (b.onclick = () => { patch({ pageScheme: b.dataset.scheme }); body.querySelectorAll('[data-scheme]').forEach((x) => x.classList.toggle('on', x === b)); toast(b.dataset.scheme === 'system' ? 'Websites follow Windows.' : `Websites now see a ${b.dataset.scheme} colour scheme.`); }));
     body.querySelectorAll('[data-bud-off]').forEach((b) => (b.onclick = () => { patch({ budget: { ...S.settings.budget, enabled: false } }); again(140); }));
     body.querySelectorAll('[data-sleep]').forEach((b) => (b.onclick = () => nova.cmd('sleep', { id: +b.dataset.sleep })));
     body.querySelectorAll('[data-profile]').forEach((b) => (b.onclick = () => { nova.cmd('applyProfile', { name: b.dataset.profile }); toast('Profile switched.'); again(200); }));

@@ -18,7 +18,7 @@ function wizard(o) {
 
   const defs = {
     hello: { label: 'Welcome', cta: 'Get started', hint: 'Enter to begin', render: () => `<div class="hello3">
-      <img id="bmark" class="hmark" data-flare=".645,.258" src="logo.svg" alt="">
+      <img id="bmark" class="hmark" data-flare=".5,.5" src="logo.svg" alt="">
       <h1 class="mega">${letters('Nova', 'mg')}</h1>
       <p class="hsub">A browser, reduced.</p>
       <ul class="pillars">

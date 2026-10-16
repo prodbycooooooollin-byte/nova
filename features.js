@@ -202,7 +202,7 @@ function initDownloads(ses, priv) {
     while (fs.existsSync(p)) p = path.join(dir, `${base} (${i++})${ext}`);
     item.setSavePath(p);
     const v = trackNormal(item, p, !!priv), url = item.getURL();
-    const shown = () => { bumpDl(); try { if (dlCfg().panel && !(C.overlayBusy && C.overlayBusy())) C.openOverlay('downloads', { auto: true }); } catch { /* window is closing */ } };
+    const shown = () => { bumpDl(); try { const st = C.settings(); if (dlCfg().panel && (st.layout === 'top' || st.compact) && !(C.overlayBusy && C.overlayBusy())) C.openOverlay('downloads', { auto: true }); } catch { /* window is closing */ } };
     if (priv || dlCfg().fast === false || !/^https?:/i.test(url)) return shown();
     try { item.pause(); v.probing = true; } catch { return shown(); }
     (async () => {

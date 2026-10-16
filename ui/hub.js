@@ -7,9 +7,10 @@ function extHub(o, d) {
   let timer = null;
   const users = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n % 1e6 ? 1 : 0).replace(/\.0$/, '')}M users` : n >= 1e3 ? `${Math.round(n / 1e3)}K users` : n > 0 ? `${n} users` : '');
   const stamp = (e) => Date.parse(e.updated) || 0;
-  o.innerHTML = `<div class="box settings lib hub"><div class="sn"><div class="brand"><img src="mark.svg" alt="">Nova<small>Hub</small></div><div class="nav" id="hnav">${CATS.map(([id, label, icon]) => `<button data-c="${id}">${ic(icon)}<span>${label}</span></button>`).join('')}</div><button id="hclose" class="closebtn">${ic('x')}<span>Close</span></button></div><div class="sb" id="hb"></div></div>`;
+  o.innerHTML = `<div class="box settings lib hub"><div class="sn"><div class="brand"><img src="mark.svg" alt="">Nova<small>Hub</small></div><div class="nav" id="hnav">${CATS.map(([id, label, icon]) => `<button data-c="${id}">${ic(icon)}<span>${label}</span></button>`).join('')}</div><button id="hback" class="closebtn">${ic('sliders')}<span>Settings</span></button><button id="hclose" class="closebtn">${ic('x')}<span>Close</span></button></div><div class="sb" id="hb"></div></div>`;
   const body = $('#hb');
   $('#hclose').onclick = () => nova.cmd('closeOverlay');
+  $('#hback').onclick = () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Built in' } });
   const mark = () => o.querySelectorAll('[data-c]').forEach((b) => b.classList.toggle('on', b.dataset.c === cat));
   const isIn = (e) => (!gone.has(e.id)) && (added.has(e.id) || !!e.installed || (S.extensions || []).some((x) => x.id === e.id));
   const stars = (e) => (e.ratingCount ? `<span title="${e.rating} of 5 from ${e.ratingCount.toLocaleString()} ratings">★ ${e.rating.toFixed(1)}</span>` : '');

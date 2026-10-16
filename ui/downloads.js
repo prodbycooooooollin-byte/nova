@@ -108,3 +108,59 @@ function dlPanel(o, d) {
   if (d.auto) setTimeout(() => { if (overlay && overlay.kind === 'downloads' && !hovered && !cfgOpen) nova.cmd('closeOverlay'); }, 8000); // opened by itself: it goes away by itself
   update(); loadRecent();
 }
+
+// ---------- the downloads tray: a part of the sidebar, not a window ----------
+// While files come down it slides up above the dock with their progress; a few seconds after the last one it folds away again.
+// The download button opens and closes it by hand. With tabs on top or the compact sidebar there is no room for it: the panel above opens instead.
+const dlTray = { manual: false, dismissed: false, doneUntil: 0, lastN: 0, lastRev: -1, recent: [], st: { key: null }, built: false, timer: 0 };
+const dlTrayAvailable = () => !!(S && S.settings && S.settings.layout !== 'top' && !S.settings.compact && !S.hidden);
+function dlCfgHtml() {
+  const c = { fast: true, connections: 8, limitMBs: 0, minMB: 8, ...((S && S.settings && S.settings.downloads) || {}) };
+  const stepper = (k, v, min, max) => `<div class="stepper"><button data-cstep="-1" data-c="${k}" aria-label="Less">−</button><input type="number" min="${min}" max="${max}" data-c="${k}" value="${v}"><button data-cstep="1" data-c="${k}" aria-label="More">+</button></div>`;
+  const sw = (k, on) => `<label class="sw"><input type="checkbox" data-c="${k}" ${on ? 'checked' : ''}><i></i></label>`;
+  return `<div class="dlc"><span>Accelerate big files</span>${sw('fast', c.fast !== false)}</div><div class="dlc"><span>Connections per file</span>${stepper('connections', c.connections, 2, 16)}</div><div class="dlc"><span>Speed limit in MB/s <small>0 is none</small></span>${stepper('limitMBs', c.limitMBs, 0, 1000)}</div>`;
+}
+function bindDlCfg(root) {
+  const cur = () => ({ fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false, ...((S && S.settings && S.settings.downloads) || {}) });
+  const set = (k, v) => nova.cmd('settings', { patch: { downloads: { ...cur(), [k]: v } } });
+  root.querySelectorAll('input[data-c]').forEach((el) => (el.onchange = () => set(el.dataset.c, el.type === 'checkbox' ? el.checked : Math.min(+el.max, Math.max(+el.min, +el.value || 0)))));
+  root.querySelectorAll('[data-cstep]').forEach((b) => (b.onclick = () => { const i = b.parentElement.querySelector('input'); i.value = Math.min(+i.max, Math.max(+i.min, (+i.value || 0) + +b.dataset.cstep)); i.dispatchEvent(new Event('change')); }));
+}
+function dlToggle() {
+  if (!dlTrayAvailable()) return nova.cmd('action', { name: 'downloads' });
+  const visible = document.getElementById('dltray').classList.contains('on');
+  if (visible) { dlTray.manual = false; dlTray.dismissed = true; dlTray.doneUntil = 0; } else { dlTray.manual = true; dlTray.dismissed = false; }
+  dlTrayDraw();
+}
+function dlTrayDraw() {
+  const el = document.getElementById('dltray'); if (!el || !S) return;
+  const jobs = S.dl || [], info = S.dlInfo || {};
+  if (jobs.length > dlTray.lastN) { dlTray.dismissed = false; dlTray.doneUntil = 0; } // a new download: show the tray again
+  if (!jobs.length && dlTray.lastN > 0) { dlTray.doneUntil = Date.now() + 9000; clearTimeout(dlTray.timer); dlTray.timer = setTimeout(() => { if (typeof render === 'function') render(); }, 9200); }
+  dlTray.lastN = jobs.length;
+  const show = dlTrayAvailable() && ((jobs.length && !dlTray.dismissed) || dlTray.manual || Date.now() < dlTray.doneUntil);
+  el.classList.toggle('on', !!show);
+  if (!show) { if (dlTray.built) { el.innerHTML = ''; dlTray.built = false; dlTray.st.key = null; } return; }
+  if (!dlTray.built) {
+    dlTray.built = true; dlTray.lastRev = -1;
+    el.innerHTML = `<div class="trh"><b>Downloads</b><span id="trsum"></span><button class="ibtn sm" data-tr="all" title="All downloads">${ic('clock')}</button><button class="ibtn sm" data-tr="cfg" title="Settings">${ic('sliders')}</button><button class="ibtn sm" data-tr="hide" title="Hide">${ic('x')}</button></div><div class="dlcfg" id="trcfg" hidden></div><div class="trbody"><div class="trlive"></div><div class="trrecent"></div></div>`;
+    el.querySelectorAll('[data-tr]').forEach((b) => (b.onclick = () => {
+      const a = b.dataset.tr;
+      if (a === 'all') nova.cmd('overlay', { kind: 'library', data: { tab: 'Downloads' } });
+      else if (a === 'hide') { dlTray.manual = false; dlTray.dismissed = true; dlTray.doneUntil = 0; dlTrayDraw(); }
+      else if (a === 'cfg') { const c = document.getElementById('trcfg'); c.hidden = !c.hidden; if (!c.hidden) { c.innerHTML = dlCfgHtml(); bindDlCfg(c); } }
+    }));
+  }
+  const run = jobs.filter((j) => j.state === 'downloading' || j.state === 'queued'), speed = run.reduce((n, j) => n + j.speed, 0);
+  const sum = document.getElementById('trsum'); if (sum) sum.textContent = jobs.length ? `${jobs.length} running${speed ? ' · ' + fmtBytes(speed) + '/s' : ''}` : '';
+  paintLive(el.querySelector('.trlive'), dlTray.st, () => {});
+  if (info.rev !== dlTray.lastRev) {
+    dlTray.lastRev = info.rev;
+    nova.cmd('dlRecent', { n: 3 }).then((r) => {
+      const box = el.querySelector('.trrecent'); if (!box) return;
+      dlTray.recent = r || [];
+      box.innerHTML = dlTray.recent.map(dlDoneRow).join('');
+      bindDlRows(box, (a) => { if (a === 'remove') dlTray.lastRev = -1; });
+    });
+  }
+}

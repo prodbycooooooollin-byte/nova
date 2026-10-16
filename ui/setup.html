@@ -30,7 +30,7 @@ canvas { position:absolute; inset:0; width:100%; height:100%; }
 /* ---- welcome ---- */
 .mk { position:relative; width:118px; height:118px; margin-bottom:8px; filter:drop-shadow(0 0 26px rgba(139,125,255,.7)); }
 .mk img { position:relative; width:118px; height:118px; display:block; z-index:1; animation:logoIn 1.7s var(--ease) 1.1s both; }
-.mk .spark { position:absolute; left:64.5%; top:25.8%; width:0; height:0; z-index:2; }
+.mk .spark { position:absolute; left:50%; top:50%; width:0; height:0; z-index:2; }
 .mk .spark::before { content:''; position:absolute; left:-80px; top:-80px; width:160px; height:160px; border-radius:50%; background:radial-gradient(circle,#fff 0,rgba(255,255,255,.92) 5%,rgba(160,140,255,.6) 18%,rgba(120,100,255,0) 60%); animation:spark 1.15s ease-in forwards; }
 @keyframes spark { 0% { transform:scale(0); opacity:0; } 40% { transform:scale(.22); opacity:1; } 75% { transform:scale(.3); opacity:1; } 90% { transform:scale(.6); opacity:1; } 100% { transform:scale(2.6); opacity:0; } }
 @keyframes logoIn { from { opacity:0; transform:scale(.3) rotate(-16deg); filter:blur(26px) brightness(4); } 50% { opacity:1; } to { opacity:1; transform:none; filter:blur(0) brightness(1); } }
@@ -99,7 +99,7 @@ h2 { font-size:36px; font-weight:620; letter-spacing:-.04em; line-height:1.1; } 
 <div class="steps" id="dots"><i></i><i></i><i></i><i></i></div>
 
 <section class="view" id="v-welcome">
-  <div class="mk" data-origin data-flare=".645,.258"><img id="bmark" src="logo.svg" alt=""><div class="spark"></div></div>
+  <div class="mk" data-origin data-flare=".5,.5"><img id="bmark" src="logo.svg" alt=""><div class="spark"></div></div>
   <h1 class="word" id="word"></h1>
   <p class="tag in" style="--d:19">A browser, reduced.</p>
   <div class="acts in" style="--d:21"><button class="btn primary" id="quick"><span id="q-t">Install Nova</span><span class="arr"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></button><button class="btn ghost" id="custom">Customize</button></div>
@@ -135,7 +135,7 @@ h2 { font-size:36px; font-weight:620; letter-spacing:-.04em; line-height:1.1; } 
 </section>
 
 <section class="view" id="v-done">
-  <img class="dlogo" data-origin data-flare=".645,.258" src="logo.svg" alt="">
+  <img class="dlogo" data-origin data-flare=".5,.5" src="logo.svg" alt="">
   <h2 class="word small" id="doneword"></h2>
   <div class="sum" id="sums"></div>
   <div class="acts donebtns"><button class="btn primary" id="launch">Open Nova<span class="arr"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></button><button class="btn ghost" id="defaults">Default apps</button><button class="btn ghost" id="close2">Close</button></div>

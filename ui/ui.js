@@ -96,7 +96,9 @@ const FEATURES = [
   ['privateTabs', 'Private tabs', 'Tabs that keep no history, cookies or cache (Ctrl+Shift+N).'],
   ['passwords', 'Password saver', 'Offers to keep a login after you sign in and fills it only when you pick it, on the exact same site. Encrypted with your Windows account. Skip it if you use a password manager extension.'],
 ];
-const FEATURE_GROUPS = [['Tab tools', ['tabSearch', 'snooze', 'rewind', 'soloAudio']], ['Page tools', ['peek', 'darkPage', 'darkSite', 'cleanLinks', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate']], ['Instead of extensions', ['videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners']], ['Privacy', ['privateTabs', 'passwords']]];
+const FEATURE_GROUPS = [['Tab tools', ['tabSearch', 'snooze', 'rewind', 'soloAudio']], ['Page tools', ['peek', 'darkPage', 'cleanLinks', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate']], ['Privacy', ['privateTabs']]];
+// the jobs people usually install an extension for, built into Nova: key, the extension it replaces
+const BUILT_IN = [['darkSite', 'Dark Reader'], ['videoSpeed', 'Video Speed Controller'], ['sponsorBlock', 'SponsorBlock'], ['ytDislike', 'Return YouTube Dislike'], ['cookieBanners', 'I don’t care about cookies'], ['passwords', 'a basic password manager']];
 const ENGINES = { DuckDuckGo: 'https://duckduckgo.com/?q=%s', Google: 'https://www.google.com/search?q=%s', Brave: 'https://search.brave.com/search?q=%s', Startpage: 'https://www.startpage.com/do/search?q=%s', Ecosia: 'https://www.ecosia.org/search?q=%s', Bing: 'https://www.bing.com/search?q=%s' };
 
 let S = null, overlay = null, customJsApplied = null;
@@ -106,6 +108,7 @@ function applySettings() {
   const s = S.settings, r = document.documentElement.style;
   for (const [k, v] of Object.entries(s.theme)) r.setProperty('--' + k, v);
   { const h = s.theme.accent.replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; const L = (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255; r.setProperty('--on-accent', L > 0.62 ? '#111118' : '#ffffff'); }
+  { const h = (s.theme.bg || '#000000').replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; const L = (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255; r.setProperty('color-scheme', L < 0.5 ? 'dark' : 'light'); } // form controls and scrollbars follow the theme, not Windows
   r.setProperty('--tab-h', { compact: '32px', comfortable: '38px', spacious: '45px' }[s.density] || '38px');
   r.setProperty('--radius', s.radius + 'px'); r.setProperty('--gap', s.gap + 'px'); r.setProperty('--side', (s.compact ? 56 : s.sidebarWidth) + 'px');
   r.setProperty('--fs', s.fontSize + 'px'); r.setProperty('--font', `${s.font || "'Inter'"}, 'Inter', system-ui, sans-serif`);
@@ -143,7 +146,7 @@ function dlButton() {
   const run = jobs.filter((j) => j.state === 'downloading' || j.state === 'queued'), size = jobs.reduce((n, j) => n + j.size, 0), got = jobs.reduce((n, j) => n + j.received, 0), speed = run.reduce((n, j) => n + j.speed, 0);
   const pct = size ? Math.min(1, got / size) : 0, busy = jobs.length > 0, fresh = !busy && Date.now() - (info.doneAt || 0) < 60000;
   const title = busy ? `${jobs.length} download${jobs.length > 1 ? 's' : ''}${speed ? ' · ' + fmtBytes(speed) + '/s' : ''}: click for details` : 'Downloads';
-  return `<button class="ibtn dlbtn ${busy ? 'busy' : ''} ${fresh ? 'fresh' : ''}" data-do="downloads" title="${title}"><svg class="ring" viewBox="0 0 32 32"><circle class="track" cx="16" cy="16" r="14"/>${busy ? `<circle class="val" cx="16" cy="16" r="14" stroke-dasharray="${(pct * 87.96).toFixed(1)} 100"/>` : ''}</svg>${ic(fresh ? 'check' : 'download')}</button>`;
+  return `<button class="ibtn dlbtn ${busy ? 'busy' : ''} ${fresh ? 'fresh' : ''}" data-do="downloads" title="${title}"><svg class="dring" viewBox="0 0 32 32"><circle class="track" cx="16" cy="16" r="14"/>${busy ? `<circle class="val" cx="16" cy="16" r="14" stroke-dasharray="${(pct * 87.96).toFixed(1)} 100"/>` : ''}</svg>${ic(fresh ? 'check' : 'download')}</button>`;
 }
 function render() {
   if (!S) return;
@@ -171,11 +174,10 @@ function render() {
   $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
   const bud = S.budget, pct = bud.enabled && bud.cap ? Math.min(100, Math.round(bud.used / bud.cap * 100)) : 0;
   const exts = (S.extensions || []).filter((e) => e.popup).slice(0, 6).map((e) => `<button class="ibtn" title="${esc(e.name)}" data-extpop="${e.id}">${e.icon ? `<img src="${e.icon}" width="16" height="16" style="border-radius:4px">` : ic('box')}</button>`).join('');
-  $('#tools').innerHTML = hubButton() + (exts ? `<div class="exts">${exts}</div>` : '')
-    + (S.updateReady ? `<button class="upd" data-do="update" title="Restart to install the update">Update</button>` : '')
-    + (S.settings.adblock ? (() => { const st = (S.adblock || {}).state; return `<span class="chip ${st === 'failed' ? 'warn' : ''}" title="${st === 'failed' ? 'The ad blocker is not loaded. Open Settings > Search & privacy to retry.' : st === 'loading' ? 'The ad blocker is loading its filter lists' : 'Ads and trackers blocked'}">${ic('shield')}<b>${st === 'failed' ? '!' : st === 'loading' ? '…' : S.blockedCount}</b></span>`; })() : '')
-    + (bud.enabled ? `<button class="ram ${bud.over || pct >= 90 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova of your ${bud.cap} MB budget"><span class="lab">RAM</span><b>${bud.used}</b><small>MB</small><i style="width:${pct}%"></i></button>` : '')
-    + `<span class="grow"></span>` + ibtn('bookmark', 'Library: bookmarks, history, downloads (Ctrl+H)', 'library') + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings');
+  dlTrayDraw();
+  // two rows: what Nova tells you (updates, blocked ads, memory) above, the buttons below, so nothing wraps
+  const chips = (S.updateReady ? `<button class="upd" data-do="update" title="Restart to install the update">Update</button>` : '') + (S.settings.adblock ? (() => { const st = (S.adblock || {}).state; return `<span class="chip ${st === 'failed' ? 'warn' : ''}" title="${st === 'failed' ? 'The ad blocker is not loaded. Open Settings > Search & privacy to retry.' : st === 'loading' ? 'The ad blocker is loading its filter lists' : 'Ads and trackers blocked'}">${ic('shield')}<b>${st === 'failed' ? '!' : st === 'loading' ? '…' : S.blockedCount}</b></span>`; })() : '') + (bud.enabled ? `<button class="ram ${bud.over || pct >= 90 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova of your ${bud.cap} MB budget"><span class="lab">RAM</span><b>${bud.used}</b><small>MB</small><i style="width:${pct}%"></i></button>` : '');
+  $('#tools').innerHTML = (chips ? `<div class="trow st">${chips}</div>` : '') + `<div class="trow ac">` + hubButton() + (exts ? `<div class="exts">${exts}</div>` : '') + `<span class="grow"></span>` + ibtn('bookmark', 'Library: bookmarks, history, downloads (Ctrl+H)', 'library') + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings') + `</div>`;
 }
 setInterval(() => { if (S) { S.now = Date.now(); render(); } }, 20000);
 
@@ -185,7 +187,7 @@ document.addEventListener('click', (e) => {
   const d = e.target.closest('[data-do]')?.dataset.do;
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
-    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: A('downloads'), hub: A('hub'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
+    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: () => dlToggle(), hub: A('hub'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
     return m[d]?.();
   }
   if (e.target.closest('#urlbar')) return nova.cmd('action', { name: 'go' });
@@ -226,6 +228,7 @@ function tabMenu(id) {
     { label: t.pinned ? 'Unpin tab' : 'Pin tab', run: () => nova.cmd('pin', { id }) },
     { label: id === S.split ? 'Close split view' : 'Open in split view', run: () => nova.cmd('split', { id }) },
     { label: 'Put to sleep', run: () => nova.cmd('sleep', { id }) },
+    ...(S.tabs.length > 1 ? [{ label: 'Move to new window', run: () => nova.cmd('detachTab', { id, force: true }) }] : []),
     ...(others.length ? ['-', { label: 'Move to space' }, ...others.map((s) => ({ label: s.name, run: () => nova.cmd('moveToSpace', { id, spaceId: s.id }) }))] : []),
     '-', { label: 'Archive to Stardust', run: () => nova.cmd('archive', { id }) }, { label: 'Close tab', run: () => nova.cmd('close', { id }) },
   ];

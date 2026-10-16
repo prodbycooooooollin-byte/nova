@@ -29,4 +29,4 @@ document.addEventListener('dragover', (e) => {
   clearDrop(); t.classList.add(after ? 'drop-after' : 'drop-before'); dropInfo = { target: +t.dataset.tab, after };
 });
 document.addEventListener('drop', (e) => { if (dragTab === null || !dropInfo) return; e.preventDefault(); nova.cmd('reorder', { id: dragTab, ...dropInfo }); });
-document.addEventListener('dragend', () => { dragTab = null; dropInfo = null; clearDrop(); document.querySelectorAll('.dragging').forEach((x) => x.classList.remove('dragging')); if (deferredRender) { deferredRender = false; render(); } });
+document.addEventListener('dragend', (e) => { const out = dragTab !== null && e.dataTransfer && e.dataTransfer.dropEffect === 'none' ? dragTab : null; dragTab = null; dropInfo = null; clearDrop(); document.querySelectorAll('.dragging').forEach((x) => x.classList.remove('dragging')); if (deferredRender) { deferredRender = false; render(); } if (out !== null) nova.cmd('detachTab', { id: out }); }); // let go outside the window: the tab becomes a window of its own

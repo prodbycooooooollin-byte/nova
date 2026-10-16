@@ -1,5 +1,5 @@
 // Nova - minimal Chromium browser. Main process: window, tabs, spaces, sleeping/archiving, adblock.
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage, net, systemPreferences } = require('electron');
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage, net, systemPreferences, nativeTheme } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const updater = require('./updater');
@@ -32,7 +32,7 @@ const DEFAULT_KEYS = {
 // Smart sleep (Settings > Resource budget): freeze background tabs, wake them invisibly, learn per site how soon to sleep them
 const SMART = { freeze: true, freezeAfterSec: 30, softWake: true, earlySleepMin: 3, adaptive: true };
 const DEFAULTS = {
-  suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0, follow: false }, startPage: { sites: true, greeting: true },
+  suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0, follow: false }, startPage: { sites: true, greeting: true, stats: true },
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
   searchEngine: 'https://duckduckgo.com/?q=%s',
   layout: 'left', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
@@ -41,7 +41,7 @@ const DEFAULTS = {
   sleepAfterMin: 10, archiveAfterHours: 24, maxTabs: 25, dedupeTabs: true,
   adblock: true, extensions: [], keys: {}, updateFeed: '', zoom: {},
   // Optional features. Everything beyond the essentials is off until the user turns it on.
-  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false }, cache: { limitMB: 500, auto: true }, layoutBlocks: { order: [], hidden: [] },
+  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false }, cache: { limitMB: 500, auto: true }, pageScheme: 'system', layoutBlocks: { order: [], hidden: [] },
   features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, autoPip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false, videoSpeed: false, sponsorBlock: false, ytDislike: false, cookieBanners: false, passwords: false },
   darkSites: [],
   bookmarkNames: true, // false: the bookmarks bar shows only the small icons
@@ -77,12 +77,15 @@ try {
   if (cacheMB > 0) app.commandLine.appendSwitch('disk-cache-size', String(Math.round(cacheMB * 1048576)));
 } catch {}
 
+// the colour scheme websites see (prefers-color-scheme): follow Windows, or always light, or always dark
+function applyScheme() { try { nativeTheme.themeSource = ['light', 'dark'].includes(settings.pageScheme) ? settings.pageScheme : 'system'; } catch { /* not available */ } }
 function loadSettings() {
   const s = readJson('settings.json', {});
   settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, downloads: { ...DEFAULTS.downloads, ...(s.downloads || {}) }, cache: { ...DEFAULTS.cache, ...(s.cache || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, wallpaper: { ...DEFAULTS.wallpaper, ...(s.wallpaper || {}) }, startPage: { ...DEFAULTS.startPage, ...(s.startPage || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
   if (!['', 'orbit', 'stars', 'grid'].includes(settings.wallpaper.preset)) settings.wallpaper.preset = 'orbit'; // the old colour-blob wallpapers are gone
   if (!s.budgetV2 && s.budget) { const old = s.budget.ramMB; settings.budget.ramMB = { 1024: 800, 2048: 1500, 4096: 3000 }[old] || Math.max(400, Math.round((old || 2048) * 0.75 / 50) * 50); } // limits now count real (private) memory, which is smaller than the old figure
   settings.budgetV2 = true;
+  applyScheme();
 }
 const saveSettings = () => writeJson('settings.json', settings);
 
@@ -213,9 +216,9 @@ function wake(t) {
   wc.on('media-started-playing', () => { if (!t.playing) { t.playing = true; layout(); } });
   wc.on('media-paused', () => { if (t.playing) { t.playing = false; layout(); } });
   wc.on('focus', () => { if (state.activeTab !== t.id && visibleTabs().includes(t)) activate(t.id, true); });
-  wc.on('before-input-event', (e, input) => handleKey(e, input));
-  wc.on('enter-html-full-screen', () => { pageFullscreen = true; win.setFullScreen(true); layout(); });
-  wc.on('leave-html-full-screen', () => { pageFullscreen = false; win.setFullScreen(false); layout(); });
+  wc.on('before-input-event', (e, input) => handleKey(e, input, wc));
+  wc.on('enter-html-full-screen', () => { const d = detachedByWc(wc); if (d) { d.win.setFullScreen(true); return; } pageFullscreen = true; win.setFullScreen(true); layout(); });
+  wc.on('leave-html-full-screen', () => { const d = detachedByWc(wc); if (d) { d.win.setFullScreen(false); return; } pageFullscreen = false; win.setFullScreen(false); layout(); });
   wc.on('found-in-page', (_e, r) => ui.webContents.send('found', r));
   wc.setWindowOpenHandler(({ url, disposition, features }) => {
     // window.open(...) with a size is a login popup: it needs its opener, so it stays a real window
@@ -223,13 +226,17 @@ function wake(t) {
       const num = (k) => Number(new RegExp(k + '=(\d+)').exec(features)?.[1]) || undefined;
       return { action: 'allow', overrideBrowserWindowOptions: { width: num('width') || 520, height: num('height') || 700, autoHideMenuBar: true, backgroundColor: settings.theme.bg, icon: path.join(__dirname, 'build', 'icon.ico'), webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } } };
     }
-    openUrl(url, { background: false, afterId: t.id, private: t.private }); return { action: 'deny' };
+    const quiet = disposition === 'background-tab'; // middle click or ctrl+click on a link: it opens behind, you stay where you are
+    openUrl(url, { background: quiet, forceNew: quiet, afterId: t.id, private: t.private });
+    if (!quiet && detachedByWc(wc)) { try { win.show(); win.focus(); } catch { /* window closing */ } } // a link from a tab in its own window opens in the main window
+    return { action: 'deny' };
   });
   wc.on('context-menu', (_e, p) => contextMenu(wc, p));
   wc.on('did-finish-load', () => {
     applyPageCss(wc); if (t.dark) features.applyDark(t);
     if (isHome(wc.getURL())) pushHome(wc);
     if (isHome(wc.getURL()) && !t.private) wc.executeJavaScript(`window.novaSites && window.novaSites(${JSON.stringify(settings.keepHistory ? features.topSites(8) : [])})`).catch(() => {});
+    if (isHome(wc.getURL())) { let b = { used: 0 }; try { b = budget.get(); } catch { /* not ready */ } wc.executeJavaScript(`window.novaStats && window.novaStats(${JSON.stringify({ used: b.used || 0, cap: settings.budget.enabled ? settings.budget.ramMB : 0, blocked: blockedCount || 0, asleep: [...tabs.values()].filter((x) => !x.view).length })})`).catch(() => {}); }
   });
   persona.ready(wc).then(() => { if (!wc.isDestroyed()) wc.loadURL(isHome(t.url) ? homeUrl() : t.url).catch(() => {}); });
 }
@@ -242,7 +249,7 @@ function wallImage() {
 }
 function homeTheme() {
   const w = settings.wallpaper, t = settings.theme;
-  return { bg: t.page, chrome: t.bg, accent: t.accent, text: t.text, dim: t.dim, wall: w.mode === 'none' ? '' : w.preset, dim_amount: w.dim, blur: w.blur, image: w.mode === 'image' ? wallImage() : '', stars: w.mode !== 'image', fx: !!settings.effects, sites: settings.startPage.sites, greeting: settings.startPage.greeting };
+  return { bg: t.page, chrome: t.bg, accent: t.accent, text: t.text, dim: t.dim, wall: w.mode === 'none' ? '' : w.preset, dim_amount: w.dim, blur: w.blur, image: w.mode === 'image' ? wallImage() : '', stars: w.mode !== 'image', fx: !!settings.effects, sites: settings.startPage.sites, greeting: settings.startPage.greeting, stats: settings.startPage.stats !== false };
 }
 function pushHome(wc) {
   const js = `window.novaTheme && window.novaTheme(${JSON.stringify(homeTheme())})`;
@@ -417,6 +424,83 @@ function idlePolicy() {
   push();
 }
 
+// ---------- tabs in windows of their own: drag a tab out of the window, or choose "Move to new window" ----------
+// The page keeps its session, its history and what it is showing. The new window has a native title bar and a slim toolbar (ui/mini.html)
+// with back, forward, reload, the address and "Back to Nova". Links that open new tabs open them in the main window.
+const detached = new Map(); // BaseWindow id -> { t, win, bar, evs, send, keep }
+const detachedByWc = (wc) => { for (const d of detached.values()) if (d.t.view && !d.t.view.webContents.isDestroyed() && d.t.view.webContents === wc) return d; return null; };
+const MINI_H = 46;
+function detachTab(id, force) {
+  const t = tabs.get(id); if (!t || !win || win.isDestroyed()) return;
+  const cur = screen.getCursorScreenPoint(), b = win.getBounds();
+  if (!force && cur.x >= b.x - 4 && cur.x <= b.x + b.width + 4 && cur.y >= b.y - 4 && cur.y <= b.y + b.height + 4) return; // let go inside Nova: nothing to do
+  if (tabs.size < 2) return toast('That is the only tab. Open another one first.');
+  if (!t.view) wake(t);
+  const wasActive = state.activeTab === id, list = [...tabs.values()].filter((x) => x.spaceId === t.spaceId), idx = list.indexOf(t);
+  if (state.split === id) state.split = null;
+  if (t.attached) { try { win.contentView.removeChildView(t.view); } catch { /* already gone */ } t.attached = false; }
+  tabs.delete(id);
+  if (wasActive) { const rest = [...tabs.values()].filter((x) => x.spaceId === t.spaceId), next = rest[Math.min(idx, rest.length - 1)] || [...tabs.values()][0]; if (next) activate(next.id); }
+  const wa = screen.getDisplayNearestPoint(cur).workArea, W = Math.min(1100, wa.width - 60), H = Math.min(760, wa.height - 60);
+  const x = force ? b.x + 60 : Math.round(cur.x - W / 2), y = force ? b.y + 60 : Math.round(cur.y - 18);
+  const bw = new BaseWindow({ x: Math.max(wa.x, Math.min(x, wa.x + wa.width - W)), y: Math.max(wa.y, Math.min(y, wa.y + wa.height - H)), width: W, height: H, minWidth: 480, minHeight: 320, backgroundColor: settings.theme.page, title: t.title || 'Nova', icon: path.join(__dirname, 'build', 'icon.ico') });
+  const bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'mini-preload.js'), contextIsolation: true, sandbox: true } });
+  bar.setBackgroundColor(settings.theme.bg);
+  bw.contentView.addChildView(bar); bw.contentView.addChildView(t.view);
+  const wc = t.view.webContents;
+  const lay = () => { if (bw.isDestroyed()) return; const [w, h] = bw.getContentSize(), mh = bw.isFullScreen() ? 0 : MINI_H; bar.setBounds({ x: 0, y: 0, width: w, height: mh }); t.view.setBounds({ x: 0, y: mh, width: w, height: Math.max(0, h - mh) }); };
+  const send = () => {
+    if (bw.isDestroyed() || bar.webContents.isDestroyed() || wc.isDestroyed()) return;
+    bar.webContents.send('mini:state', { url: isHome(wc.getURL()) ? '' : wc.getURL(), title: wc.getTitle(), back: wc.navigationHistory.canGoBack(), forward: wc.navigationHistory.canGoForward(), loading: wc.isLoading() });
+    try { bw.setTitle(isHome(wc.getURL()) ? 'New tab' : wc.getTitle() || 'Nova'); } catch { /* closing */ }
+  };
+  const evs = ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading'];
+  evs.forEach((ev) => wc.on(ev, send));
+  bw.on('resize', lay); bw.on('enter-full-screen', lay); bw.on('leave-full-screen', lay);
+  const ent = { t, win: bw, bar, evs, send, keep: false };
+  detached.set(bw.id, ent);
+  const q = { bg: settings.theme.bg, surface: settings.theme.surface2, text: settings.theme.text, dim: settings.theme.dim, accent: settings.theme.accent };
+  bar.webContents.loadFile(path.join(__dirname, 'ui', 'mini.html'), { query: q }).then(() => { lay(); send(); }).catch(() => {});
+  lay();
+  bw.on('closed', () => {
+    detached.delete(bw.id);
+    if (!wc.isDestroyed()) { evs.forEach((ev) => { try { wc.removeListener(ev, send); } catch { /* gone */ } }); if (!ent.keep) { try { wc.close(); } catch { /* gone */ } } }
+  });
+  push();
+}
+function attachTab(ent) {
+  const t = ent.t, wc = t.view && t.view.webContents;
+  if (!wc || wc.isDestroyed()) return ent.win.close();
+  ent.keep = true;
+  try { ent.win.contentView.removeChildView(t.view); } catch { /* gone */ }
+  ent.win.close();
+  t.attached = false; t.spaceId = state.spaces.some((s) => s.id === t.spaceId) ? t.spaceId : state.activeSpace;
+  tabs.set(t.id, t); activate(t.id);
+  try { win.show(); win.focus(); } catch { /* closing */ }
+}
+ipcMain.on('mini:cmd', (e, name, arg) => {
+  const ent = [...detached.values()].find((d) => d.bar.webContents === e.sender);
+  if (!ent || ent.win.isDestroyed()) return;
+  const wc = ent.t.view && ent.t.view.webContents; if (!wc || wc.isDestroyed()) return;
+  if (name === 'back') wc.navigationHistory.goBack(); else if (name === 'forward') wc.navigationHistory.goForward();
+  else if (name === 'reload') { if (wc.isLoading()) wc.stop(); else wc.reload(); }
+  else if (name === 'go') wc.loadURL(normalizeInput(String(arg || ''))).catch(() => {});
+  else if (name === 'return') attachTab(ent);
+});
+function detachedKey(e, input, ent) {
+  if (input.type !== 'keyDown') return;
+  const a = accel(input), wc = ent.t.view.webContents;
+  if (a === 'Ctrl+W') { e.preventDefault(); ent.win.close(); }
+  else if (a === 'Ctrl+R' || a === 'F5') { e.preventDefault(); wc.reload(); }
+  else if (a === 'Alt+ArrowLeft') { e.preventDefault(); wc.navigationHistory.goBack(); }
+  else if (a === 'Alt+ArrowRight') { e.preventDefault(); wc.navigationHistory.goForward(); }
+  else if (a === 'Ctrl+L' || a === 'Ctrl+K') { e.preventDefault(); ent.bar.webContents.focus(); ent.bar.webContents.send('mini:focus'); }
+  else if (a === 'Ctrl+=' || a === 'Ctrl++') { e.preventDefault(); wc.setZoomLevel(wc.getZoomLevel() + 0.5); }
+  else if (a === 'Ctrl+-') { e.preventDefault(); wc.setZoomLevel(wc.getZoomLevel() - 0.5); }
+  else if (a === 'Ctrl+0') { e.preventDefault(); wc.setZoomLevel(0); }
+  else if (a === 'F12') { e.preventDefault(); wc.toggleDevTools(); }
+}
+
 // ---------- what's new: the first start after an update shows the notes of what came with it ----------
 const semNewer = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
 function whatsNew() {
@@ -493,7 +577,8 @@ function accel(input) {
   return parts.join('+');
 }
 let keysPaused = false; // true while the Shortcuts page records a new key combination
-function handleKey(e, input) {
+function handleKey(e, input, src) {
+  if (src) { const d = detachedByWc(src); if (d) return detachedKey(e, input, d); }
   if (input.type !== 'keyDown' || keysPaused) return;
   const a = accel(input);
   if (!a || a === 'Escape') return;
@@ -792,6 +877,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         if (a.patch.keys) settings.keys = { ...DEFAULT_KEYS, ...a.patch.keys };
         if ('adblock' in a.patch) setAdblock(a.patch.adblock);
         if ('features' in a.patch) { darkmode.sync(); webtools.sync(); passwords.sync(); }
+        if ('pageScheme' in a.patch) applyScheme();
         if ('darkSites' in a.patch) darkmode.refreshAll();
         if ('lowIsolation' in a.patch) toast('Restart Nova to apply this change.');
         if (a.patch.budget && !settings.budget.freeze) for (const x of tabs.values()) if (x.frozen) sleeper.thaw(x);
@@ -816,6 +902,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'checkUpdate': updater.check(settings.updateFeed || updater.defaultFeed, { manual: true }); break;
       case 'applyUpdate': if (await updater.apply()) app.quit(); break;
       case 'keysPause': keysPaused = !!a.on; break;
+      case 'detachTab': detachTab(a.id, !!a.force); break;
       case 'reorder': { const arr = [...tabs.entries()], i = arr.findIndex(([k]) => k === a.id); if (i < 0) break; const [item] = arr.splice(i, 1); const j = arr.findIndex(([k]) => k === a.target); arr.splice(j < 0 ? arr.length : a.after ? j + 1 : j, 0, item); tabs.clear(); arr.forEach(([k, v]) => tabs.set(k, v)); push(); } break;
       case 'pickWallpaper': return pickWallpaper();
       case 'wallColors': return wallColors();
