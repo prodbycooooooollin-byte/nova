@@ -153,7 +153,7 @@ const show = (id) => { document.querySelectorAll('.view').forEach((v) => v.class
 let info, dir, profile = 'nova', launchAfter = true, sky = null;
 $('#word').innerHTML = [...'Nova'].map((c, i) => `<span style="--i:${i}">${c}</span>`).join('');
 const mark = $('#bmark');
-sky = NovaSky($('#sky'), { origin: () => { const r = mark.getBoundingClientRect(), h = $('.hero').getBoundingClientRect(); return { x: r.left - h.left + r.width / 2, y: r.top - h.top + r.height / 2 }; } });
+sky = NovaSky($('#sky'), { fps: 30, origin: () => { const r = mark.getBoundingClientRect(), h = $('.hero').getBoundingClientRect(); return { x: r.left - h.left + r.width / 2, y: r.top - h.top + r.height / 2 }; } });
 
 const MSGS = [[0, 'Getting ready'], [.06, 'Unpacking the browser engine'], [.45, 'Copying interface files'], [.88, 'Creating shortcuts'], [.96, 'Final touches']];
 const PROFILES = [['ultra', 'Ultra Performance', 'Nothing but search and tabs.', 'M13 2 3 14h9l-1 8 10-12h-9z'], ['nova', 'Nova', 'Light, with the essentials.', 'M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z'], ['complete', 'Complete', 'Everything on, nothing held back.', 'm12 2 10 5-10 5L2 7zM2 17l10 5 10-5M2 12l10 5 10-5']];

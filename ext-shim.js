@@ -49,6 +49,38 @@ function novaPatchChrome(c) {
   def('windows', { get: (...a) => done(a, win), getCurrent: (...a) => done(a, win), getLastFocused: (...a) => done(a, win), getAll: (...a) => done(a, [win]), create: (...a) => done(a, win), update: (...a) => done(a, win), remove: (...a) => done(a, undefined), onCreated: evt(), onRemoved: evt(), onFocusChanged: evt(), onBoundsChanged: evt() });
   const konst = (o, vals) => { if (!o) return; for (const [k, v] of Object.entries(vals)) if (o[k] === undefined) { try { o[k] = v; } catch { try { Object.defineProperty(o, k, { value: v, configurable: true }); } catch {} } } };
   konst(c.windows, { WINDOW_ID_NONE: -1, WINDOW_ID_CURRENT: -2 }); konst(c.tabs, { TAB_ID_NONE: -1 });
+  // extension: the permission questions some extensions ask on start-up (Dark Reader's popup waits for the answer)
+  if (!c.extension) def('extension', {});
+  if (c.extension) {
+    const ext = c.extension;
+    for (const [n, v] of Object.entries({ isAllowedFileSchemeAccess: true, isAllowedIncognitoAccess: false })) if (typeof ext[n] !== 'function') { try { ext[n] = (...a) => done(a, v); } catch (e) { /* read-only */ } }
+    if (typeof ext.getViews !== 'function') { try { ext.getViews = () => []; } catch (e) { /* read-only */ } }
+  }
+  // storage: Electron only has the local area. Extensions such as Dark Reader and Bitwarden read their settings from storage.sync, so it
+  // becomes a second name for local, and the missing managed/session areas get small stand-ins.
+  if (c.storage) {
+    const st = c.storage;
+    if (st.local) { // Electron has a stub here whose methods answer "not available": point it at the local area instead
+      let done1 = false;
+      try { Object.defineProperty(st, 'sync', { value: st.local, configurable: true, enumerable: true }); done1 = st.sync === st.local; } catch (e) { /* not replaceable */ }
+      if (!done1) { try { if (!st.sync) st.sync = {}; for (const m of ['get', 'set', 'remove', 'clear', 'getBytesInUse', 'getKeys', 'setAccessLevel']) if (typeof st.local[m] === 'function') st.sync[m] = st.local[m].bind(st.local); if (!st.sync.onChanged) st.sync.onChanged = evt(); } catch (e) { /* give up */ } }
+      try { for (const [k, v] of Object.entries({ QUOTA_BYTES: 102400, QUOTA_BYTES_PER_ITEM: 8192, MAX_ITEMS: 512, MAX_WRITE_OPERATIONS_PER_HOUR: 1800, MAX_WRITE_OPERATIONS_PER_MINUTE: 120 })) if (st.sync[k] === undefined) st.sync[k] = v; } catch (e) { /* ignore */ }
+    }
+    { const managed = { get: (...a) => done(a, {}), getKeys: (...a) => done(a, []), getBytesInUse: (...a) => done(a, 0), onChanged: evt() }; // Electron's own managed area answers "not available"
+      try { Object.defineProperty(st, 'managed', { value: managed, configurable: true, enumerable: true }); } catch (e) { try { st.managed = managed; } catch (e2) { /* read-only */ } } }
+    if (!st.session) {
+      const mem = new Map(), changed = evt();
+      const pick = (keys) => { const out = {}; if (keys == null) { mem.forEach((v, k) => { out[k] = v; }); return out; } const list = typeof keys === 'string' ? [keys] : Array.isArray(keys) ? keys : Object.keys(keys); for (const k of list) if (mem.has(k)) out[k] = mem.get(k); else if (keys && typeof keys === 'object' && !Array.isArray(keys)) out[k] = keys[k]; return out; };
+      try { st.session = { get: (...a) => done(a, pick(typeof a[0] === 'function' ? null : a[0])), set: (...a) => { const ch = {}; for (const [k, v] of Object.entries(a[0] || {})) { ch[k] = { oldValue: mem.get(k), newValue: v }; mem.set(k, v); } changed._fire(ch, 'session'); return done(a, undefined); }, remove: (...a) => { for (const k of [].concat(a[0])) mem.delete(k); return done(a, undefined); }, clear: (...a) => { mem.clear(); return done(a, undefined); }, getBytesInUse: (...a) => done(a, 0), onChanged: changed }; } catch (e) { /* read-only */ }
+    }
+  }
+  // tabs: the worker side of Electron has no tabs.create/update/...: opening options pages is skipped instead of crashing the extension
+  if (c.tabs) {
+    const fakeTab = (p) => ({ id: -1, index: 0, windowId: 1, active: true, pinned: false, highlighted: true, incognito: false, url: (p && p.url) || '', title: '' });
+    for (const [n, fn] of Object.entries({ create: (p) => fakeTab(p), update: (_id, p) => fakeTab(typeof _id === 'object' ? _id : p), remove: () => undefined, reload: () => undefined, duplicate: () => fakeTab(), get: () => fakeTab(), getCurrent: () => undefined, query: () => [], sendMessage: () => undefined, goBack: () => undefined, goForward: () => undefined, move: () => [], group: () => 0, ungroup: () => undefined, discard: () => undefined, captureVisibleTab: () => '' })) {
+      if (typeof c.tabs[n] !== 'function') { try { c.tabs[n] = (...a) => { const cb = a[a.length - 1]; const v = fn(...a.filter((x) => typeof x !== 'function')); if (typeof cb === 'function') { try { cb(v); } catch (e) { /* ignore */ } return undefined; } return Promise.resolve(v); }; } catch (e) { /* read-only */ } }
+    }
+  }
   // namespaces that exist but lack events extensions subscribe to at start-up
   const events = { tabs: ['onCreated', 'onUpdated', 'onActivated', 'onRemoved', 'onReplaced', 'onMoved', 'onAttached', 'onDetached', 'onHighlighted', 'onZoomChange'], windows: ['onCreated', 'onRemoved', 'onFocusChanged', 'onBoundsChanged'], runtime: ['onInstalled', 'onStartup', 'onSuspend', 'onSuspendCanceled', 'onConnect', 'onConnectExternal', 'onMessage', 'onMessageExternal', 'onUpdateAvailable', 'onRestartRequired', 'onBrowserUpdateAvailable'], storage: ['onChanged'], contextMenus: ['onClicked'], webNavigation: ['onBeforeNavigate', 'onCommitted', 'onCompleted', 'onDOMContentLoaded', 'onCreatedNavigationTarget', 'onErrorOccurred', 'onHistoryStateUpdated', 'onReferenceFragmentUpdated', 'onTabReplaced'], webRequest: ['onBeforeRequest', 'onBeforeSendHeaders', 'onSendHeaders', 'onHeadersReceived', 'onAuthRequired', 'onResponseStarted', 'onBeforeRedirect', 'onCompleted', 'onErrorOccurred'], cookies: ['onChanged'], downloads: ['onCreated', 'onChanged', 'onErased', 'onDeterminingFilename'], management: ['onInstalled', 'onUninstalled', 'onEnabled', 'onDisabled'] };
   for (const [ns, names] of Object.entries(events)) { const o = c[ns]; if (!o) continue; for (const n of names) { if (!o[n]) { try { o[n] = evt(); } catch { try { Object.defineProperty(o, n, { value: evt(), configurable: true }); } catch {} } } } }

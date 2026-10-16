@@ -23,7 +23,7 @@ function bindInstall(root, redraw) {
 function extensionsHtml() {
   const list = S.extensions || [];
   return (list.length ? `<div class="group">${list.map((e) => `<div class="row"><div class="l" style="display:flex;gap:12px;align-items:center">${e.icon ? `<img src="${e.icon}" width="24" height="24" style="border-radius:6px">` : '<span class="fav" style="background:var(--surface2)">+</span>'}<div>${esc(e.name)}<small>Version ${esc(e.version)}</small></div></div><button class="btn danger" data-rmext="${esc(e.id)}">Remove</button></div>`).join('')}</div>` : '<p>No extensions yet.</p>')
-    + '<h4>Suggested, one click</h4>' + catalogHtml()
+    + `<div class="hubbanner"><span class="tile big">${ic('box')}</span><div><b>Extension hub</b><small>Hand-picked extensions that are checked to start cleanly in Nova: password managers, YouTube tools, privacy helpers and more.</small></div><button class="btn primary" id="openhub">Open the hub</button></div>`
     + `<h4>Install from the Chrome Web Store</h4><div class="group"><div class="row"><div class="l">Paste a Web Store link or extension ID<small>Nova downloads it and installs it right here.</small></div><div style="display:flex;gap:8px"><input type="text" id="storeid" placeholder="https://chromewebstore.google.com/detail/…" style="width:230px"><button class="btn primary" id="storego">Install</button></div></div></div>`
     + '<p style="margin-top:12px;font-size:12px">Nova runs Chromium extensions, but Electron implements only part of the Chrome extension API. Simple extensions work best; if one misbehaves, remove it. <a href="#" id="unpacked" style="color:var(--accent)">Load an unpacked folder</a></p>';
 }
@@ -31,6 +31,7 @@ function bindExtensions(root, redraw) {
   bindInstall(root, redraw);
   root.querySelectorAll('[data-rmext]').forEach((b) => (b.onclick = async () => { await nova.cmd('removeExt', { id: b.dataset.rmext }); setTimeout(redraw, 200); }));
   const go = $('#storego'); if (go) go.onclick = async () => { const v = $('#storeid').value.trim(); if (!v) return; go.textContent = 'Installing'; const r = await nova.cmd('installExt', { id: v }); toast(r.ok ? `${r.name} is installed and ready.` : `Could not install: ${r.error}`); setTimeout(redraw, 200); };
+  const oh = $('#openhub'); if (oh) oh.onclick = () => nova.cmd('action', { name: 'hub' });
   const up = $('#unpacked'); if (up) up.onclick = (e) => { e.preventDefault(); nova.cmd('loadExtension'); };
 }
 // Move in: pick another browser, tick what to bring over, watch it happen.

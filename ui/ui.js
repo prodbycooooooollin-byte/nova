@@ -62,7 +62,7 @@ const ACTIONS = {
   newTab: 'New tab', go: 'Address and search bar', closeTab: 'Close tab', reopenTab: 'Reopen closed tab', nextTab: 'Next tab', prevTab: 'Previous tab',
   overview: 'Tab overview', reload: 'Reload', back: 'Back', forward: 'Forward', toggleSidebar: 'Toggle sidebar', focusMode: 'Focus mode',
   find: 'Find in page', settings: 'Settings', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Reset zoom', devtools: 'Developer tools', pinTab: 'Pin or unpin tab',
-  history: 'History', downloads: 'Downloads', bookmarks: 'Bookmarks', cleanUp: 'Clean up tabs', screenshot: 'Take screenshot', privateTab: 'New private tab', space1: 'Space 1', space2: 'Space 2', space3: 'Space 3', space4: 'Space 4', space5: 'Space 5',
+  hub: 'Extension hub', history: 'History', downloads: 'Downloads', bookmarks: 'Bookmarks', cleanUp: 'Clean up tabs', screenshot: 'Take screenshot', privateTab: 'New private tab', space1: 'Space 1', space2: 'Space 2', space3: 'Space 3', space4: 'Space 4', space5: 'Space 5',
 };
 const FEATURES = [
   ['tabSearch', 'Search inside open tabs', 'Start a Ctrl+K query with ? to find text on any open page.'],
@@ -91,7 +91,7 @@ function applySettings() {
   r.setProperty('--tab-h', { compact: '32px', comfortable: '38px', spacious: '45px' }[s.density] || '38px');
   r.setProperty('--radius', s.radius + 'px'); r.setProperty('--gap', s.gap + 'px'); r.setProperty('--side', (s.compact ? 56 : s.sidebarWidth) + 'px');
   r.setProperty('--fs', s.fontSize + 'px'); r.setProperty('--font', `${s.font || "'Inter'"}, 'Inter', system-ui, sans-serif`);
-  $('#app').className = `layout-${s.layout}` + (s.compact ? ' compact' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects');
+  $('#app').className = `layout-${s.layout}` + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects');
   $('#user-css').textContent = s.customCss || '';
   if (s.customJs !== customJsApplied) {
     customJsApplied = s.customJs;
@@ -126,6 +126,7 @@ function render() {
   }
   $('#urlbar').innerHTML = `${ic(icon)}<span id="url-text">${label}</span>${cur?.bookmarked ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
 
+  $('#bmbar').innerHTML = (S.bar || []).length ? S.bar.map((b) => `<button class="bmk" data-bm="${esc(b.url)}" title="${esc(b.title || b.url)}">${b.icon ? `<img src="${b.icon}" alt="">` : ic('globe')}<span>${esc(b.title || hostOf(b.url))}</span></button>`).join('') + `<button class="bmk more" data-do="bookmarks" title="All bookmarks (Ctrl+Shift+O)">${ic('fwd')}</button>` : '';
   const tabs = spaceTabs(), maxAge = (S.settings.archiveAfterHours || 24) * 3600e3;
   $('#pins').innerHTML = tabs.filter((t) => t.pinned).map((t) => `<div class="pin ${t.id === S.activeTab ? 'active' : ''}" data-tab="${t.id}" title="${esc(t.title)}">${favHtml(t)}<button class="pinx" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`).join('');
   const plain = tabs.filter((t) => !t.pinned), total = S.tabs.length, max = S.settings.maxTabs;
@@ -134,13 +135,13 @@ function render() {
     const idle = t.id === S.activeTab ? 0 : Math.min(1, (S.now - t.lastActive) / maxAge);
     return `<div draggable="true" class="tab ${t.id === S.activeTab ? 'active' : ''} ${t.asleep ? 'asleep' : ''} ${t.id === S.split ? 'split' : ''} ${t.private ? 'private' : ''}" data-tab="${t.id}" style="--idle:${(1 - idle * 0.45).toFixed(2)}" title="${esc(t.title)}${t.url === HOME ? '' : '\n' + esc(t.url)}">
       ${favHtml(t)}<span class="t">${esc(t.title || 'New tab')}</span>${t.asleep ? `<span class="zz" title="Asleep: reloads when opened">${ic('moon')}</span>` : ''}${t.audible || t.muted ? `<button class="aud" data-mute="${t.id}" title="${t.muted ? 'Unmute' : 'Mute'}">${ic(t.muted ? 'mute' : 'vol')}</button>` : ''}<button class="x" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`;
-  }).join('') || '<div class="emptytabs">No other tabs in this space</div>';
+  }).join('') + `<button class="newrow" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}<span>New tab</span></button>`;
   $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
   const bud = S.budget, pct = bud.enabled && bud.cap ? Math.min(100, Math.round(bud.used / bud.cap * 100)) : 0;
   const exts = (S.extensions || []).filter((e) => e.popup).slice(0, 6).map((e) => `<button class="ibtn" title="${esc(e.name)}" data-extpop="${e.id}">${e.icon ? `<img src="${e.icon}" width="16" height="16" style="border-radius:4px">` : ic('box')}</button>`).join('');
   $('#tools').innerHTML = (exts ? `<div class="exts">${exts}</div>` : '')
     + (S.updateReady ? `<button class="upd" data-do="update" title="Restart to install the update">Update</button>` : '')
-    + (S.settings.adblock ? `<span class="chip" title="Ads and trackers blocked">${ic('shield')}<b>${S.blockedCount}</b></span>` : '')
+    + (S.settings.adblock ? (() => { const st = (S.adblock || {}).state; return `<span class="chip ${st === 'failed' ? 'warn' : ''}" title="${st === 'failed' ? 'The ad blocker is not loaded. Open Settings > Search & privacy to retry.' : st === 'loading' ? 'The ad blocker is loading its filter lists' : 'Ads and trackers blocked'}">${ic('shield')}<b>${st === 'failed' ? '!' : st === 'loading' ? '…' : S.blockedCount}</b></span>`; })() : '')
     + (bud.enabled ? `<button class="ram ${bud.over || pct >= 90 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova of your ${bud.cap} MB budget"><span class="lab">RAM</span><b>${bud.used}</b><small>MB</small><i style="width:${pct}%"></i></button>` : '')
     + `<span class="grow"></span>` + ibtn('bookmark', 'Library: bookmarks, history, downloads (Ctrl+H)', 'library') + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings');
 }
@@ -152,20 +153,22 @@ document.addEventListener('click', (e) => {
   const d = e.target.closest('[data-do]')?.dataset.do;
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
-    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
+    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
     return m[d]?.();
   }
   if (e.target.closest('#urlbar')) return nova.cmd('action', { name: 'go' });
+  const bm = e.target.closest('[data-bm]'); if (bm) return nova.cmd('open', { text: bm.dataset.bm, newTab: e.ctrlKey || e.metaKey });
   const xp = e.target.closest('[data-extpop]'); if (xp) return nova.cmd('extPopup', { id: xp.dataset.extpop });
   const mu = e.target.closest('[data-mute]'); if (mu) return nova.cmd('mute', { id: +mu.dataset.mute });
   const c = e.target.closest('[data-close]'); if (c) return nova.cmd('close', { id: +c.dataset.close });
   const t = e.target.closest('[data-tab]'); if (t && !overlay) return nova.cmd('activate', { id: +t.dataset.tab });
   const sp = e.target.closest('[data-space]'); if (sp) return nova.cmd('switchSpace', { id: +sp.dataset.space });
 });
-document.addEventListener('auxclick', (e) => { const t = e.target.closest('[data-tab]'); if (t && e.button === 1) nova.cmd('close', { id: +t.dataset.tab }); });
+document.addEventListener('auxclick', (e) => { const b = e.target.closest('[data-bm]'); if (b && e.button === 1) return nova.cmd('open', { text: b.dataset.bm, newTab: true }); const t = e.target.closest('[data-tab]'); if (t && e.button === 1) nova.cmd('close', { id: +t.dataset.tab }); });
 document.addEventListener('contextmenu', (e) => {
   e.preventDefault();
-  const t = e.target.closest('[data-tab]'), sp = e.target.closest('[data-space]');
+  const t = e.target.closest('[data-tab]'), sp = e.target.closest('[data-space]'), bmk = e.target.closest('[data-bm]');
+  if (bmk) { const url = bmk.dataset.bm; return showMenu(e, [{ label: 'Open', run: () => nova.cmd('open', { text: url }) }, { label: 'Open in new tab', run: () => nova.cmd('open', { text: url, newTab: true }) }, '-', { label: 'Remove bookmark', run: () => nova.cmd('removeBookmark', { url }) }]); }
   if (t && !overlay) showMenu(e, tabMenu(+t.dataset.tab)); else if (sp) showMenu(e, spaceMenu(+sp.dataset.space));
 });
 function showMenu(e, items) {
@@ -200,14 +203,15 @@ function spaceMenu(id) {
   ];
 }
 // Electron has no window.prompt(), so Nova ships its own small dialog (also used for confirmations).
-let askResolve = null;
+let askResolve = null, askShown = false; // askShown: the dialog is on screen. A close event that was already on its way (from the menu you just clicked) must not cancel a dialog that has not appeared yet
 const SPACE_COLORS = ['#8b7dff', '#ff7a90', '#ffb04d', '#4ddc9a', '#4db8ff', '#c084fc', '#ff6b6b', '#2dd4bf'];
-function askDialog(o) { return new Promise((res) => { askResolve = res; nova.cmd('overlay', { kind: 'ask', data: o }); }); }
+function askDialog(o) { return new Promise((res) => { askResolve = res; askShown = false; nova.cmd('overlay', { kind: 'ask', data: o }); }); }
 function ask(el, d) {
+  askShown = true;
   let color = d.color || (d.colors ? d.colors[0] : null);
   el.innerHTML = `<div class="box ask"><h3>${esc(d.title)}</h3>${d.text ? `<p>${esc(d.text)}</p>` : ''}${d.input ? `<input id="ask-in" value="${esc(d.value || '')}" placeholder="${esc(d.placeholder || '')}" autocomplete="off" spellcheck="false">` : ''}${d.colors ? `<div class="cdots">${d.colors.map((c) => `<button class="cdot ${c === color ? 'on' : ''}" data-c="${c}" style="--c:${c}" title="${c}"></button>`).join('')}</div>` : ''}<div class="askbtns"><button class="btn ghost" id="ask-no">Cancel</button><button class="btn ${d.danger ? 'danger' : 'primary'}" id="ask-ok">${esc(d.ok || 'OK')}</button></div></div>`;
   const input = $('#ask-in');
-  const finish = (v) => { const r = askResolve; askResolve = null; nova.cmd('closeOverlay'); if (r) r(v); };
+  const finish = (v) => { const r = askResolve; askResolve = null; askShown = false; nova.cmd('closeOverlay'); if (r) r(v); };
   el.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => { color = b.dataset.c; el.querySelectorAll('[data-c]').forEach((x) => x.classList.toggle('on', x === b)); }));
   const ok = () => { if (input && !input.value.trim()) { input.focus(); return; } finish({ value: input ? input.value.trim() : true, color }); };
   $('#ask-ok').onclick = ok; $('#ask-no').onclick = () => finish(null);
@@ -223,9 +227,9 @@ function setOverlay(kind, data) {
   if (kind === 'menu') return;
   const o = $('#overlay'); o.hidden = false; o.innerHTML = '';
   o.onmousedown = (e) => { if (e.target === o && kind !== 'wizard') nova.cmd('closeOverlay'); };
-  ({ palette, overview, settings, wizard, peek, ask, library })[kind](o, data || {});
+  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub })[kind](o, data || {});
 }
-function clearOverlay() { if (askResolve) { const r = askResolve; askResolve = null; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; }
+function clearOverlay() { if (askResolve && askShown) { const r = askResolve; askResolve = null; askShown = false; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; }
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && overlay) { e.preventDefault(); nova.cmd(overlay.kind === 'wizard' ? 'finishSetup' : 'closeOverlay'); } }, true);
 
 // ---------- command palette ----------
@@ -263,7 +267,8 @@ function commands() {
     { t: 'New space', run: () => setTimeout(newSpaceFlow, 80) },
     { t: 'Toggle sidebar', k: 'Ctrl B', run: A('toggleSidebar') }, { t: 'Focus mode', s: 'Hide all interface', k: 'Ctrl ⇧ F', run: A('focusMode') },
     { t: 'Sidebar on the left', run: set({ layout: 'left' }) }, { t: 'Sidebar on the right', run: set({ layout: 'right' }) }, { t: 'Tabs on top', run: set({ layout: 'top' }) },
-    { t: S.settings.compact ? 'Expand sidebar' : 'Compact sidebar', run: set({ compact: !S.settings.compact }) },
+    { t: 'Open the extension hub', s: 'Find and add extensions', run: A('hub') },
+    { t: S.settings.compact ? 'Expand sidebar' : 'Compact sidebar', run: set({ compact: !S.settings.compact }) }, { t: S.settings.bookmarksBar ? 'Hide bookmarks bar' : 'Show bookmarks bar', run: set({ bookmarksBar: !S.settings.bookmarksBar }) },
     { t: S.settings.adblock ? 'Turn ad blocker off' : 'Turn ad blocker on', run: set({ adblock: !S.settings.adblock }) },
     { t: 'Developer tools', k: 'F12', run: A('devtools') }, { t: 'Settings', k: 'Ctrl ,', run: A('settings') },
     { t: 'Move in from another browser', s: 'Bookmarks, sign-ins, extensions', run: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Move in' } }) },

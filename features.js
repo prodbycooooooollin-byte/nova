@@ -303,6 +303,11 @@ function init(ctx) {
 
 // IPC commands that return data or are purely feature-driven
 const GATE = { searchTabs: 'tabSearch', snooze: 'snooze', restoreSnapshot: 'rewind', peek: 'peek', peekOpen: 'peek', darkPage: 'darkPage', copyClean: 'cleanLinks', screenshot: 'screenshot', pip: 'pip', savePdf: 'savePdf', translate: 'translate', newPrivate: 'privateTabs' };
+function hub() { // the curated extension list, with what is already installed marked
+  let d; try { d = JSON.parse(fs.readFileSync(path.join(__dirname, 'hub.json'), 'utf8')); } catch { return { items: [] }; }
+  const have = new Set(installedExtIds());
+  return { built: d.built, items: d.items.filter((i) => i.works !== false).map((i) => ({ ...i, installed: have.has(i.id) })) };
+}
 async function handle(name, a, t) {
   if (GATE[name] && !C.settings().features[GATE[name]]) return name === 'searchTabs' ? [] : name === 'memory' ? {} : undefined;
   switch (name) {
@@ -325,6 +330,7 @@ async function handle(name, a, t) {
     case 'peekOpen': { const u = peekUrl() || a.url; C.closeOverlay(); C.openUrl(u, { forceNew: true }); return; }
     case 'showDownload': shell.showItemInFolder(a.path); return;
     case 'installExt': return installExtension(a.id);
+    case 'hub': return hub();
     case 'removeExt': return removeExtension(a.id);
     case 'extPopup': openPopup(a.id); return;
     case 'detectBrowsers': return Object.keys(bookmarkFiles());
@@ -368,6 +374,7 @@ async function setIcon(pageUrl, iconUrl) {
   } catch {} finally { pendingIcons.delete(host); }
 }
 const withIcon = (x) => ({ ...x, icon: icons[hostOf(x.url)] || '' });
+const barBookmarks = () => [...bookmarks].reverse().slice(0, 60).map((b) => ({ url: b.url, title: b.title, icon: icons[hostOf(b.url)] || '' })); // oldest first, like a bar you fill from the left
 
 function topSites(n = 8) { // bookmarks first, then the most visited hosts
   const seen = new Set(), out = [];
@@ -397,4 +404,4 @@ async function suggest(q) {
   const tpl = C.settings().searchEngine, e = ENGINE_SUGGEST.find(([h]) => tpl.includes(h)); if (!e || !C.settings().suggestions || !q || q.length < 2) return [];
   try { const r = await C.ses.fetch(e[1](encodeURIComponent(q)), { signal: AbortSignal.timeout(1800) }); const j = await r.json(); return (Array.isArray(j[1]) ? j[1] : []).slice(0, 5).map(String); } catch { return []; }
 }
-module.exports = { init, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, isBookmarked };
+module.exports = { init, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, barBookmarks, isBookmarked };

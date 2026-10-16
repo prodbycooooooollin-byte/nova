@@ -9,7 +9,7 @@ const hot = new Map(); // tabId -> consecutive high-CPU checks
 let overStreak = 0, cool = 0;
 
 function measure() {
-  const byPid = new Map(app.getAppMetrics().map((m) => [m.pid, { mb: m.memory.workingSetSize / 1024, cpu: m.cpu.percentCPUUsage }]));
+  const byPid = new Map(app.getAppMetrics().map((m) => [m.pid, { mb: (m.memory.privateBytes || m.memory.workingSetSize * 0.5) / 1024, cpu: m.cpu.percentCPUUsage }]));
   let used = 0, cpuTotal = 0; for (const v of byPid.values()) { used += v.mb; cpuTotal += v.cpu; }
   const tabs = {}, cpu = {};
   for (const t of C.tabs.values()) {
@@ -34,7 +34,7 @@ function tick() {
   overStreak = b.enabled && cap > 0 && m.used > cap ? overStreak + 1 : 0;
   if (overStreak >= 2 && cool === 0) { // over the limit for two rounds: sleep the oldest background tabs, then let the numbers settle
     let over = m.used - cap;
-    for (const t of sleepable()) { if (over <= 0 || slept.length >= 2) break; over -= Math.min(m.tabs[t.id] || 150, 350); C.sleepTab(t); slept.push(t); }
+    for (const t of sleepable()) { if (over <= 0 || slept.length >= 2) break; over -= Math.min(m.tabs[t.id] || 80, 250); C.sleepTab(t); slept.push(t); }
     if (slept.length) cool = 2;
   }
   if (b.cpuGuard) {

@@ -1,5 +1,5 @@
 // Nova - minimal Chromium browser. Main process: window, tabs, spaces, sleeping/archiving, adblock.
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage } = require('electron');
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage, net } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const updater = require('./updater');
@@ -18,11 +18,11 @@ const DEFAULT_KEYS = {
   overview: ['Ctrl+E'], reload: ['Ctrl+R', 'F5'], back: ['Alt+ArrowLeft'], forward: ['Alt+ArrowRight'],
   toggleSidebar: ['Ctrl+B'], focusMode: ['Ctrl+Shift+F'], find: ['Ctrl+F'], settings: ['Ctrl+,'],
   zoomIn: ['Ctrl+=', 'Ctrl++'], zoomOut: ['Ctrl+-'], zoomReset: ['Ctrl+0'], devtools: ['F12'],
-  pinTab: ['Ctrl+Shift+P'], cleanUp: ['Ctrl+Shift+K'], bookmark: ['Ctrl+D'], history: ['Ctrl+H'], downloads: ['Ctrl+J'], bookmarks: ['Ctrl+Shift+O'], screenshot: ['Ctrl+Shift+S'], privateTab: ['Ctrl+Shift+N'], print: ['Ctrl+P'], fullscreen: ['F11'], lastTab: ['Ctrl+`'], copyClean: ['Ctrl+Shift+C'], darkPage: ['Ctrl+Shift+D'],
+  pinTab: ['Ctrl+Shift+P'], hub: ['Ctrl+Shift+E'], cleanUp: ['Ctrl+Shift+K'], bookmark: ['Ctrl+D'], history: ['Ctrl+H'], downloads: ['Ctrl+J'], bookmarks: ['Ctrl+Shift+O'], screenshot: ['Ctrl+Shift+S'], privateTab: ['Ctrl+Shift+N'], print: ['Ctrl+P'], fullscreen: ['F11'], lastTab: ['Ctrl+`'], copyClean: ['Ctrl+Shift+C'], darkPage: ['Ctrl+Shift+D'],
   space1: ['Alt+1'], space2: ['Alt+2'], space3: ['Alt+3'], space4: ['Alt+4'], space5: ['Alt+5'],
 };
 const DEFAULTS = {
-  suggestions: false, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0 }, startPage: { sites: true, greeting: true },
+  suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0 }, startPage: { sites: true, greeting: true },
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
   searchEngine: 'https://duckduckgo.com/?q=%s',
   layout: 'left', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
@@ -31,7 +31,7 @@ const DEFAULTS = {
   sleepAfterMin: 10, archiveAfterHours: 24, maxTabs: 25, dedupeTabs: true,
   adblock: true, extensions: [], keys: {}, updateFeed: '', zoom: {},
   // Optional features. Everything beyond the essentials is off until the user turns it on.
-  budget: { enabled: true, ramMB: 2048, cpuGuard: true, cpuPct: 20 },
+  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20 }, lowIsolation: false,
   features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, savePdf: false, translate: false, privateTabs: false },
 };
 
@@ -43,9 +43,9 @@ const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme
 const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'savePdf', 'translate', 'privateTabs'];
 const featureSet = (on) => Object.fromEntries(FEATURE_KEYS.map((k) => [k, on]));
 const PROFILES = {
-  ultra: { blockAutoplay: true, effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 1024, cpuGuard: true, cpuPct: 20 } },
-  nova: { blockAutoplay: true, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(false), budget: { enabled: true, ramMB: 2048, cpuGuard: true, cpuPct: 20 } },
-  complete: { blockAutoplay: false, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(true), budget: { enabled: true, ramMB: 4096, cpuGuard: true, cpuPct: 25 } },
+  ultra: { blockAutoplay: true, effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 800, cpuGuard: true, cpuPct: 20 } },
+  nova: { blockAutoplay: true, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(false), budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20 } },
+  complete: { blockAutoplay: false, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(true), budget: { enabled: true, ramMB: 3000, cpuGuard: true, cpuPct: 25 } },
 };
 let sessions = [], privSes = null;
 let win, ui, settings, state;
@@ -57,11 +57,14 @@ let blocker = null;
 const userFile = (n) => path.join(app.getPath('userData'), n);
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(userFile(f), 'utf8')); } catch { return d; } };
 const writeJson = (f, v) => { try { fs.writeFileSync(userFile(f), JSON.stringify(v)); } catch (e) { console.error(e); } };
+try { if (readJson('settings.json', {}).lowIsolation) app.commandLine.appendSwitch('disable-site-isolation-trials'); } catch {} // opt-in: one process for a page and its frames, about 12% less memory, weaker isolation
 
 function loadSettings() {
   const s = readJson('settings.json', {});
   settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, wallpaper: { ...DEFAULTS.wallpaper, ...(s.wallpaper || {}) }, startPage: { ...DEFAULTS.startPage, ...(s.startPage || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
   if (!['', 'orbit', 'stars', 'grid'].includes(settings.wallpaper.preset)) settings.wallpaper.preset = 'orbit'; // the old colour-blob wallpapers are gone
+  if (!s.budgetV2 && s.budget) { const old = s.budget.ramMB; settings.budget.ramMB = { 1024: 800, 2048: 1500, 4096: 3000 }[old] || Math.max(400, Math.round((old || 2048) * 0.75 / 50) * 50); } // limits now count real (private) memory, which is smaller than the old figure
+  settings.budgetV2 = true;
 }
 const saveSettings = () => writeJson('settings.json', settings);
 
@@ -78,12 +81,14 @@ const activeSpace = () => state.spaces.find((s) => s.id === state.activeSpace) |
 const activeTab = () => tabs.get(state.activeTab);
 
 // ---------- layout ----------
+const barHeight = () => (settings.layout === 'top' && settings.bookmarksBar && features.bookmarks().length ? 34 : 0);
+let lastBar = 0;
 function layout() {
   if (!win) return;
   const [w, h] = win.getContentSize();
   const gap = settings.gap;
   const side = settings.compact ? 56 : settings.sidebarWidth;
-  const top = 96; // top layout: toolbar row + tab strip
+  const top = 96 + barHeight(); // top layout: toolbar row + (bookmarks bar) + tab strip
   const hidden = sidebarHidden || focusMode || pageFullscreen;
   let uiRect = { x: 0, y: 0, width: 0, height: 0 }, c;
   if (hidden) c = { x: 0, y: 0, width: w, height: h };
@@ -124,6 +129,7 @@ function push() {
   pushTimer = setTimeout(() => {
     pushTimer = null;
     if (!ui || ui.webContents.isDestroyed()) return;
+    const bh = barHeight(); if (bh !== lastBar) { lastBar = bh; layout(); } // the bookmarks bar appears with the first bookmark
     ui.webContents.send('state', publicState());
     persistSoon();
   }, 30);
@@ -133,8 +139,8 @@ function publicState() {
     tabs: [...tabs.values()].map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, private: !!t.private, bookmarked: features.isBookmarked(t.url) })),
     extensions: (() => { try { return features.listExtensions(); } catch { return []; } })(), snoozed: (state.snoozed || []).length,
     spaces: state.spaces, activeSpace: state.activeSpace, activeTab: state.activeTab, split: state.split,
-    archive: state.archive.slice(0, 80), settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
-    blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(),
+    archive: state.archive.slice(0, 80), bar: settings.bookmarksBar ? features.barBookmarks() : [], settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
+    adblock: adblockStatus, blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(),
   };
 }
 let persistTimer = null;
@@ -348,22 +354,28 @@ let drag = null;
 function startDrag() {
   endDrag();
   const c0 = screen.getCursorScreenPoint(); let moved = false;
-  drag = { c0, started: Date.now(), timer: setInterval(() => {
+  drag = { started: Date.now(), timer: setInterval(() => {
     if (!drag) return;
     const c = screen.getCursorScreenPoint();
-    if (!moved) { if (Math.hypot(c.x - c0.x, c.y - c0.y) < 5) return; moved = true;
-      let b = win.getBounds();
-      if (win.isMaximized()) { const ratio = (c0.x - b.x) / b.width; win.unmaximize(); b = win.getBounds(); b.x = Math.round(c0.x - b.width * ratio); b.y = Math.round(c0.y - 16); }
-      drag.b = b; }
-    win.setBounds({ x: Math.round(drag.b.x + c.x - c0.x), y: Math.round(drag.b.y + c.y - c0.y), width: drag.b.width, height: drag.b.height });
+    if (!moved) {
+      if (Math.hypot(c.x - c0.x, c.y - c0.y) < 4) return; moved = true; drag.moved = true;
+      let b = win.getBounds(); const grabX = c0.x - b.x, grabY = c0.y - b.y;
+      if (win.isMaximized() || win.isFullScreen()) { // pull the window out of full size and keep the grip under the cursor
+        const ratio = grabX / Math.max(1, b.width);
+        if (win.isFullScreen()) win.setFullScreen(false); else win.unmaximize();
+        b = win.getBounds(); drag.off = { x: Math.round(b.width * ratio), y: Math.min(grabY, 40) };
+      } else drag.off = { x: grabX, y: grabY };
+    }
+    // only the position changes, never the size: moving between screens with different scaling must not resize or snap the window
+    win.setPosition(Math.round(c.x - drag.off.x), Math.round(c.y - drag.off.y));
     if (Date.now() - drag.started > 60000) endDrag();
-  }, 8) };
+  }, 6) };
 }
 function endDrag() {
   if (!drag) return;
   clearInterval(drag.timer);
   const c = screen.getCursorScreenPoint(), wa = screen.getDisplayNearestPoint(c).workArea;
-  if (drag.b && c.y <= wa.y + 1) win.maximize(); // drop on the top edge to maximize
+  if (drag.moved && c.y <= wa.y + 1) win.maximize(); // drop on the top edge to maximize
   drag = null;
 }
 
@@ -434,6 +446,7 @@ function runAction(action, arg) {
     case 'history': openOverlay('library', { tab: 'History' }); break;
     case 'downloads': openOverlay('library', { tab: 'Downloads' }); break;
     case 'bookmarks': openOverlay('library', { tab: 'Bookmarks' }); break;
+    case 'hub': openOverlay('hub'); break;
     case 'screenshot': features.handle('screenshot', {}, t); break;
     case 'privateTab': features.handle('newPrivate', {}, t); break;
     case 'print': wc?.print(); break;
@@ -463,39 +476,77 @@ function contextMenu(wc, p) {
   Menu.buildFromTemplate(items).popup({ window: win });
 }
 
-// ---------- adblock (uBlock Origin filter lists) ----------
-const LISTS = [
-  'https://ublockorigin.github.io/uAssets/filters/filters.txt',
-  'https://ublockorigin.github.io/uAssets/filters/badware.txt',
-  'https://ublockorigin.github.io/uAssets/filters/privacy.txt',
-  'https://ublockorigin.github.io/uAssets/filters/quick-fixes.txt',
-  'https://ublockorigin.github.io/uAssets/filters/unbreak.txt',
-  'https://easylist.to/easylist/easylist.txt',
-  'https://easylist.to/easylist/easyprivacy.txt',
-];
+// ---------- adblock (uBlock Origin filter lists + scriptlet resources) ----------
+const ADBLOCK = require('./adblock-lists');
+const adblockCache = () => userFile('adblock2.bin'); // v2 = lists plus uBlock Origin's scriptlets; the old adblock.bin had no scriptlets and is ignored
+let adblockStatus = { state: 'loading', source: '', updated: 0 };
+// Chromium's own network stack (net.fetch) follows the system proxy and certificate store; Node's fetch does not, and fails behind many VPNs and virus scanners
+const netText = async (url, tries = 3) => {
+  for (let i = 0; i < tries; i++) {
+    try { const r = await net.fetch(url, { signal: AbortSignal.timeout(25000) }); if (r.ok) return await r.text(); } catch {}
+    await new Promise((r) => setTimeout(r, 700 * (i + 1)));
+  }
+  return null;
+};
+const bundledText = (name) => { try { return fs.readFileSync(path.join(__dirname, 'assets', 'filters', name), 'utf8'); } catch { return ''; } };
+async function buildBlocker() { // every list on its own: one unreachable mirror must not cost the whole blocker, the bundled copy fills any gap
+  const { ElectronBlocker } = require('@ghostery/adblocker-electron');
+  const got = await Promise.all(ADBLOCK.lists.map(async (l) => ({ ...l, text: await netText(l.url) })));
+  const online = got.filter((g) => g.text).length;
+  const texts = got.map((g) => g.text || bundledText(g.file)).filter(Boolean);
+  let resources = await netText(ADBLOCK.resources.url); const resOnline = !!resources;
+  if (!resources) resources = bundledText(ADBLOCK.resources.file);
+  if (!texts.length) throw new Error('no filter lists available');
+  const b = ElectronBlocker.parse(texts.join('\n'), { loadCosmeticFilters: true, loadNetworkFilters: true });
+  if (resources) b.updateResources(resources, String(resources.length));
+  return { blocker: b, source: online === got.length && resOnline ? 'online' : online ? 'partly online' : 'bundled copy' };
+}
+const saveAdblockCache = (b) => fs.promises.writeFile(adblockCache(), Buffer.from(b.serialize())).catch(() => {});
 async function initAdblock(list) {
+  adblockStatus = { state: 'loading', source: '', updated: 0 }; push();
   try {
     const { ElectronBlocker } = require('@ghostery/adblocker-electron');
-    blocker = await ElectronBlocker.fromLists(fetch, LISTS, { enableCompression: true }, {
-      path: userFile('adblock.bin'), read: fs.promises.readFile, write: fs.promises.writeFile,
-    });
+    let b = null, source = '', updated = 0;
+    try { const st = fs.statSync(adblockCache()); b = ElectronBlocker.deserialize(fs.readFileSync(adblockCache())); source = 'saved copy'; updated = st.mtimeMs; } catch { b = null; }
+    if (!b) { const r = await buildBlocker(); b = r.blocker; source = r.source; updated = Date.now(); saveAdblockCache(b); }
+    blocker = b;
     blocker.on('request-blocked', () => { blockedCount++; push(); });
     if (settings.adblock) list.forEach((s) => adblockEnable(s));
-  } catch (e) { console.error('adblock failed', e); toast('Ad blocker lists could not be loaded (offline?).'); }
+    adblockStatus = { state: 'ready', source, updated }; push();
+    if (Date.now() - updated > 24 * 3600e3) setTimeout(refreshAdblock, 45000); // lists older than a day are refreshed quietly; they apply from the next start
+  } catch (e) { console.error('adblock failed', e); adblockStatus = { state: 'failed', error: e.message }; push(); toast('The ad blocker could not be loaded. Open Settings > Search & privacy to retry.'); }
 }
-// The blocker library registers global IPC handlers per enable call, so only the main session uses it directly;
-// other sessions (private tabs) get the same filtering through the shared request hooks and preload.
-const extraAdblock = new Map();
+async function refreshAdblock() {
+  try { const r = await buildBlocker(); if (r.source !== 'bundled copy') { await saveAdblockCache(r.blocker); adblockStatus = { ...adblockStatus, updated: Date.now(), fresh: true }; push(); toast('Ad blocker lists updated. They apply from the next start.'); } else toast('Could not reach the filter lists. Nova keeps using the ones it has.'); } catch {}
+}
+// Every session (tabs, private tabs) gets the same three parts: network blocking, Nova's cosmetic/scriptlet preload and the YouTube safety net.
+// The stock library registers global handlers per session and injects too late, so Nova wires the blocker's request hooks itself.
+const extraAdblock = new Map(), ytPreload = new Map();
+function ytDefuser(s, on) { // YouTube's own ad defuser rides along with the blocker
+  if (on && !ytPreload.has(s)) { try { ytPreload.set(s, s.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'yt-defuser.js') })); } catch (e) { console.error('yt defuser', e.message); } }
+  else if (!on && ytPreload.has(s)) { try { s.unregisterPreloadScript(ytPreload.get(s)); } catch {} ytPreload.delete(s); }
+}
+let tldParse = null; try { tldParse = require('tldts-experimental').parse; } catch {}
+function cosmetics(url, dom) { // answers the cosmetic preload: hide rules and scriptlets for this page
+  if (!blocker || !settings.adblock) return { active: false };
+  try {
+    const hostname = new URL(url).hostname, domain = (tldParse && tldParse(url).domain) || hostname, first = !dom;
+    const { active, styles, scripts } = blocker.getCosmeticsFilters({ url, hostname, domain, classes: dom?.classes, ids: dom?.ids, hrefs: dom?.hrefs, getBaseRules: first, getInjectionRules: first, getExtendedRules: false, getRulesFromHostname: first, getRulesFromDOM: !first });
+    return { active, styles, scripts: first ? scripts : [] };
+  } catch (e) { return { active: false }; }
+}
+ipcMain.on('nova:cosmetics', (event, url) => { event.returnValue = cosmetics(url, null); });
+ipcMain.handle('nova:cosmetics-dom', (_e, url, dom) => cosmetics(url, dom).styles || '');
 function adblockEnable(s) {
-  if (s === sessions[0]) { blocker.enableBlockingInSession(s); return; }
   if (extraAdblock.has(s)) return;
   s.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, blocker.onBeforeRequest);
   s.webRequest.onHeadersReceived({ urls: ['<all_urls>'] }, blocker.onHeadersReceived);
-  let id; try { id = s.registerPreloadScript({ type: 'frame', filePath: require.resolve('@ghostery/adblocker-electron-preload') }); } catch {}
+  let id; try { id = s.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'cosmetic-preload.js') }); } catch (e) { console.error('cosmetic preload', e.message); }
   extraAdblock.set(s, id);
+  ytDefuser(s, true);
 }
 function adblockDisable(s) {
-  if (s === sessions[0]) { if (blocker.isBlockingEnabled(s)) blocker.disableBlockingInSession(s); return; }
+  ytDefuser(s, false);
   if (!extraAdblock.has(s)) return;
   s.webRequest.onBeforeRequest(null); s.webRequest.onHeadersReceived(null);
   const id = extraAdblock.get(s); if (id) { try { s.unregisterPreloadScript(id); } catch {} } extraAdblock.delete(s);
@@ -613,6 +664,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         push();
       } break;
       case 'close': closeTab(a.id); break;
+      case 'adblockRetry': if (!blocker) initAdblock(sessions); else refreshAdblock(); break;
       case 'archive': if (t) archiveTab(t); break;
       case 'pin': if (t) { t.pinned = !t.pinned; push(); } break;
       case 'sleep': if (t && t.id !== state.activeTab) { sleep(t); push(); } break;
@@ -632,13 +684,14 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'deleteSpace': if (state.spaces.length > 1) { for (const x of [...tabs.values()]) if (x.spaceId === a.id) destroyTab(x); state.spaces = state.spaces.filter((s) => s.id !== a.id); switchSpace(state.spaces[0].id); } break;
       case 'cleanUp': cleanUp(a.mode); break;
       case 'settings': {
-        const prev = JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss]);
+        const prev = JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss, settings.bookmarksBar]);
         Object.assign(settings, a.patch);
         if (a.patch.theme) { settings.theme = { ...DEFAULTS.theme, ...a.patch.theme }; if (!a.patch.theme.page) settings.theme.page = a.patch.theme.surface || DEFAULTS.theme.page; for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(settings.theme.page); }
         if (a.patch.keys) settings.keys = { ...DEFAULT_KEYS, ...a.patch.keys };
         if ('adblock' in a.patch) setAdblock(a.patch.adblock);
+        if ('lowIsolation' in a.patch) toast('Restart Nova to apply this change.');
         saveSettings();
-        if (prev !== JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss])) layout();
+        if (prev !== JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss, settings.bookmarksBar])) layout();
         if (a.patch.theme || a.patch.wallpaper || a.patch.startPage) pushHome();
         if (a.patch.pageCss !== undefined) for (const x of tabs.values()) if (x.view) { applyPageCss(x.view.webContents); }
         push();

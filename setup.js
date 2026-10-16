@@ -57,10 +57,15 @@ function walk(dir, base = dir, out = []) {
 async function copyApp(src, dest, progress) {
   const files = walk(src), total = files.reduce((n, f) => n + f.size, 0) || 1;
   let done = 0;
+  // Same drive: link the unpacked files instead of writing them a second time (instant, no extra disk traffic or virus scan). Anything else copies.
+  let link = path.parse(path.resolve(src)).root.toLowerCase() === path.parse(path.resolve(dest)).root.toLowerCase();
   ofs.mkdirSync(dest, { recursive: true });
   for (const f of files) {
     const to = path.join(dest, f.rel);
     ofs.mkdirSync(path.dirname(to), { recursive: true });
+    if (link) {
+      try { try { ofs.unlinkSync(to); } catch (e) { if (e.code !== 'ENOENT') throw e; } ofs.linkSync(path.join(src, f.rel), to); done += f.size; progress(done / total, f.rel); continue; } catch { link = false; }
+    }
     for (let attempt = 0; ; attempt++) {
       try { await ofs.promises.copyFile(path.join(src, f.rel), to); break; }
       catch (e) { if (attempt > 6 || !['EBUSY', 'EPERM', 'EACCES'].includes(e.code)) throw e; await new Promise((r) => setTimeout(r, 500)); }
@@ -80,6 +85,7 @@ async function registerShell(dir, { desktop, startMenu, register }) {
   const exe = path.join(dir, 'Nova.exe');
   require('original-fs').writeFileSync(path.join(dir, 'nova-installed.flag'), pkg.version);
   const link = { target: exe, cwd: dir, icon: exe, iconIndex: 0, appUserModelId: AUMID, description: 'Nova' };
+  if (process.env.NOVA_SETUP_TEST) return; // test runs must not touch shortcuts or the registry
   if (desktop) shell.writeShortcutLink(desktopLink(), 'create', link);
   if (startMenu) { fs.mkdirSync(startMenuDir(), { recursive: true }); shell.writeShortcutLink(startLink(), 'create', link); }
   await regSet(UNINSTALL_KEY, 'DisplayName', 'Nova'); await regSet(UNINSTALL_KEY, 'DisplayVersion', pkg.version);
@@ -106,6 +112,16 @@ async function removeShell() {
 }
 
 function run(mode) {
+  app.disableHardwareAcceleration(); // the installer draws a few 2D shapes: no GPU process means a faster start and no driver surprises
+  const t0 = Date.now(), log = (m) => { try { ofs.appendFileSync(path.join(os.tmpdir(), 'nova-setup.log'), `${new Date().toISOString()} +${Date.now() - t0}ms ${m}\n`); } catch {} };
+  log(`setup ${pkg.version} mode=${mode} electron=${process.versions.electron} cpus=${os.cpus().length} freeMem=${Math.round(os.freemem() / 1048576)}MB`);
+  if (mode === 'install') { // a second double-click while the first copy is still unpacking must not start another installer
+    const lock = path.join(os.tmpdir(), 'nova-setup.lock');
+    try { const st = ofs.statSync(lock), pid = +ofs.readFileSync(lock, 'utf8'); if (pid && pid !== process.pid && Date.now() - st.mtimeMs < 600000) { process.kill(pid, 0); log('another installer is already running'); app.exit(0); return; } } catch {}
+    try { ofs.writeFileSync(lock, String(process.pid)); } catch {}
+    app.on('quit', () => { try { ofs.unlinkSync(lock); } catch {} });
+  }
+  app.on('child-process-gone', (_e, d) => log(`child process gone: ${d.type} ${d.reason}`));
   app.setAppUserModelId(AUMID);
   const src = arg('--src') || path.dirname(process.execPath);
   const installedDir = path.dirname(process.execPath);
@@ -116,7 +132,9 @@ function run(mode) {
       icon: path.join(__dirname, 'build', 'icon.ico'), title: mode === 'uninstall' ? 'Uninstall Nova' : 'Nova Setup',
       webPreferences: { preload: path.join(__dirname, 'setup-preload.js'), contextIsolation: true, sandbox: true },
     });
-    win.once('ready-to-show', () => win.show());
+    win.once('ready-to-show', () => { log('window ready'); win.show(); });
+    setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) { log('window shown by the watchdog'); win.show(); } }, 3500);
+    win.webContents.on('render-process-gone', (_e, d) => log(`renderer gone: ${d.reason}`));
     win.loadFile(path.join(__dirname, 'ui', 'setup.html'));
     const send = (ch, d) => { if (!win.isDestroyed()) win.webContents.send(ch, d); };
 
@@ -136,7 +154,7 @@ function run(mode) {
       try {
         if (path.resolve(dir).toLowerCase() === path.resolve(src).toLowerCase()) throw new Error('Choose a different folder.');
         send('setup:progress', { pct: 0, text: 'Preparing' });
-        await killRunning(dir);
+        if (ofs.existsSync(path.join(dir, 'Nova.exe'))) await killRunning(dir);
         await copyApp(src, dir, (p, f) => send('setup:progress', { pct: p * 0.92, text: f }));
         send('setup:progress', { pct: 0.95, text: 'Creating shortcuts' });
         await registerShell(dir, o);

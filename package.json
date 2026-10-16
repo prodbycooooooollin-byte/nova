@@ -1,6 +1,6 @@
 {
     "name":  "nova",
-    "version":  "0.7.2",
+    "version":  "0.8.0",
     "description":  "Nova - a minimal, fully customizable Chromium browser with rethought tab management",
     "main":  "main.js",
     "scripts":  {
@@ -40,7 +40,12 @@
                                 "build/icon.ico",
                                 "build/icon.png",
                                 "build/mark.svg",
-                                "package.json"
+                                "package.json",
+                                "adblock-lists.js",
+                                "assets/filters/*",
+                                "yt-defuser.js",
+                                "cosmetic-preload.js",
+                                "hub.json"
                             ],
                   "asar":  true,
                   "win":  {
@@ -55,13 +60,19 @@
                               "icon":  "build/icon.ico"
                           },
                   "portable":  {
-                                   "artifactName":  "Nova-Setup-${version}.exe"
+                                   "artifactName":  "Nova-Setup-${version}.exe",
+                                   "splashImage":  "build/splash.bmp"
                                },
                   "artifactName":  "Nova-Setup-${version}.exe",
                   "npmRebuild":  false,
                   "asarUnpack":  [
                                      "ext-shim.js"
-                                 ]
+                                 ],
+                  "electronLanguages":  [
+                                            "en-US",
+                                            "de"
+                                        ],
+                  "afterPack":  "scripts/after-pack.js"
               },
     "devDependencies":  {
                             "electron":  "^41.7.1",

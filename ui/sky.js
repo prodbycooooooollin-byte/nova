@@ -3,7 +3,7 @@
 function NovaSky(canvas, opts = {}) {
   const g = canvas.getContext('2d'), dpr = devicePixelRatio || 1;
   const accent = () => (opts.accent && opts.accent()) || getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8b7dff';
-  let W = 0, H = 0, stars = [], parts = [], ring = null, flare = 0, boost = 0, mx = 0, my = 0, raf = 0, last = 0;
+  let W = 0, H = 0, stars = [], parts = [], ring = null, flare = 0, boost = 0, mx = 0, my = 0, raf = 0, last = 0, lastDraw = 0;
   const rnd = (a, b) => a + Math.random() * (b - a);
   function size() {
     const r = canvas.getBoundingClientRect(); W = canvas.width = Math.max(1, r.width * dpr); H = canvas.height = Math.max(1, r.height * dpr);
@@ -16,6 +16,7 @@ function NovaSky(canvas, opts = {}) {
     ring = { x: o.x, y: o.y, r: 0, a: .8 }; flare = 1;
   }
   function frame(t) {
+    if (opts.fps && (t - lastDraw < 1000 / opts.fps - 2 || document.hidden)) { raf = requestAnimationFrame(frame); return; } lastDraw = t;
     if (!canvas.isConnected) { cancelAnimationFrame(raf); removeEventListener('mousemove', move); removeEventListener('resize', size); return; } // overlay closed: stop quietly
     const dt = Math.min(.05, (t - last) / 1000 || .016); last = t;
     g.clearRect(0, 0, W, H);
