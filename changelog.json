@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.13.2",
+    "date": "2026-10-16",
+    "notes": [
+      "Dragging the tab row while the window is maximized or in full screen now brings out a smaller window that follows the mouse, also onto another screen.",
+      "The address bar has the same gap to the tabs above and to the bookmarks below.",
+      "Settings are laid out as a sheet: the title of each section stands in a column of its own with a small accent mark, its switches beside it.",
+      "A new icon identity and icon files for the taskbar, the Start menu and the desktop shortcut: Nova repairs its own shortcuts once after this update."
+    ]
+  },
+  {
     "version": "0.13.1",
     "date": "2026-10-16",
     "notes": [

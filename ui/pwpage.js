@@ -6,12 +6,13 @@ function pwPageHtml(s, h) {
   const { row, grp, sect, fsw } = h;
   const on = !!s.features.passwords, c = { save: true, fill: true, ...(s.passwords || {}) };
   const csw = (k, v) => `<label class="sw"><input type="checkbox" data-pwcfg="${k}" ${v ? 'checked' : ''}><i></i></label>`;
-  return sect('Password saver', 'Kept on this device only, sealed with your Windows account. Programs running as you can still ask Windows to open them, as with every browser; a password manager with its own master password stays the stronger choice.')
+  return sect('Password saver', 'Kept on this device only, sealed with your Windows account.')
     + grp(
       row('Save and fill passwords', fsw('passwords', on), 'Off by default. Nova asks after you sign in and fills a login only when you pick it, on the exact same site. Never in private tabs, never inside embedded frames.', 'password'),
       ...(on ? [
         row('Offer to save', csw('save', c.save), 'Asks after a sign-in worked, never before.', 'save'),
-        row('Offer to fill', csw('fill', c.fill), 'Click into a sign-in field to see the logins saved for that site. An http page never gets what was saved on https.', 'user')] : []))
+        row('Offer to fill', csw('fill', c.fill), 'Click into a sign-in field to see the logins saved for that site. An http page never gets what was saved on https.', 'user')] : []),
+      row('Good to know', '', 'Programs running as you can still ask Windows to open the passwords, as with every browser. A password manager with its own master password stays the stronger choice.', 'info'))
     + sect('Saved passwords') + '<div id="pwbox"></div><div id="pwnever"></div>'
     + sect('Move passwords') + grp(
       row('Import from a CSV file', '<button class="btn" id="pwimp">Import…</button>', 'Reads the file Chrome writes (Settings › Passwords › Export), and exports from Edge, Firefox and Bitwarden. A login you already have is never replaced.', 'imp'),

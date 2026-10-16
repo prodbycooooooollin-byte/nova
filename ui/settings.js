@@ -101,7 +101,7 @@ function settings(o, d) {
     },
     Downloads: (s) => {
       const d = s.downloads || {}, live = S.dl || [];
-      return sect('Accelerated downloads', 'Nova checks every file you download. If the server allows it, the file is fetched in several pieces at once, which is often much faster than a single connection. Anything else downloads the normal way.')
+      return sect('Accelerated downloads', 'Big files come down in several pieces at once when the server allows it. Anything else downloads the normal way.')
         + grp(
           row('Accelerate downloads', dsw('fast', d.fast !== false), 'Pause, resume and keep going after a restart come with it. Private tabs always use the normal download.', 'download'),
           row('Open the panel for tabs on top and the compact sidebar', dsw('panel', !!d.panel), 'In the normal sidebar the downloads tray slides up by itself. This is for tabs on top and the compact sidebar: open the downloads panel when a download starts.', 'download'),

@@ -49,6 +49,8 @@ const DEFAULTS = {
   newTabPage: 'home', // what a new tab shows: the start page ('home') or the address bar to type into ('bar')
 };
 
+const { execFile } = require('child_process');
+const AUMID = 'app.nova.browser.v2'; // the taskbar groups windows and picks their icon by this name; a new name starts without any old cached picture
 const HOME = 'nova://home';
 const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
 const isHome = (u) => u === HOME || (u || '').startsWith(HOME_FILE);
@@ -106,6 +108,39 @@ function loadSettings() {
   applyScheme();
 }
 const saveSettings = () => writeJson('settings.json', settings);
+// The window icon must be a real file: Windows reads it by path, and a file that carries the version in its name never meets an old picture in the icon cache.
+let iconFile = null;
+function appIcon() {
+  if (iconFile) return iconFile;
+  const src = path.join(__dirname, 'build', 'icon.ico');
+  try {
+    const dir = userFile('icons'), f = path.join(dir, `nova-${app.getVersion()}.ico`);
+    if (!fs.existsSync(f)) {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(f, fs.readFileSync(src)); // reading through app.asar, writing a plain file
+      const old = fs.readdirSync(dir).map((n) => ({ n, t: fs.statSync(path.join(dir, n)).mtimeMs })).sort((a, b) => b.t - a.t).slice(3); // the shortcuts of the last versions may still point at an older one
+      for (const o of old) { try { fs.rmSync(path.join(dir, o.n), { force: true }); } catch { /* in use */ } }
+    }
+    return (iconFile = f);
+  } catch (e) { dlog('icon file: ' + e.message); return src; }
+}
+// Nova's own shortcuts (Start menu, desktop, taskbar) get that icon file and the new identity, once per version
+function repairShortcuts() {
+  if (process.platform !== 'win32' || !app.isPackaged) return;
+  const key = app.getVersion() + '|' + AUMID;
+  if (settings.shortcutsFixed === key) return;
+  const ico = appIcon(), exe = process.execPath.toLowerCase(), links = [path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Nova.lnk'), path.join(app.getPath('desktop'), 'Nova.lnk')];
+  try { const pinned = path.join(process.env.APPDATA || '', 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar'); for (const f of fs.existsSync(pinned) ? fs.readdirSync(pinned) : []) if (/^nova.*\.lnk$/i.test(f)) links.push(path.join(pinned, f)); } catch { /* no taskbar folder */ }
+  let n = 0;
+  for (const l of links) {
+    try {
+      if (!fs.existsSync(l) || String(shell.readShortcutLink(l).target).toLowerCase() !== exe) continue; // only the ones that start this Nova
+      if (shell.writeShortcutLink(l, 'update', { icon: ico, iconIndex: 0, appUserModelId: AUMID })) n++;
+    } catch (e) { dlog('shortcut repair: ' + e.message); }
+  }
+  settings.shortcutsFixed = key; saveSettings(); dlog(`shortcuts repaired: ${n}`);
+  if (n) execFile('ie4uinit.exe', ['-show'], { windowsHide: true }, () => {});
+}
 
 // ---------- helpers ----------
 function normalizeInput(text) {
@@ -160,7 +195,7 @@ function layout() {
   const [w, h] = win.getContentSize();
   const gap = settings.gap;
   const side = settings.compact ? 56 : settings.sidebarWidth;
-  const top = 86 + barHeight(); // top layout: tab row (40) + address row (46) + the bookmarks row when there are bookmarks
+  const top = 89 + barHeight(); // top layout: tab row (40) + address row (49) + the bookmarks row when there are bookmarks
   const hidden = sidebarHidden || focusMode || pageFullscreen;
   let uiRect = { x: 0, y: 0, width: 0, height: 0 }, c;
   if (hidden) c = { x: 0, y: 0, width: w, height: h };
@@ -296,7 +331,7 @@ function wake(t) {
     // window.open(...) with a size is a login popup: it needs its opener, so it stays a real window
     if (disposition === 'new-window' && features) {
       const num = (k) => Number(new RegExp(k + '=(\\d+)').exec(features)?.[1]) || undefined;
-      return { action: 'allow', overrideBrowserWindowOptions: { width: num('width') || 520, height: num('height') || 700, autoHideMenuBar: true, backgroundColor: settings.theme.bg, icon: path.join(__dirname, 'build', 'icon.ico'), webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } } };
+      return { action: 'allow', overrideBrowserWindowOptions: { width: num('width') || 520, height: num('height') || 700, autoHideMenuBar: true, backgroundColor: settings.theme.bg, icon: appIcon(), webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } } };
     }
     const quiet = disposition === 'background-tab'; // middle click or ctrl+click on a link: it opens behind, you stay where you are
     openUrl(url, { background: quiet, forceNew: quiet, afterId: t.id, private: t.private });
@@ -510,7 +545,7 @@ function createWindow(o = {}) {
   const W = { id: nextWid++, closed: false, activeTab: null, activeSpace: state.spaces.some((sp) => sp.id === o.activeSpace) ? o.activeSpace : state.spaces[0].id, split: null, prevTab: null, overlayKind: '', overlayOpen: false, sidebarHidden: false, focusMode: false, pageFullscreen: false, uiLowered: null, lastBar: 0, lastBarKey: '' };
   const b = { width: o.width || 1360, height: o.height || 860 };
   if (o.x != null && o.y != null) { b.x = Math.round(o.x); b.y = Math.round(o.y); }
-  W.win = new BaseWindow({ ...b, minWidth: 640, minHeight: 420, frame: false, backgroundColor: settings.theme.bg, title: 'Nova', icon: path.join(__dirname, 'build', 'icon.ico') });
+  W.win = new BaseWindow({ ...b, minWidth: 640, minHeight: 420, frame: false, backgroundColor: settings.theme.bg, title: 'Nova', icon: appIcon() });
   if (b.x != null) W.win.setBounds(b); // once more: on a screen with another scaling the size given at creation can come out different
   W.ui = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } });
   W.ui.setBackgroundColor('#00000000');
@@ -604,27 +639,42 @@ function whatsNew() {
 let drag = null;
 function startDrag() {
   endDrag();
-  const w = win, c0 = screen.getCursorScreenPoint(); let moved = false; // w: the window being dragged, whichever window is current when the timer runs
+  const w = win, c0 = screen.getCursorScreenPoint(), full = w.isFullScreen(), big = full || w.isMaximized(); // w: the window being dragged, whichever window is current when the timer runs
+  let phase = 'wait'; // wait: the cursor has not moved yet; pull: leaving full size; follow: the window goes where the cursor goes
   drag = { w, started: Date.now(), timer: setInterval(() => {
     if (!drag) return;
     if (w.isDestroyed()) return endDrag();
-    const c = screen.getCursorScreenPoint();
-    if (!moved) {
-      if (Math.hypot(c.x - c0.x, c.y - c0.y) < 4) return; moved = true; drag.moved = true;
-      let b = w.getBounds(); const grabX = c0.x - b.x, grabY = c0.y - b.y;
-      if (w.isMaximized() || w.isFullScreen()) { // pull the window out of full size and keep the grip under the cursor
-        const ratio = grabX / Math.max(1, b.width), nb = w.getNormalBounds(), wa = screen.getDisplayNearestPoint(c).workArea, wasFull = w.isFullScreen();
-        if (wasFull) w.setFullScreen(false); else w.unmaximize();
-        // a window clearly smaller than the screen, put under the cursor in one step, so it never jumps to another monitor first
-        const ww = Math.min(nb.width > 0 ? nb.width : 1360, Math.round(wa.width * 0.82)), hh = Math.min(nb.height > 0 ? nb.height : 860, Math.round(wa.height * 0.82)), gy = Math.min(grabY, 40);
-        w.setBounds({ x: Math.round(c.x - ratio * ww), y: Math.round(c.y - gy), width: ww, height: hh });
-        if (wasFull) setTimeout(() => { try { if (!w.isDestroyed() && !w.isFullScreen() && !w.isMaximized()) { const cur = w.getBounds(); if (cur.width !== ww || cur.height !== hh) w.setSize(ww, hh); } } catch { /* window closed */ } }, 90); // leaving full screen restores the old size a moment later on Windows
-        drag.off = { x: Math.round(ratio * ww), y: gy }; drag.fromFull = true; // from here on only the position changes
-      } else drag.off = { x: grabX, y: grabY };
+    const c = screen.getCursorScreenPoint(), now = Date.now();
+    if (phase === 'wait') {
+      if (Math.hypot(c.x - c0.x, c.y - c0.y) < 4) return;
+      drag.moved = true;
+      const b = w.getBounds();
+      if (!big) { drag.off = { x: c0.x - b.x, y: c0.y - b.y }; phase = 'follow'; }
+      else { // pull the window out of full size and keep the grip under the cursor
+        drag.grab = { rx: (c0.x - b.x) / Math.max(1, b.width), ry: Math.min(Math.max(0, c0.y - b.y), 40) }; drag.nb = w.getNormalBounds(); drag.fromFull = true; drag.pullAt = now; drag.lastCall = now; phase = 'pull';
+        dlog(`drag: leaving ${full ? 'full screen' : 'maximized'}`);
+        if (full) w.setFullScreen(false); else w.unmaximize();
+        return;
+      }
+    }
+    if (phase === 'pull') {
+      // leaving full screen takes a moment on Windows, and a window that was maximized before full screen comes back maximized: wait until it is really a normal window
+      const waited = now - drag.pullAt;
+      if (waited < 800) {
+        if (w.isFullScreen()) return;
+        if (w.isMaximized()) { if (now - drag.lastCall > 80) { drag.lastCall = now; w.unmaximize(); } return; }
+      }
+      const wa = screen.getDisplayNearestPoint(c).workArea, nb = drag.nb;
+      const ww = Math.min(nb.width > 0 ? nb.width : 1360, Math.round(wa.width * 0.82)), hh = Math.min(nb.height > 0 ? nb.height : 860, Math.round(wa.height * 0.82));
+      w.setBounds({ x: Math.round(c.x - drag.grab.rx * ww), y: Math.round(c.y - drag.grab.ry), width: ww, height: hh });
+      drag.off = { x: Math.round(drag.grab.rx * ww), y: Math.round(drag.grab.ry) }; drag.lx = c.x; drag.ly = c.y; phase = 'follow';
+      dlog(`drag: normal window after ${waited} ms (${ww}x${hh}${w.isMaximized() ? ', still maximized' : ''})`);
+      for (const ms of [90, 300]) setTimeout(() => { try { if (!w.isDestroyed() && !w.isFullScreen() && !w.isMaximized()) { const cur = w.getBounds(); if (cur.width !== ww || cur.height !== hh) w.setSize(ww, hh); } } catch { /* window closed */ } }, ms); // Windows may put the old size back a moment later
+      return;
     }
     // only the position changes, never the size: moving between screens with different scaling must not resize or snap the window
     if (c.x !== drag.lx || c.y !== drag.ly) { drag.lx = c.x; drag.ly = c.y; w.setPosition(Math.round(c.x - drag.off.x), Math.round(c.y - drag.off.y)); }
-    if (Date.now() - drag.started > 60000) endDrag();
+    if (now - drag.started > 60000) endDrag();
   }, 10) };
 }
 function endDrag() {
@@ -843,8 +893,9 @@ async function loadExtensions(ses) {
 // ---------- app ----------
 if (setupMode) setup.run(setupMode);
 if (!setupMode && gotLock) app.whenReady().then(async () => {
-  app.setAppUserModelId('app.nova.browser');
+  app.setAppUserModelId(AUMID);
   loadSettings();
+  repairShortcuts();
   // the installer can leave a profile choice behind for the very first launch
   { const fr = readJson('first-run.json', null); try { fs.rmSync(userFile('first-run.json'), { force: true }); } catch {}
     if (fr && PROFILES[fr.profile]) { const { features: f, budget: b, ...rest } = PROFILES[fr.profile]; Object.assign(settings, rest, { profile: fr.profile, features: { ...f }, budget: { ...b } }); saveSettings(); } }

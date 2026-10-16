@@ -12,7 +12,7 @@ const pkg = require('./package.json');
 const ARGV = process.argv;
 const arg = (n) => { const i = ARGV.indexOf(n); if (i >= 0 && ARGV[i + 1]) return ARGV[i + 1]; const p = ARGV.find((a) => a.startsWith(n + '=')); return p ? p.slice(n.length + 1) : null; };
 const UNINSTALL_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Nova';
-const AUMID = 'app.nova.browser';
+const AUMID = 'app.nova.browser.v2';
 
 // The Setup exe runs as an electron-builder "portable" app and carries PORTABLE_* variables.
 // Children we start (the installed Nova) must NOT inherit them, or they would think they are the installer.
@@ -84,7 +84,8 @@ async function refreshIcons(link) {
 async function registerShell(dir, { desktop, startMenu, register }) {
   const exe = path.join(dir, 'Nova.exe');
   require('original-fs').writeFileSync(path.join(dir, 'nova-installed.flag'), pkg.version);
-  const link = { target: exe, cwd: dir, icon: exe, iconIndex: 0, appUserModelId: AUMID, description: 'Nova' };
+  const realIco = path.join(dir, 'resources', 'icon.ico'); // a plain file of its own: a shortcut that points at Nova.exe can meet an icon Windows cached for an older Nova
+  const link = { target: exe, cwd: dir, icon: fs.existsSync(realIco) ? realIco : exe, iconIndex: 0, appUserModelId: AUMID, description: 'Nova' };
   if (process.env.NOVA_SETUP_TEST) return; // test runs must not touch shortcuts or the registry
   if (desktop) shell.writeShortcutLink(desktopLink(), 'create', link);
   if (startMenu) { fs.mkdirSync(startMenuDir(), { recursive: true }); shell.writeShortcutLink(startLink(), 'create', link); }
