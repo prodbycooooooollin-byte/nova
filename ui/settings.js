@@ -106,7 +106,7 @@ function settings(o, d) {
   const body = $('#sbody');
   const header = (name) => { const [ico, sub] = PAGE_INFO[name] || ['sliders', '']; return `<div class="pghead">${tile(ico).replace('tile', 'tile big')}<div><h2>${name}</h2><p>${sub}</p></div></div>`; };
   const mark = () => o.querySelectorAll('[data-t]').forEach((b) => b.classList.toggle('on', b.dataset.t === tab && !$('#ss').value));
-  const render = (keepScroll, swap) => { const st = body.scrollTop; body.innerHTML = header(tab) + `<div class="pgbody ${swap ? 'swap' : ''}">${pages[tab](S.settings)}</div>`; body.scrollTop = keepScroll ? st : 0; mark(); bind(); };
+  const render = (keepScroll, swap) => { const st = body.scrollTop; body.innerHTML = header(tab) + `<div class="pgbody ${swap ? 'swap' : ''}">${(() => { try { return pages[tab](S.settings); } catch (e) { console.error('settings page', tab, e); return `<div class="lempty">${ic('info')}<b>This page could not be drawn</b><span>${esc(e.message)}</span></div>`; } })()}</div>`; body.scrollTop = keepScroll ? st : 0; mark(); bind(); };
   const show = (name) => { tab = name; $('#ss').value = ''; render(false, true); };
   const again = (ms = 40) => setTimeout(() => { if ($('#sbody') && !$('#ss').value) render(true); }, ms);
 

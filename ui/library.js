@@ -9,7 +9,7 @@ function library(o, d) {
   const head = (name) => `<div class="pghead"><span class="tile big">${ic(NAV.find((n) => n[0] === name)[1])}</span><div><h2>${name}</h2><p>${INFO[name]}</p></div></div>`;
   const ago = (t) => { const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(t).setHours(0, 0, 0, 0)) / 864e5); return days <= 0 ? 'Today' : days === 1 ? 'Yesterday' : days < 7 ? 'This week' : 'Earlier'; };
   const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const icon = (x) => (x.icon ? `<img class="fav" src="${x.icon}" alt="">` : `<span class="fav" style="background:hsl(${hue(hostOf(x.url) || 'x')} 42% 40%)">${esc((hostOf(x.url)[0] || '?').toUpperCase())}</span>`);
+  const icon = (x) => (x.icon ? `<img class="fav" src="${x.icon}" alt="">` : `<span class="fav" style="background:var(--hover);color:var(--dim)">${ic('globe')}</span>`);
 
   async function list(name) {
     const kind = name.toLowerCase();

@@ -101,6 +101,13 @@ async function renderMoveIn(el, opts = {}) {
   draw(); if (opts.onReady) opts.onReady(ctl);
 }
 
+// what the user should know about a tab in the budget list: why it is quiet, or when it will go to sleep
+const sleepNote = (t) => {
+  if (t.asleep) return 'Asleep. It reloads when you open it.';
+  if (t.frozen) return 'Frozen. It uses no CPU and resumes when you open it.';
+  if (t.sleepAt && t.sleepAt > Date.now()) { const m = Math.max(1, Math.round((t.sleepAt - Date.now()) / 60000)); return `Goes to sleep in about ${m} min`; }
+  return '';
+};
 function budList() {
   const rows = Object.entries(S.budget.tabs).map(([id, mb]) => [S.tabs.find((t) => t.id === +id), mb]).filter(([t]) => t).sort((a, b) => b[1] - a[1]).slice(0, 6);
   return rows.length ? rows.map(([t, mb]) => `<div class="row"><div class="l" style="display:flex;gap:10px;align-items:center;min-width:0">${favHtml(t)}<span style="min-width:0;max-width:300px"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title || 'New tab')}</span>${sleepNote(t) ? `<small>${sleepNote(t)}</small>` : ''}</span></div><div style="display:flex;gap:12px;align-items:center"><span class="val">${mb} MB</span>${t.id === S.activeTab ? '<span class="val">in use</span>' : `<button class="btn" data-sleep="${t.id}">Sleep</button>`}</div></div>`).join('') : '<div class="row"><div class="l" style="color:var(--dim)">No data yet.</div></div>';

@@ -144,16 +144,23 @@ function push() {
     pushTimer = null;
     if (!ui || ui.webContents.isDestroyed()) return;
     const bh = barHeight(); if (bh !== lastBar) { lastBar = bh; layout(); } // the bookmarks bar appears with the first bookmark
-    ui.webContents.send('state', publicState());
+    ui.webContents.send('state', publicState(false));
     persistSoon();
   }, 30);
 }
-function publicState() {
+let lastBarKey = '';
+function barForState(full) {
+  const bar = settings.bookmarksBar ? features.barBookmarks() : [];
+  const key = bar.map((b) => `${b.url}\u0001${b.title}\u0001${b.icon ? b.icon.length : 0}`).join('\u0002');
+  if (!full && key === lastBarKey) return null; // unchanged: the interface keeps the one it has
+  lastBarKey = key; return bar;
+}
+function publicState(full = true) {
   return {
     tabs: [...tabs.values()].map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, frozen: !!t.frozen, sleepAt: t.sleepAt || 0, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, darkSite: settings.features.darkSite && darkmode.isOnUrl(t.url), darkKey: settings.features.darkSite ? darkmode.keyOf(t.url) : '', private: !!t.private, bookmarked: features.isBookmarked(t.url) })),
     extensions: (() => { try { return features.listExtensions(); } catch { return []; } })(), snoozed: (state.snoozed || []).length,
     spaces: state.spaces, activeSpace: state.activeSpace, activeTab: state.activeTab, split: state.split,
-    archive: state.archive.slice(0, 80), bar: settings.bookmarksBar ? features.barBookmarks() : [], settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
+    archive: state.archive.slice(0, 80), bar: barForState(full), settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
     adblock: adblockStatus, blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(), update: updater.status(),
   };
 }
@@ -699,7 +706,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   layout();
 
   // ----- IPC from the UI -----
-  ipcMain.handle('state', () => publicState());
+  ipcMain.handle('state', () => publicState(true));
   ipcMain.handle('thumbs', () => Object.fromEntries([...tabs.values()].filter((t) => t.thumb).map((t) => [t.id, t.thumb])));
   ipcMain.handle('cmd', async (_e, name, a = {}) => {
     const t = (a.id && tabs.get(a.id)) || activeTab();

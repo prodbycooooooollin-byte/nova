@@ -266,17 +266,62 @@ async function setIcon(pageUrl, iconUrl) {
     else {
       const r = await C.ses.fetch(iconUrl, { signal: AbortSignal.timeout(5000) });
       if (!r.ok) return;
+      const ct = (r.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
+      if (!/^image\//.test(ct) && !(/octet-stream/.test(ct) && /\.ico(\?|$)/i.test(iconUrl))) return;
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length < 60 || buf.length > 70000) return;
-      data = `data:${(r.headers.get('content-type') || 'image/png').split(';')[0]};base64,${buf.toString('base64')}`;
+      data = `data:${/^image\//.test(ct) ? ct : 'image/x-icon'};base64,${buf.toString('base64')}`;
     }
     icons[host] = data;
     const keys = Object.keys(icons); if (keys.length > 500) delete icons[keys[0]];
     saveSoon('icons.json', () => icons);
   } catch {} finally { pendingIcons.delete(host); }
 }
+// Bookmarks that came from another browser, or were never opened here, have no icon yet. Nova asks each site for its own, quietly, three at a time:
+// the icon the page names, then /favicon.ico, and only if both fail DuckDuckGo's icon service (which is told the host name and nothing else).
+function iconCandidates(html, base) {
+  const out = [];
+  for (const m of String(html).slice(0, 250000).matchAll(/<link\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (!/\brel\s*=\s*["']?[^"'>]*\bicon\b/i.test(tag)) continue;
+    const href = (/\bhref\s*=\s*["']([^"']+)["']/i.exec(tag) || [])[1]; if (!href) continue;
+    const size = +((/\bsizes\s*=\s*["'](\d+)x/i.exec(tag) || [])[1] || 0), svg = /\.svg(\?|$)|image\/svg/i.test(tag + href);
+    let url; try { url = new URL(href.replace(/&amp;/g, '&'), base).href; } catch { continue; }
+    if (!/^https?:/i.test(url)) continue;
+    // 32 to 128 px stays sharp at the sizes Nova draws; huge touch icons and vectors come last
+    const rank = svg ? 5 : size >= 32 && size <= 128 ? 0 : size === 0 ? 1 : size < 32 ? 2 : 3;
+    out.push({ url, rank });
+  }
+  return out.sort((a, b) => a.rank - b.rank).map((x) => x.url);
+}
+const iconTried = new Map(), iconWaiting = []; let iconBusy = 0;
+const isLocalName = (h) => !h.includes('.') || /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h) || /\.(local|lan|internal|home|localhost)$/.test(h);
+async function discoverIcon(host) {
+  const base = `https://${host}/`, urls = [];
+  try {
+    const r = await C.ses.fetch(base, { signal: AbortSignal.timeout(7000), headers: { Accept: 'text/html' } });
+    if (r.ok && /html/i.test(r.headers.get('content-type') || '')) urls.push(...iconCandidates(await r.text(), r.url || base));
+  } catch { /* the site is unreachable or slow: fall through to the plain locations */ }
+  urls.push(`${base}favicon.ico`);
+  for (const u of urls.slice(0, 4)) { await setIcon(base, u); if (icons[host]) return; }
+  await setIcon(base, `https://icons.duckduckgo.com/ip3/${host}.ico`);
+}
+function queueIcons(list) {
+  for (const b of list) {
+    const h = hostOf(b.url);
+    if (!h || icons[h] || isLocalName(h) || Date.now() - (iconTried.get(h) || 0) < 6 * 3600e3) continue;
+    iconTried.set(h, Date.now()); iconWaiting.push(h);
+  }
+  pumpIcons();
+}
+function pumpIcons() {
+  while (iconBusy < 3 && iconWaiting.length) {
+    const h = iconWaiting.shift(); iconBusy++;
+    discoverIcon(h).catch(() => {}).finally(() => { iconBusy--; if (icons[h]) C.push(); pumpIcons(); });
+  }
+}
 const withIcon = (x) => ({ ...x, icon: icons[hostOf(x.url)] || '' });
-const barBookmarks = () => [...bookmarks].reverse().slice(0, 60).map((b) => ({ url: b.url, title: b.title, icon: icons[hostOf(b.url)] || '' })); // oldest first, like a bar you fill from the left
+const barBookmarks = () => queueIcons(bookmarks.slice(0, 80)) || [...bookmarks].reverse().slice(0, 60).map((b) => ({ url: b.url, title: b.title, icon: icons[hostOf(b.url)] || '' })); // oldest first, like a bar you fill from the left
 
 function hostVisits(host) { let n = 0; for (const h of history) if (hostOf(h.url) === host) n += h.n; return n; } // page loads of a site, for smart sleep's first guess
 function topSites(n = 8) { // bookmarks first, then the most visited hosts
