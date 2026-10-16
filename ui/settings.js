@@ -145,6 +145,7 @@ function settings(o, d) {
     Passwords: (s) => pwPageHtml(s, { row, grp, sect, fsw }),
     'Move in': () => '<div id="movein"><p>Looking for other browsers</p></div>',
     'Backup & updates': (s) => `<div class="vcard" id="updcard">${updCardHtml()}</div>`
+      + sect('Patch notes', 'What came with each version. The newest is on top.') + '<div id="patchnotes" class="pnotes"><p class="pnnone">Loading the notes…</p></div>'
       + sect('Settings backup', 'Copy this to save or share your setup. Paste another one and press Import.') + `<textarea id="bk" spellcheck="false">${esc(JSON.stringify(s, null, 2))}</textarea><p style="margin-top:12px;display:flex;gap:8px"><button class="btn primary" id="imp">Import</button><button class="btn danger" id="rst">Reset everything</button></p>`
       + `<details class="more"><summary>Advanced</summary>${grp(row('Update source', `<input type="text" data-k="updateFeed" value="${esc(s.updateFeed)}" placeholder="owner/repo or https://…/latest.json">`, 'A GitHub “owner/repo” or a URL to a latest.json file. Leave empty for the default.'))}</details>`,
   };
@@ -224,7 +225,7 @@ function settings(o, d) {
     on('#cacheclean', async () => { const r = await nova.cmd('cacheClean'); toast('Cache emptied.'); const el = $('#cache-size'); if (el && r) el.textContent = `${fmtBytes(r.size)} on disk`; });
     on('#dlfolder', () => nova.cmd('openDownloadsFolder'));
     on('#darkclear', () => { patch({ darkSites: [] }); again(150); });
-    on('#rk', () => { patch({ keys: {} }); again(150); }); bindUpd(); on('#rerun', () => nova.cmd('runSetup'));
+    on('#rk', () => { patch({ keys: {} }); again(150); }); bindUpd(); on('#rerun', () => nova.cmd('runSetup')); fillPatchNotes();
     on('#applycode', () => { patch({ customCss: $('#ccss').value, pageCss: $('#pcss').value, customJs: $('#cjs').value }); toast('Applied'); });
     on('#imp', () => { try { patch(JSON.parse($('#bk').value)); toast('Imported'); } catch (e) { toast('Invalid JSON: ' + e.message); } });
     on('#rst', async () => { if (await askDialog({ title: 'Reset everything?', text: 'All settings go back to the defaults. Your tabs and bookmarks stay.', ok: 'Reset', danger: true })) nova.cmd('resetSettings'); });
@@ -254,3 +255,18 @@ function recordKey(btn) {
   window.addEventListener('keydown', onKey, true);
 }
 
+
+// ---------- patch notes: every version with what it brought, the newest open ----------
+async function fillPatchNotes() {
+  const box = $('#patchnotes'); if (!box) return;
+  let log = []; try { log = (await nova.cmd('changelog')) || []; } catch { log = []; }
+  if (!$('#patchnotes')) return; // the page changed while the notes were on their way
+  if (!log.length) { box.innerHTML = '<p class="pnnone">No notes were found for this version.</p>'; return; }
+  const day = (e) => { try { return new Date(e.date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }); } catch { return ''; } };
+  box.innerHTML = log.map((e, i) => {
+    const h = e.headline, notes = e.notes || [];
+    return `<details class="pnv" ${i === 0 ? 'open' : ''}><summary><b>${esc(e.version)}</b><span>${esc(day(e))}</span>${e.version === S.version ? '<em>installed</em>' : ''}</summary>`
+      + (h ? `<div class="pnh"><b>${esc(h.title)}</b>${h.text ? `<span>${esc(h.text)}</span>` : ''}</div>` : '')
+      + (notes.length ? `<ul>${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : (h ? '' : '<p class="pnnone">Small fixes and improvements.</p>')) + '</details>';
+  }).join('');
+}

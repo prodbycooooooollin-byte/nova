@@ -323,7 +323,7 @@ function wake(t) {
   t.view = view; t.pendingWake = pw; t.frozen = false;
   view.setBackgroundColor((pw && pw.bg) || settings.theme.page);
   const wc = view.webContents;
-  const on = (ev, fn) => wc.on(ev, (...a) => { useWinOf(t); return fn(...a); }); // the window that shows this page is the current one while its event runs
+  const on = (ev, fn) => wc.on(ev, (...a) => { if (t.view !== view) return; useWinOf(t); return fn(...a); }); // the window that shows this page is the current one while its event runs; a page that went to sleep is ignored
   extbridge.watch(t);
   const upd = () => { if (wc.isDestroyed()) return; const u = wc.getURL(); t.url = isHome(u) ? HOME : u || t.url; if (t.url === HOME) t.title = 'New tab'; t.canBack = wc.navigationHistory.canGoBack(); t.canForward = wc.navigationHistory.canGoForward(); push(); };
   on('page-title-updated', (_e, title) => { t.title = isHome(t.url) ? 'New tab' : title; if (!isHome(t.url) && !t.private) features.recordVisit(wc.getURL(), title); push(); });
@@ -413,13 +413,31 @@ function dominantColor(img) { // the page's own background: the most common colo
   let best = null; for (const b of bins.values()) if (!best || b[0] > best[0]) best = b;
   return best ? '#' + [1, 2, 3].map((j) => Math.round(best[j] / best[0]).toString(16).padStart(2, '0')).join('') : '';
 }
+// A page must not be closed while a picture of it (capturePage) or a debugger session on it is still on its way: that races inside Chromium and took the whole
+// browser down (crash dumps of 16 October: the promise of capturePage, DevToolsAgentHostImpl, both in CrBrowserMain). Such work is counted per page here, and
+// closePage() closes the page only when the count is zero.
+const nativeOps = new WeakMap();
+function nat(wc, p) {
+  nativeOps.set(wc, (nativeOps.get(wc) || 0) + 1);
+  return Promise.resolve(p).finally(() => nativeOps.set(wc, Math.max(0, (nativeOps.get(wc) || 1) - 1)));
+}
+function closePage(wc) {
+  const t0 = Date.now();
+  const go = () => { try { if (wc.isDestroyed()) return; try { if (wc.debugger.isAttached()) wc.debugger.detach(); } catch { /* closing */ } wc.close(); } catch { /* gone */ } };
+  const wait = () => {
+    if (!(nativeOps.get(wc) > 0)) return go();
+    if (Date.now() - t0 > 5000) { dlog('page closed with native work still pending'); return go(); }
+    setTimeout(wait, 40);
+  };
+  wait();
+}
 async function capture(t) {
   const thumbs = settings.thumbnails, ghost = settings.budget.softWake && !isHome(t.url);
   if (!thumbs && !ghost) return;
   if (!t.view || !t.attached || t.view.webContents.isDestroyed()) return;
   const W = wins.get(t.wid); if (!W || W.closed || W.win.isDestroyed() || W.win.isMinimized() || !W.win.isVisible()) return;
   try {
-    const img = await t.view.webContents.capturePage();
+    const img = await nat(t.view.webContents, t.view.webContents.capturePage());
     if (img.isEmpty()) { if (ghost) t.ghost = ''; return; } // no picture is better than one of a different scroll position
     if (thumbs) t.thumb = 'data:image/jpeg;base64,' + img.resize({ width: 360 }).toJPEG(55).toString('base64');
     if (ghost) { t.ghost = 'data:image/jpeg;base64,' + (img.getSize().width > 960 ? img.resize({ width: 960 }) : img).toJPEG(60).toString('base64'); t.ghostBg = dominantColor(img); }
@@ -432,7 +450,7 @@ function sleep(t) {
   if (t.attached) { const W = wins.get(t.wid); try { (W ? W.win : win).contentView.removeChildView(t.view); } catch { /* its window is gone */ } t.attached = false; }
   const wc = t.view.webContents;
   t.url = wc.isDestroyed() ? t.url : (isHome(wc.getURL()) ? HOME : wc.getURL() || t.url);
-  if (!wc.isDestroyed()) { try { if (wc.debugger.isAttached()) wc.debugger.detach(); } catch {} wc.close(); }
+  if (!wc.isDestroyed()) closePage(wc);
   t.view = null; t.audible = false; t.loading = false; t.darkKey = null; t.muted = false; t.frozen = false; t.pendingWake = null;
 }
 function prewake(id) { // resting the pointer on a sleeping tab's row loads it in the background, so the click finds it ready
@@ -935,14 +953,14 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   features.init({
     app, ses, privSes, tabs, userFile, readJson, writeJson, userAgent: UA,
     state: () => state, settings: () => settings, saveSettings, win: () => win, ui: () => ui,
-    toast: (m) => toast(m), push: () => push(), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(), overlayBusy: () => overlayOpen,
+    toast: (m) => toast(m), push: () => push(), native: (wc, p) => nat(wc, p), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(), overlayBusy: () => overlayOpen,
     newPrivateTab: () => { const t = newTabObj({ private: true }); activate(t.id); return t; },
     openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
     addBackgroundTab: (o) => { const t = newTabObj({ url: o.url, title: o.title, favicon: o.favicon, spaceId: state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace, pinned: o.pinned }); push(); return t; },
   });
   webtools.init({ sessions: () => sessions, settings: () => settings });
   darkmode.init({ sessions: () => sessions, settings: () => settings, saveSettings, tabs, toast: (m) => toast(m), push: () => push(), domainOf: (u) => (tldParse ? tldParse(u, { allowPrivateDomains: true }).domain : null) });
-  passwords.init({ sessions: () => sessions, privateSession: () => privSes, settings: () => settings, tabs, activeTab: () => activeTab(), overlayOpen: () => overlayOpen, win: () => win, ui: () => ui, userFile, toast: (m) => toast(m), openOverlay: (k, d) => openOverlay(k, d) });
+  passwords.init({ log: (m) => dlog(m), sessions: () => sessions, privateSession: () => privSes, settings: () => settings, tabs, activeTab: () => activeTab(), overlayOpen: () => overlayOpen, win: () => win, ui: () => ui, userFile, toast: (m) => toast(m), openOverlay: (k, d) => openOverlay(k, d) });
   const permissions = (wc, perm, cb, details) => {
     if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock'].includes(perm)) return cb(true);
     if (!['media', 'geolocation', 'notifications', 'clipboard-read'].includes(perm)) return cb(false);
@@ -966,7 +984,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
 
   initAdblock(sessions);
   budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => allVisibleIds(), toast: (m) => toast(m), push: () => push(), watching: () => anyOverlay() });
-  sleeper.init({ tabs, settings: () => settings, visibleIds: () => allVisibleIds(), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
+  sleeper.init({ tabs, settings: () => settings, visibleIds: () => allVisibleIds(), native: (wc, p) => nat(wc, p), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
   app.on('before-quit', () => { persist(true); quitting = true; sleeper.flush(); features.shutdown(); });
   updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. Restart to finish the update.`); push(); } else if (e.type === 'status') push(); });
   ui.webContents.once('did-finish-load', () => setTimeout(() => { try { global.__novaBoot && global.__novaBoot.good(); } catch {} }, 8000)); // started fine: the update bundle is trusted from now on
@@ -982,7 +1000,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   });
   const startUrl = process.argv.slice(1).find((a) => /^https?:\/\//i.test(a));
   if (startUrl) ui.webContents.once('did-finish-load', () => setTimeout(() => openUrl(startUrl, { forceNew: true }), 300));
-  extbridge.init({ ses, sessions: () => sessions, tabs, state: () => state, settings: () => settings, win: () => win, openUrl: (u, o) => openUrl(u, o), activate: (id) => activate(id), wake: (t) => wake(t), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), push: () => push(), toast: (m) => toast(m), normalize: (u) => normalizeInput(u), activeTab: () => activeTab(), userDir: () => app.getPath('userData') });
+  extbridge.init({ native: (wc, p) => nat(wc, p), ses, sessions: () => sessions, tabs, state: () => state, settings: () => settings, win: () => win, openUrl: (u, o) => openUrl(u, o), activate: (id) => activate(id), wake: (t) => wake(t), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), push: () => push(), toast: (m) => toast(m), normalize: (u) => normalizeInput(u), activeTab: () => activeTab(), userDir: () => app.getPath('userData') });
   loadExtensions(ses).then(() => extmgr.upgradeLegacy()).catch((e) => console.error('extensions', e.message));
   setInterval(idlePolicy, 30000);
   layout();
@@ -1051,6 +1069,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         if (!r.canceled) { try { await ses.extensions.loadExtension(r.filePaths[0], { allowFileAccess: true }); if (!settings.extensions.includes(r.filePaths[0])) settings.extensions.push(r.filePaths[0]); saveSettings(); toast('Extension loaded.'); } catch (e) { toast('Could not load extension: ' + e.message); } push(); }
       } break;
       case 'removeExtension': settings.extensions = settings.extensions.filter((p) => p !== a.path); saveSettings(); toast('Removed. Takes effect after restart.'); push(); break;
+      case 'changelog': try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'changelog.json'), 'utf8')).slice(0, 60); } catch { return []; }
       case 'checkUpdate': updater.check(settings.updateFeed || updater.defaultFeed, { manual: true }); break;
       case 'applyUpdate': if (await updater.apply()) app.quit(); break;
       case 'keysPause': keysPaused = !!a.on; break;

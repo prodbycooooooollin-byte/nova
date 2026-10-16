@@ -1,5 +1,19 @@
 [
   {
+    "version": "26.10.17",
+    "date": "2026-10-17",
+    "headline": {
+      "title": "Dates as versions",
+      "text": "from now on a version is year.month.day, and every version's patch notes are in Settings under Backup & updates, the newest one open."
+    },
+    "notes": [
+      "A cleaner top bar: flat tabs with fine dividers, one outlined tab, a quiet address bar, the bookmarks row kept underneath.",
+      "The password saver now handles sign-ins that ask for the user name first and the password on the next step or page, as Google, Microsoft and Amazon do, and fields set to show the password.",
+      "Fewer crashes: a tab is no longer closed while a picture of it or a debugger session on it is still being finished. This was the cause of the browser closing without a message.",
+      "Settings are laid out as a sheet, and the shortcut icon repair applies after every update."
+    ]
+  },
+  {
     "version": "0.13.3",
     "date": "2026-10-16",
     "notes": [

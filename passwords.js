@@ -22,7 +22,12 @@ const preloadIds = new Map(); // session -> id of the registered frame preload
 const pending = new Map(); // webContents id -> a login that was just submitted and waits for the page that follows: { origin, user, blob, id, update, timer }
 let card = null; // { view, ready, cur, idle }: the card view, kept for a little while after use; cur is what it shows right now
 let unloadTimer = null;
+// A sign-in that asks for the user name first and the password on the next page or step: the name typed (or picked) is kept here for ten minutes, for this tab and this exact origin only.
+const carried = new Map(); // webContents id -> { origin, user, t }
+const CARRY_MS = 10 * 60e3;
+const carryFor = (id, origin) => { const c = carried.get(id); if (!c) return null; if (c.origin !== origin || Date.now() - c.t > CARRY_MS) { carried.delete(id); return null; } return c; };
 
+const L = (m) => { try { if (C.log) C.log('pw: ' + m); } catch { /* the log is a help only */ } }; // host names and yes/no only, never a user name or a password
 const featureOn = () => !!(C.settings().features || {}).passwords;
 const cfg = () => ({ save: true, fill: true, ...(C.settings().passwords || {}) });
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
@@ -134,8 +139,8 @@ function showSave(tab, p) {
   const secure = p.origin.startsWith('https:');
   present({ mode: p.update ? 'update' : 'save', tab, wc: tab.view.webContents, offer: p, h: secure ? H_SAVE : H_SAVE_PLAIN, model: { mode: p.update ? 'update' : 'save', site: labelOf(p.origin), secure, user: p.user } });
 }
-function showPick(tab, t, list, rect) {
-  present({ mode: 'pick', tab, wc: tab.view.webContents, frame: t.frame, origin: t.origin, entries: list, sel: -1, rect, h: H_PICK + ROW * list.length, model: { mode: 'pick', entries: list.map((e) => ({ user: e.user })) } });
+function showPick(tab, t, list, rect, userOnly) {
+  present({ mode: 'pick', userOnly: !!userOnly, tab, wc: tab.view.webContents, frame: t.frame, origin: t.origin, entries: list, sel: -1, rect, h: H_PICK + ROW * list.length, model: { mode: 'pick', entries: list.map((e) => ({ user: e.user })) } });
 }
 
 function doSave() {
@@ -158,6 +163,7 @@ function pick(i) {
     if (originOf(cur.frame.url) !== cur.origin) return; // the page moved on
     const s = getStore();
     if (s.originOfId(entry.id) !== cur.origin) return;
+    if (cur.userOnly) { cur.frame.send('nova:pw-fill', { user: entry.user, userOnly: true }); carried.set(cur.wc.id, { origin: cur.origin, user: entry.user, t: Date.now() }); return; } // the user name step: the password is not touched
     cur.frame.send('nova:pw-fill', { user: entry.user, pass: s.reveal(entry.id) });
   } catch (err) { C.toast('Nova could not fill that login.'); console.error('passwords fill', err.message); }
 }
@@ -171,10 +177,21 @@ function install() {
       const t = featureOn() && topOf(e);
       if (t) {
         const s = getStore(), c = cfg(), ok = s.available();
-        r = { on: true, save: ok && c.save && !isPrivate(e.sender) && !s.isNever(t.origin), fill: ok && c.fill && s.countFor(t.origin) > 0, pending: pending.has(e.sender.id) };
+        const cy = carryFor(e.sender.id, t.origin);
+        r = { on: true, save: ok && c.save && !isPrivate(e.sender) && !s.isNever(t.origin), fill: ok && c.fill && s.countFor(t.origin) > 0, pending: pending.has(e.sender.id), carried: ok && c.save && cy ? cy.user : '' };
       }
     } catch (err) { console.error('passwords ask', err.message); }
     e.returnValue = r; // always answered: the page waits for it
+  });
+  // the user name step of a sign-in was sent off: keep the name for the page or step that asks for the password
+  ipcMain.on('nova:pw-user', (e, d) => {
+    try {
+      const t = featureOn() && cfg().save && !isPrivate(e.sender) && topOf(e);
+      if (!t || !d || typeof d.user !== 'string') return;
+      const user = d.user.trim(); if (!user || user.length > LIMITS.user) return;
+      const s = getStore(); if (!s.available() || s.isNever(t.origin)) return;
+      carried.set(e.sender.id, { origin: t.origin, user, t: Date.now() });
+    } catch (err) { console.error('passwords user', err.message); }
   });
   // a login form was submitted. The password is sealed here and now; the offer itself waits until the next page has shown that the sign-in worked.
   ipcMain.on('nova:pw-submit', (e, d) => {
@@ -189,11 +206,12 @@ function install() {
           if (st.state !== 'same') {
             const id = e.sender.id, p = { origin: t.origin, user, blob: s.seal(d.pass), id: st.id, update: st.state === 'update' };
             p.timer = setTimeout(() => pending.delete(id), 120000);
-            pending.set(id, p); ok = true;
+            pending.set(id, p); ok = true; carried.delete(id);
           }
         }
       }
     } catch (err) { console.error('passwords submit', err.message); }
+    L(`submit seen on ${(() => { const q = topOf(e); return q ? labelOf(q.origin) : 'a page that is not allowed'; })()}: ${ok ? 'an offer will follow' : 'nothing to offer'}`);
     e.returnValue = ok;
   });
   // the page after a submit, or the same page a moment later: is there still a password field? Then the sign-in failed and nothing is offered.
@@ -201,6 +219,7 @@ function install() {
     try {
       const id = e.sender.id, p = pending.get(id);
       if (!p || !featureOn() || !topOf(e)) return;
+      L(`page after the sign-in: ${d && d.hasForm ? 'still shows a password field, no offer' : 'no password field, offering to save'}`);
       if (!d || d.hasForm) { if (!e.sender.isLoading()) drop(id); return; } // still loading: the page that follows will answer
       drop(id);
       const tab = tabOf(e.sender);
@@ -214,10 +233,13 @@ function install() {
       if (!t) return;
       const tab = tabOf(e.sender);
       if (!tab || tab !== C.activeTab() || C.overlayOpen()) return;
-      const list = getStore().matches(t.origin).slice(0, 5);
+      let list = getStore().matches(t.origin);
+      const cy = !rc.userOnly && carryFor(e.sender.id, t.origin);
+      if (cy) { const only = list.filter((x) => x.user.toLowerCase() === cy.user.toLowerCase()); if (only.length) list = only; } // the password step lists the user name that was just given
+      list = list.slice(0, 5);
       if (!list.length) return;
       const n = (v) => (Number.isFinite(+v) ? +v : 0);
-      showPick(tab, t, list, { x: n(rc.x), y: n(rc.y), w: n(rc.w), h: n(rc.h) });
+      showPick(tab, t, list, { x: n(rc.x), y: n(rc.y), w: n(rc.w), h: n(rc.h) }, !!rc.userOnly);
     } catch (err) { console.error('passwords focus', err.message); }
   });
   ipcMain.on('nova:pw-dismiss', (e) => { if (card && card.cur && card.cur.mode === 'pick' && card.cur.wc === e.sender) hide(); });
@@ -292,7 +314,7 @@ function sync() {
     if (on && !preloadIds.has(s)) { try { preloadIds.set(s, s.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'pw-preload.js') })); } catch (err) { console.error('passwords preload', err.message); } }
     else if (!on && preloadIds.has(s)) { try { s.unregisterPreloadScript(preloadIds.get(s)); } catch { /* already gone */ } preloadIds.delete(s); }
   }
-  if (!on) { hide(); for (const id of [...pending.keys()]) drop(id); destroyCard(); touch(); }
+  if (!on) { hide(); for (const id of [...pending.keys()]) drop(id); carried.clear(); destroyCard(); touch(); }
 }
 
 function init(ctx) { C = ctx; install(); sync(); }

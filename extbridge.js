@@ -153,7 +153,7 @@ ops['tabs.ungroup'] = async () => undefined;
 ops['tabs.captureVisibleTab'] = async (cx, a, b) => {
   const o = (typeof a === 'object' && a ? a : b) || {}, t = C.activeTab(), wc = wcOf(t);
   if (!wc) throw new Error('No visible tab to capture.');
-  const img = await wc.capturePage();
+  const img = await (C.native ? C.native(wc, wc.capturePage()) : wc.capturePage());
   return o.format === 'png' ? 'data:image/png;base64,' + img.toPNG().toString('base64') : 'data:image/jpeg;base64,' + img.toJPEG(o.quality || 90).toString('base64');
 };
 

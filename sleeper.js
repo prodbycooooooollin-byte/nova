@@ -52,13 +52,16 @@ const SNAP_JS = `(() => {
 async function setState(t, state) {
   const wc = t.view?.webContents;
   if (!wc || wc.isDestroyed()) return false;
-  const d = wc.debugger, had = d.isAttached();
-  try {
-    if (!had) d.attach('1.3');
-    await d.sendCommand('Page.setWebLifecycleState', { state });
-    return true;
-  } catch { return false; }
-  finally { try { if (!had && !wc.isDestroyed() && d.isAttached()) d.detach(); } catch { /* page is closing */ } }
+  const run = async () => {
+    const d = wc.debugger, had = d.isAttached();
+    try {
+      if (!had) d.attach('1.3');
+      await d.sendCommand('Page.setWebLifecycleState', { state });
+      return true;
+    } catch { return false; }
+    finally { try { if (!had && !wc.isDestroyed() && d.isAttached()) d.detach(); } catch { /* page is closing */ } }
+  };
+  return C.native ? C.native(wc, run()) : run(); // the page is not closed while this debugger session is open
 }
 async function freeze(t) {
   if (t.frozen || !t.view) return;
