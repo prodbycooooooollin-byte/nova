@@ -1,7 +1,7 @@
 // Skip DOM writes when nothing changed: the chrome re-renders on every title/loading event, most of them no-ops.
 (() => { const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML'); for (const id of ['nav', 'winctl', 'urlbar', 'bmbar', 'pins', 'tabhead', 'tabs', 'spaces', 'tools']) { const el = document.getElementById(id); let cur = null; Object.defineProperty(el, 'innerHTML', { configurable: true, get() { return d.get.call(el); }, set(v) { if (v === cur) return; cur = v; d.set.call(el, v); } }); } })();
 // ---------- boot ----------
-nova.onState((s) => { S = s; render(); if (overlay?.kind === 'overview' && overview.redraw) overview.redraw(); if (overlay?.kind === 'settings') updateBudgetLive(); });
+nova.onState((s) => { S = s; render(); if (overlay?.kind === 'overview' && overview.redraw) overview.redraw(); if (overlay?.kind === 'settings') { updateBudgetLive(); updateUpdateLive(); } });
 nova.onOverlay((o) => { if (!o) return clearOverlay(); if (S) setOverlay(o.kind, o.data); });
 nova.onToast(toast);
 nova.state().then((s) => { S = s; render(); });
@@ -10,12 +10,12 @@ nova.state().then((s) => { S = s; render(); });
 const NODRAG = 'button,[data-tab],[data-do],#urlbar,input,textarea,select,.pin,.tab,.space,.item,.box,#menu,.card';
 let dragging = false;
 document.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 || overlay || !e.target.closest('#chrome') || e.target.closest(NODRAG)) return;
+  if (e.button !== 0 || overlay || !e.target.closest('#chrome,#strip') || e.target.closest(NODRAG)) return;
   dragging = true; nova.cmd('dragStart');
 });
 const stopDrag = () => { if (dragging) { dragging = false; nova.cmd('dragEnd'); } };
 addEventListener('pointerup', stopDrag); addEventListener('pointercancel', stopDrag); addEventListener('blur', stopDrag); addEventListener('mouseup', stopDrag);
-document.addEventListener('dblclick', (e) => { if (!overlay && e.target.closest('#chrome') && !e.target.closest(NODRAG)) nova.cmd('win', { op: 'max' }); });
+document.addEventListener('dblclick', (e) => { if (!overlay && e.target.closest('#chrome,#strip') && !e.target.closest(NODRAG)) nova.cmd('win', { op: 'max' }); });
 
 // ---------- drag tabs to reorder ----------
 let dragTab = null, dropInfo = null, deferredRender = false, dragSince = 0;

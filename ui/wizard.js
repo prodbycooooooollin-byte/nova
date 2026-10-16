@@ -22,7 +22,7 @@ function wizard(o) {
     look: { label: 'Look', title: 'Pick a look', sub: 'Watch this screen change as you choose. Every colour stays editable.', render: () => `<div class="themes big">${WIZARD_THEMES.map((n) => [n, PRESETS[n]]).map(([n, p], k) => `<button class="theme ${choice.theme === n ? 'on' : ''}" data-th="${n}" style="--i:${k}"><div class="mock" style="--mb:${p.bg};--mp:${p.page};--ma:${p.accent};--ms:${p.surface2}"><i class="mr"></i><i class="mp"></i><i class="ma"></i></div><span>${n}</span></button>`).join('')}</div>`, after: (r) => pickInto(r, 'data-th', (b) => { choice.theme = b.dataset.th; nova.cmd('settings', { patch: { theme: PRESETS[choice.theme], wallpaper: { ...S.settings.wallpaper, mode: 'theme', preset: WALL_OF[choice.theme] || '' } } }); }) },
     search: { label: 'Search', title: 'Choose your search', sub: 'Used by the address bar and the home page.', render: () => `<div class="engines big">${Object.keys(ENGINES).map((n, k) => `<button class="engine ${choice.engine === n ? 'on' : ''}" data-e="${n}" style="--i:${k}">${brand('eng-' + n.toLowerCase())}${n}<span class="tick">${ic('check')}</span></button>`).join('')}</div>`, after: (r) => pickInto(r, 'data-e', (b) => { choice.engine = b.dataset.e; nova.cmd('settings', { patch: { searchEngine: ENGINES[choice.engine] } }); }) },
     budget: { label: 'Memory', title: 'How light should Nova be?', sub: 'Nova keeps its memory use under a limit you choose, by quietly sleeping tabs you are not using.', render: () => `<div class="budrow">${ring(S.settings.budget.enabled ? Math.min(100, S.settings.budget.ramMB / 40) : 0)}<div class="ocards four">${[[800, 'Light', 'Up to 0.8 GB'], [1500, 'Balanced', 'Up to 1.5 GB'], [3000, 'Roomy', 'Up to 3 GB'], [0, 'No limit', 'Never sleep tabs for memory']].map(([v, t, sub], n) => `<button class="ocard small ${(S.settings.budget.enabled ? S.settings.budget.ramMB : 0) === v ? 'on' : ''}" data-b="${v}" style="--i:${n}"><div class="ph"><b>${t}</b></div><p>${sub}</p><span class="tick">${ic('check')}</span></button>`).join('')}</div></div>`, after: (r) => pickInto(r, 'data-b', (b) => { const v = +b.dataset.b; nova.cmd('settings', { patch: { budget: { ...S.settings.budget, enabled: v > 0, ramMB: v || S.settings.budget.ramMB } } }); const ringEl = $('#ob-ring'); if (ringEl) ringEl.setAttribute('stroke-dasharray', `${((v ? Math.min(100, v / 40) : 0) * 3.267).toFixed(1)} 400`); $('#ob-mb').textContent = v || '∞'; }) },
-    bookmarks: { label: 'Move in', title: 'Bring your things over', sub: 'Coming from Chrome, Edge or Brave? Move bookmarks, history, extensions and your search engine in one go.', render: () => '<div id="wz-mi"></div>', after: (r) => renderMoveIn(r.querySelector('#wz-mi'), { hub: false }) },
+    bookmarks: { label: 'Move in', title: 'Bring your things over', sub: 'Coming from Chrome, Edge, Firefox or another browser? Move bookmarks, history, extensions and your search engine in one go.', render: () => '<div id="wz-mi"></div>', after: (r) => { mi = null; renderMoveIn(r.querySelector('#wz-mi'), { hub: false, onReady: (c) => { mi = c; ctaSync(); } }); } },
     extras: { label: 'Extras', title: 'Add only what you need', sub: 'The ad blocker is built in. Install a password manager with one click, right here.', render: () => catalogHtml([CATALOG[0], CATALOG[1], CATALOG[3]].map((c) => c.id)), after: (r) => bindInstall(r, paint) },
     done: { label: 'Done', cta: 'Open Nova', hint: 'Enter to open Nova', render: () => `<div class="hello3 fin">
       <h1 class="mega small">${letters('Ready.', 'mg')}</h1>
@@ -30,7 +30,7 @@ function wizard(o) {
       <div class="specs">${[['Profile', PROFILE_INFO.find((p) => p[0] === choice.profile)[1]], ['Tabs', { left: 'Sidebar left', right: 'Sidebar right', top: 'On top' }[choice.layout]], ['Look', choice.theme], ['Search', choice.engine], ['Memory', S.settings.budget.enabled ? S.settings.budget.ramMB + ' MB limit' : 'No limit']].map(([k, v], n) => `<div class="spec" style="--i:${n}"><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
       <p class="specnote">Everything else lives in Settings, <kbd>Ctrl</kbd> <kbd>,</kbd></p></div>` },
   };
-  const order = () => (choice.profile === 'ultra' ? ['hello', 'profile', 'layout', 'search', 'done'] : ['hello', 'profile', 'layout', 'look', 'search', 'budget', 'bookmarks', 'extras', 'done']);
+  const order = () => (choice.profile === 'ultra' ? ['hello', 'profile', 'layout', 'search', 'bookmarks', 'done'] : ['hello', 'profile', 'layout', 'look', 'search', 'budget', 'bookmarks', 'extras', 'done']);
 
   o.innerHTML = `<div class="onb"><canvas id="obsky"></canvas>
     <div class="otop"><div class="obrand"><img src="mark.svg" alt="">Nova</div><button class="skip" id="skip">Skip setup</button></div>
@@ -38,6 +38,8 @@ function wizard(o) {
     <div class="onav"><button class="btn ghost" id="wb">Back</button><div class="osteps" id="osteps"></div><button class="btn primary big" id="wn"><span id="wnl"></span><span class="arr">${ic('fwd')}</span></button></div></div>`;
   if (S.settings.effects) sky = NovaSky($('#obsky'), { fps: 30, origin: () => { const el = document.querySelector('#bmark') || document.querySelector('.mega'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; } });
 
+  let mi = null; // the Move in step reports here whether there is something left to bring over
+  const ctaSync = () => { const k = order()[i]; if (k === 'bookmarks') $('#wnl').textContent = mi && mi.pending() ? 'Bring it over and continue' : 'Continue'; };
   function paint() {
     const keys = order(); if (i >= keys.length) i = keys.length - 1;
     const k = keys[i], d = defs[k], last = i === keys.length - 1;
@@ -53,7 +55,11 @@ function wizard(o) {
   function finish() { const el = o.querySelector('.onb'); if (el) el.classList.add('leaving'); setTimeout(() => { if (sky) sky.stop(); nova.cmd('finishSetup'); }, el && S.settings.effects ? 380 : 0); }
   $('#skip').onclick = () => finish();
   $('#wb').onclick = () => { dir = 'back'; i--; paint(); };
-  $('#wn').onclick = () => { const keys = order(); if (i === keys.length - 1) return finish(); dir = 'fwd'; i++; paint(); };
+  $('#wn').onclick = async () => {
+    const keys = order();
+    if (keys[i] === 'bookmarks' && mi && mi.pending()) { const b = $('#wn'); b.disabled = true; $('#wnl').textContent = 'Bringing it over…'; try { await mi.run(); } catch (e) { toast('Something went wrong while moving in. You can try again in Settings > Move in.'); } await new Promise((r) => setTimeout(r, 1300)); b.disabled = false; }
+    if (i === keys.length - 1) return finish(); dir = 'fwd'; i++; paint();
+  };
   paint();
 }
 

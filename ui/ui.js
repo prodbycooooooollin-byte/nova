@@ -71,6 +71,7 @@ const FEATURES = [
   ['soloAudio', 'One sound at a time', 'Pause other playing tabs when one starts playing.'],
   ['peek', 'Peek at links', 'Right-click a link to preview it in a floating card.'],
   ['darkPage', 'Dark mode for pages', 'Invert any page to a dark version.'],
+  ['darkSite', 'Smart dark mode', "Dark Reader's engine, built in. Remembered per site."],
   ['cleanLinks', 'Copy clean links', 'Strip tracking parameters when copying a link.'],
   ['screenshot', 'Screenshots', 'Capture the page to Pictures and the clipboard (Ctrl+Shift+S).'],
   ['pip', 'Picture in picture', 'Pop the biggest video on a page into a floating window.'],
@@ -78,7 +79,7 @@ const FEATURES = [
   ['translate', 'Translate page', 'Open the current page through Google Translate.'],
   ['privateTabs', 'Private tabs', 'Tabs that keep no history, cookies or cache (Ctrl+Shift+N).'],
 ];
-const FEATURE_GROUPS = [['Tab tools', ['tabSearch', 'snooze', 'rewind', 'soloAudio']], ['Page tools', ['peek', 'darkPage', 'cleanLinks', 'screenshot', 'pip', 'savePdf', 'translate']], ['Privacy', ['privateTabs']]];
+const FEATURE_GROUPS = [['Tab tools', ['tabSearch', 'snooze', 'rewind', 'soloAudio']], ['Page tools', ['peek', 'darkPage', 'darkSite', 'cleanLinks', 'screenshot', 'pip', 'savePdf', 'translate']], ['Privacy', ['privateTabs']]];
 const ENGINES = { DuckDuckGo: 'https://duckduckgo.com/?q=%s', Google: 'https://www.google.com/search?q=%s', Brave: 'https://search.brave.com/search?q=%s', Startpage: 'https://www.startpage.com/do/search?q=%s', Ecosia: 'https://www.ecosia.org/search?q=%s', Bing: 'https://www.bing.com/search?q=%s' };
 
 let S = null, overlay = null, customJsApplied = null;
@@ -91,7 +92,7 @@ function applySettings() {
   r.setProperty('--tab-h', { compact: '32px', comfortable: '38px', spacious: '45px' }[s.density] || '38px');
   r.setProperty('--radius', s.radius + 'px'); r.setProperty('--gap', s.gap + 'px'); r.setProperty('--side', (s.compact ? 56 : s.sidebarWidth) + 'px');
   r.setProperty('--fs', s.fontSize + 'px'); r.setProperty('--font', `${s.font || "'Inter'"}, 'Inter', system-ui, sans-serif`);
-  $('#app').className = `layout-${s.layout}` + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects');
+  $('#app').className = `layout-${s.layout}` + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '');
   $('#user-css').textContent = s.customCss || '';
   if (s.customJs !== customJsApplied) {
     customJsApplied = s.customJs;
@@ -168,7 +169,10 @@ document.addEventListener('auxclick', (e) => { const b = e.target.closest('[data
 document.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const t = e.target.closest('[data-tab]'), sp = e.target.closest('[data-space]'), bmk = e.target.closest('[data-bm]');
-  if (bmk) { const url = bmk.dataset.bm; return showMenu(e, [{ label: 'Open', run: () => nova.cmd('open', { text: url }) }, { label: 'Open in new tab', run: () => nova.cmd('open', { text: url, newTab: true }) }, '-', { label: 'Remove bookmark', run: () => nova.cmd('removeBookmark', { url }) }]); }
+  const names = { label: S.settings.bookmarkNames === false ? 'Show bookmark names' : 'Icons only, hide names', run: () => nova.cmd('settings', { patch: { bookmarkNames: S.settings.bookmarkNames === false } }) };
+  const barOpts = S.settings.layout === 'top' ? ['-', names] : []; // in the side layouts the bar is icons only anyway
+  if (bmk) { const url = bmk.dataset.bm; return showMenu(e, [{ label: 'Open', run: () => nova.cmd('open', { text: url }) }, { label: 'Open in new tab', run: () => nova.cmd('open', { text: url, newTab: true }) }, '-', { label: 'Remove bookmark', run: () => nova.cmd('removeBookmark', { url }) }, ...barOpts]); }
+  if (e.target.closest('#bmbar')) return showMenu(e, [{ label: 'Hide bookmarks bar', run: () => nova.cmd('settings', { patch: { bookmarksBar: false } }) }, ...barOpts]);
   if (t && !overlay) showMenu(e, tabMenu(+t.dataset.tab)); else if (sp) showMenu(e, spaceMenu(+sp.dataset.space));
 });
 function showMenu(e, items) {
@@ -253,6 +257,7 @@ function commands() {
     ...(F.snooze ? [snz('in 1 hour', Date.now() + 3600e3), ...(hr < 17 ? [snz('this evening', at(18))] : []), snz('tomorrow morning', at(9, 0, 1)), snz('next Monday', nextMonday())] : []),
     ...(F.rewind ? [{ t: 'Rewind: bring back tabs from earlier', s: 'Sessions are saved every few minutes', run: () => nova.cmd('overlay', { kind: 'palette', data: { mode: 'go', text: 'rewind ' } }) }] : []),
     ...(F.darkPage ? [{ t: cur?.dark ? 'Turn off dark mode for this page' : 'Dark mode for this page', k: 'Ctrl ⇧ D', run: A('darkPage') }] : []),
+    ...(F.darkSite && cur?.darkKey ? [{ t: cur.darkSite ? `Turn off dark mode for ${cur.darkKey}` : `Dark mode for ${cur.darkKey}`, s: 'Smart dark, remembered for this site', run: A('darkSite') }] : []),
     ...(F.screenshot ? [{ t: 'Take screenshot', k: 'Ctrl ⇧ S', run: A('screenshot') }] : []),
     ...(F.pip ? [{ t: 'Picture in picture', s: 'Pop the biggest video into a floating window', run: () => { nova.cmd('closeOverlay'); nova.cmd('pip'); } }] : []),
     ...(F.savePdf ? [{ t: 'Save page as PDF', run: () => { nova.cmd('closeOverlay'); nova.cmd('savePdf'); } }] : []),
@@ -269,6 +274,7 @@ function commands() {
     { t: 'Sidebar on the left', run: set({ layout: 'left' }) }, { t: 'Sidebar on the right', run: set({ layout: 'right' }) }, { t: 'Tabs on top', run: set({ layout: 'top' }) },
     { t: 'Open the extension hub', s: 'Find and add extensions', run: A('hub') },
     { t: S.settings.compact ? 'Expand sidebar' : 'Compact sidebar', run: set({ compact: !S.settings.compact }) }, { t: S.settings.bookmarksBar ? 'Hide bookmarks bar' : 'Show bookmarks bar', run: set({ bookmarksBar: !S.settings.bookmarksBar }) },
+    ...(S.settings.bookmarksBar && S.settings.layout === 'top' ? [{ t: S.settings.bookmarkNames === false ? 'Show bookmark names' : 'Bookmarks: icons only', s: 'Right-click the bookmarks bar for the same switch', run: set({ bookmarkNames: S.settings.bookmarkNames === false }) }] : []),
     { t: S.settings.adblock ? 'Turn ad blocker off' : 'Turn ad blocker on', run: set({ adblock: !S.settings.adblock }) },
     { t: 'Developer tools', k: 'F12', run: A('devtools') }, { t: 'Settings', k: 'Ctrl ,', run: A('settings') },
     { t: 'Move in from another browser', s: 'Bookmarks, sign-ins, extensions', run: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Move in' } }) },
@@ -371,4 +377,12 @@ async function overview(o) {
   $('#ovx').onclick = () => nova.cmd('closeOverlay');
   overview.redraw = draw; draw(); qi.focus();
 }
-
+// Invisible wake: resting the pointer on a sleeping tab's row for 300 ms loads it in the background, so the click finds it ready
+let hoverWake = null;
+document.addEventListener('mouseover', (e) => {
+  const row = S && S.settings.budget.softWake && !overlay ? e.target.closest?.('.tab.asleep') : null, id = row ? +row.dataset.tab : 0;
+  if (hoverWake && hoverWake.id === id) return;
+  if (hoverWake) clearTimeout(hoverWake.timer);
+  hoverWake = id ? { id, timer: setTimeout(() => nova.cmd('prewake', { id }), 300) } : null;
+});
+document.documentElement.addEventListener('mouseleave', () => { if (hoverWake) { clearTimeout(hoverWake.timer); hoverWake = null; } });

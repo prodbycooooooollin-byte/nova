@@ -4,7 +4,12 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const updater = require('./updater');
 const features = require('./features');
+const darkmode = require('./darkmode');
+const extbridge = require('./extbridge');
+const scriptletGuard = require('./scriptlet-guard');
+const extmgr = require('./extmgr');
 const budget = require('./budget');
+const sleeper = require('./sleeper');
 const persona = require('./persona');
 const UA = persona.UA;
 const setup = require('./setup');
@@ -21,6 +26,8 @@ const DEFAULT_KEYS = {
   pinTab: ['Ctrl+Shift+P'], hub: ['Ctrl+Shift+E'], cleanUp: ['Ctrl+Shift+K'], bookmark: ['Ctrl+D'], history: ['Ctrl+H'], downloads: ['Ctrl+J'], bookmarks: ['Ctrl+Shift+O'], screenshot: ['Ctrl+Shift+S'], privateTab: ['Ctrl+Shift+N'], print: ['Ctrl+P'], fullscreen: ['F11'], lastTab: ['Ctrl+`'], copyClean: ['Ctrl+Shift+C'], darkPage: ['Ctrl+Shift+D'],
   space1: ['Alt+1'], space2: ['Alt+2'], space3: ['Alt+3'], space4: ['Alt+4'], space5: ['Alt+5'],
 };
+// Smart sleep (Settings > Resource budget): freeze background tabs, wake them invisibly, learn per site how soon to sleep them
+const SMART = { freeze: true, freezeAfterSec: 30, softWake: true, earlySleepMin: 3, adaptive: true };
 const DEFAULTS = {
   suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0 }, startPage: { sites: true, greeting: true },
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
@@ -31,8 +38,11 @@ const DEFAULTS = {
   sleepAfterMin: 10, archiveAfterHours: 24, maxTabs: 25, dedupeTabs: true,
   adblock: true, extensions: [], keys: {}, updateFeed: '', zoom: {},
   // Optional features. Everything beyond the essentials is off until the user turns it on.
-  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20 }, lowIsolation: false,
-  features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, savePdf: false, translate: false, privateTabs: false },
+  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false,
+  features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false },
+  darkSites: [],
+  bookmarkNames: true, // false: the bookmarks bar shows only the small icons
+  newTabPage: 'home', // what a new tab shows: the start page ('home') or the address bar to type into ('bar')
 };
 
 const HOME = 'nova://home';
@@ -40,12 +50,12 @@ const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
 const isHome = (u) => u === HOME || (u || '').startsWith(HOME_FILE);
 const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, fx: settings.effects ? 1 : 0, wall: settings.wallpaper.mode === 'none' ? '' : settings.wallpaper.preset });
 // Profiles: one switch that decides how much Nova does.
-const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'savePdf', 'translate', 'privateTabs'];
+const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'darkSite', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'savePdf', 'translate', 'privateTabs'];
 const featureSet = (on) => Object.fromEntries(FEATURE_KEYS.map((k) => [k, on]));
 const PROFILES = {
-  ultra: { blockAutoplay: true, effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 800, cpuGuard: true, cpuPct: 20 } },
-  nova: { blockAutoplay: true, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(false), budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20 } },
-  complete: { blockAutoplay: false, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(true), budget: { enabled: true, ramMB: 3000, cpuGuard: true, cpuPct: 25 } },
+  ultra: { blockAutoplay: true, effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 800, cpuGuard: true, cpuPct: 20, ...SMART } },
+  nova: { blockAutoplay: true, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(false), budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART } },
+  complete: { blockAutoplay: false, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(true), budget: { enabled: true, ramMB: 3000, cpuGuard: true, cpuPct: 25, ...SMART } },
 };
 let sessions = [], privSes = null;
 let win, ui, settings, state;
@@ -73,7 +83,7 @@ function normalizeInput(text) {
   const t = text.trim();
   if (/^nova:\/\/home/i.test(t)) return HOME;
   if (!t) return HOME;
-  if (/^(https?|file|about|chrome|devtools):/i.test(t)) return t;
+  if (/^(https?|file|about|chrome|chrome-extension|devtools):/i.test(t)) return t;
   if (!/\s/.test(t) && (/^localhost(:\d+)?(\/|$)/i.test(t) || /^(\d{1,3}\.){3}\d{1,3}(:\d+)?(\/|$)/.test(t) || /^[^\s/]+\.[a-z]{2,}(:\d+)?([/?#]|$)/i.test(t))) return 'https://' + t;
   return settings.searchEngine.replace('%s', encodeURIComponent(t));
 }
@@ -83,6 +93,8 @@ const activeTab = () => tabs.get(state.activeTab);
 // ---------- layout ----------
 const barHeight = () => (settings.layout === 'top' && settings.bookmarksBar && features.bookmarks().length ? 34 : 0);
 let lastBar = 0;
+let uiLowered = null; // tabs on the left: the interface view spans the whole window but sits BEHIND the pages, so the window buttons in its top strip show above them
+const STRIP = 32;
 function layout() {
   if (!win) return;
   const [w, h] = win.getContentSize();
@@ -94,9 +106,11 @@ function layout() {
   if (hidden) c = { x: 0, y: 0, width: w, height: h };
   else if (settings.layout === 'top') { uiRect = { x: 0, y: 0, width: w, height: top }; c = { x: gap, y: top, width: w - gap * 2, height: h - top - gap }; }
   else if (settings.layout === 'right') { uiRect = { x: w - side, y: 0, width: side, height: h }; c = { x: gap, y: gap, width: w - side - gap, height: h - gap * 2 }; }
-  else { uiRect = { x: 0, y: 0, width: side, height: h }; c = { x: side, y: gap, width: w - side - gap, height: h - gap * 2 }; }
+  else { uiRect = { x: 0, y: 0, width: w, height: h }; c = { x: side, y: STRIP, width: w - side - gap, height: h - STRIP - gap }; }
   ui.setBounds(overlayOpen ? { x: 0, y: 0, width: w, height: h } : uiRect);
   ui.setVisible(overlayOpen || !hidden);
+  const low = !overlayOpen && !hidden && settings.layout !== 'top' && settings.layout !== 'right';
+  if (low !== uiLowered) { uiLowered = low; if (low) win.contentView.addChildView(ui, 0); else win.contentView.addChildView(ui); }
   const vis = visibleTabs();
   const gapIn = vis.length > 1 ? 6 : 0;
   vis.forEach((t, i) => {
@@ -118,7 +132,7 @@ function visibleTabs() {
 function sync() { // attach visible views, keep ui on top
   for (const t of tabs.values()) if (t.view && t.attached && !visibleTabs().includes(t)) { win.contentView.removeChildView(t.view); t.attached = false; }
   for (const t of visibleTabs()) if (!t.attached) { win.contentView.addChildView(t.view); t.attached = true; }
-  win.contentView.addChildView(ui);
+  uiLowered = null; // the new page view went on top: layout() puts the interface back where it belongs
   layout();
 }
 
@@ -136,11 +150,11 @@ function push() {
 }
 function publicState() {
   return {
-    tabs: [...tabs.values()].map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, private: !!t.private, bookmarked: features.isBookmarked(t.url) })),
+    tabs: [...tabs.values()].map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, frozen: !!t.frozen, sleepAt: t.sleepAt || 0, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, darkSite: settings.features.darkSite && darkmode.isOnUrl(t.url), darkKey: settings.features.darkSite ? darkmode.keyOf(t.url) : '', private: !!t.private, bookmarked: features.isBookmarked(t.url) })),
     extensions: (() => { try { return features.listExtensions(); } catch { return []; } })(), snoozed: (state.snoozed || []).length,
     spaces: state.spaces, activeSpace: state.activeSpace, activeTab: state.activeTab, split: state.split,
     archive: state.archive.slice(0, 80), bar: settings.bookmarksBar ? features.barBookmarks() : [], settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
-    adblock: adblockStatus, blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(),
+    adblock: adblockStatus, blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(), update: updater.status(),
   };
 }
 let persistTimer = null;
@@ -166,10 +180,12 @@ function newTabObj(o) {
 }
 function wake(t) {
   if (t.view) return;
-  const view = new WebContentsView({ webPreferences: { partition: t.private ? 'nova-private' : 'persist:nova', sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: settings.profile !== 'ultra', autoplayPolicy: settings.blockAutoplay ? 'document-user-activation-required' : 'no-user-gesture-required' } });
-  t.view = view;
-  view.setBackgroundColor(settings.theme.page);
+  const pw = settings.budget.softWake ? sleeper.wakePayload(t) : null; // scroll, typed text and the last picture of the page, if Nova kept them
+  const view = new WebContentsView({ webPreferences: { ...(String(t.url).startsWith('chrome-extension:') ? { preload: extmgr.shimPath() } : pw ? { preload: path.join(__dirname, 'wake-preload.js') } : {}), partition: t.private ? 'nova-private' : 'persist:nova', sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: !!settings.features.darkSite, spellcheck: settings.profile !== 'ultra', autoplayPolicy: settings.blockAutoplay ? 'document-user-activation-required' : 'no-user-gesture-required' } });
+  t.view = view; t.pendingWake = pw; t.frozen = false;
+  view.setBackgroundColor((pw && pw.bg) || settings.theme.page);
   const wc = view.webContents;
+  extbridge.watch(t);
   const upd = () => { if (wc.isDestroyed()) return; const u = wc.getURL(); t.url = isHome(u) ? HOME : u || t.url; if (t.url === HOME) t.title = 'New tab'; t.canBack = wc.navigationHistory.canGoBack(); t.canForward = wc.navigationHistory.canGoForward(); push(); };
   wc.on('page-title-updated', (_e, title) => { t.title = isHome(t.url) ? 'New tab' : title; if (!isHome(t.url) && !t.private) features.recordVisit(wc.getURL(), title); push(); });
   wc.on('page-favicon-updated', (_e, f) => { t.favicon = f[0] || ''; if (!t.private && settings.keepHistory) features.setIcon(wc.getURL(), f[0]); push(); });
@@ -177,7 +193,7 @@ function wake(t) {
   wc.on('did-stop-loading', () => { t.loading = false; upd(); if (t.id === state.activeTab) setTimeout(() => capture(t), 1500); });
   wc.on('did-navigate', () => { upd(); applyZoom(wc); if (!t.private) features.recordVisit(wc.getURL(), wc.getTitle()); });
   wc.on('did-navigate-in-page', upd);
-  wc.on('audio-state-changed', (e) => { t.audible = e.audible; features.onAudio(t); push(); });
+  wc.on('audio-state-changed', (e) => { t.audible = e.audible; if (!e.audible) t.audibleAt = Date.now(); features.onAudio(t); push(); });
   wc.on('media-started-playing', () => { if (!t.playing) { t.playing = true; layout(); } });
   wc.on('media-paused', () => { if (t.playing) { t.playing = false; layout(); } });
   wc.on('focus', () => { if (state.activeTab !== t.id && visibleTabs().includes(t)) activate(t.id, true); });
@@ -231,36 +247,56 @@ const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; }
 function applyZoom(wc) { const z = settings.zoom?.[hostOf(wc.getURL())]; if (z !== undefined) wc.setZoomLevel(z); }
 function saveZoom(wc) { const h = hostOf(wc.getURL()); if (!h) return; settings.zoom = { ...settings.zoom, [h]: wc.getZoomLevel() }; saveSettings(); }
 function applyPageCss(wc) { if (settings.pageCss && !wc.isDestroyed()) wc.insertCSS(settings.pageCss).catch(() => {}); }
+function dominantColor(img) { // the page's own background: the most common colour of a tiny copy
+  const bmp = img.resize({ width: 24 }).toBitmap(), bins = new Map();
+  for (let i = 0; i + 3 < bmp.length; i += 4) { const k = ((bmp[i + 2] >> 4) << 8) | ((bmp[i + 1] >> 4) << 4) | (bmp[i] >> 4), b = bins.get(k) || [0, 0, 0, 0]; b[0]++; b[1] += bmp[i + 2]; b[2] += bmp[i + 1]; b[3] += bmp[i]; bins.set(k, b); }
+  let best = null; for (const b of bins.values()) if (!best || b[0] > best[0]) best = b;
+  return best ? '#' + [1, 2, 3].map((j) => Math.round(best[j] / best[0]).toString(16).padStart(2, '0')).join('') : '';
+}
 async function capture(t) {
-  if (!settings.thumbnails) return;
+  const thumbs = settings.thumbnails, ghost = settings.budget.softWake && !isHome(t.url);
+  if (!thumbs && !ghost) return;
   if (!t.view || !t.attached || t.view.webContents.isDestroyed()) return;
   try {
     const img = await t.view.webContents.capturePage();
-    if (img.isEmpty()) return;
-    t.thumb = 'data:image/jpeg;base64,' + img.resize({ width: 360 }).toJPEG(55).toString('base64');
-  } catch {}
+    if (img.isEmpty()) { if (ghost) t.ghost = ''; return; } // no picture is better than one of a different scroll position
+    if (thumbs) t.thumb = 'data:image/jpeg;base64,' + img.resize({ width: 360 }).toJPEG(55).toString('base64');
+    if (ghost) { t.ghost = 'data:image/jpeg;base64,' + (img.getSize().width > 960 ? img.resize({ width: 960 }) : img).toJPEG(60).toString('base64'); t.ghostBg = dominantColor(img); }
+  } catch { if (ghost) t.ghost = ''; }
 }
 function sleep(t) {
   if (!t.view) return;
+  extbridge.removed(t);
+  sleeper.missed(t);
   if (t.attached) { win.contentView.removeChildView(t.view); t.attached = false; }
   const wc = t.view.webContents;
   t.url = wc.isDestroyed() ? t.url : (isHome(wc.getURL()) ? HOME : wc.getURL() || t.url);
   if (!wc.isDestroyed()) { try { if (wc.debugger.isAttached()) wc.debugger.detach(); } catch {} wc.close(); }
-  t.view = null; t.audible = false; t.loading = false; t.darkKey = null; t.muted = false;
+  t.view = null; t.audible = false; t.loading = false; t.darkKey = null; t.muted = false; t.frozen = false; t.pendingWake = null;
 }
-function destroyTab(t) { sleep(t); tabs.delete(t.id); }
+function prewake(id) { // resting the pointer on a sleeping tab's row loads it in the background, so the click finds it ready
+  const t = tabs.get(id);
+  if (!t || t.view || !settings.budget.softWake || visibleTabs().includes(t)) return;
+  try { if (budget.get().over) return; } catch {}
+  if ([...tabs.values()].filter((x) => x.view && !x.attached && x.warmAt && Date.now() - x.warmAt < 30000).length >= 2) return;
+  t.warmAt = Date.now(); wake(t); push();
+}
+function destroyTab(t) { sleeper.missed(t); sleep(t); tabs.delete(t.id); }
 
 function activate(id, fromFocus) {
   const t = tabs.get(id);
   if (!t) return;
   const prev = activeTab();
   if (prev && prev !== t) state.prevTab = prev.id;
-  if (prev && prev !== t) { capture(prev); prev.lastActive = Date.now(); }
+  if (prev && prev !== t) { capture(prev); prev.lastActive = Date.now(); sleeper.left(prev); }
   if (t.spaceId !== state.activeSpace) state.activeSpace = t.spaceId;
   state.activeTab = id;
+  if (prev !== t) sleeper.arrived(t);
   t.lastActive = Date.now();
   if (state.split && (state.split === id || tabs.get(state.split)?.spaceId !== t.spaceId)) state.split = null;
   wake(t);
+  if (prev !== t) extbridge.activated(t);
+  if (t.frozen) sleeper.thaw(t);
   sync();
   if (!fromFocus && !overlayOpen) t.view.webContents.focus();
   push();
@@ -299,7 +335,7 @@ function closeTab(id) {
   if (state.split === id) state.split = null;
   destroyTab(t);
   if (t.private && privSes && ![...tabs.values()].some((x) => x.private)) privSes.clearStorageData().catch(() => {}); // last private tab gone: forget everything
-  if (!tabs.size) { persist(); win.close(); return; } // the very last tab closes the window, like every other browser
+  if (!tabs.size) { state.activeTab = null; state.split = null; const n = newTabObj({ spaceId: state.spaces.some((sp) => sp.id === t.spaceId) ? t.spaceId : state.activeSpace }); activate(n.id); push(); return; } // the last tab closed: back to the start page, the browser stays open (the window's own close button still quits)
   if (wasActive) {
     const rest = [...tabs.values()].filter((x) => x.spaceId === t.spaceId);
     const next = rest[Math.min(idx, rest.length - 1)] || null;
@@ -337,14 +373,13 @@ function cleanUp(mode) {
 }
 function toast(msg) { if (ui && !ui.webContents.isDestroyed()) ui.webContents.send('toast', msg); }
 
-// idle policy: sleep after X min, archive after Y h
+// idle policy: archive after Y h (putting tabs to sleep is sleeper.js: it freezes, then discards after the idle delay)
 function idlePolicy() {
   const now = Date.now();
   for (const t of [...tabs.values()]) {
     if (t.id === state.activeTab || visibleTabs().includes(t) || t.audible) continue;
     const idle = now - t.lastActive;
     if (!t.pinned && settings.archiveAfterHours > 0 && idle > settings.archiveAfterHours * 3600e3) { archiveTab(t); continue; }
-    if (t.view && settings.sleepAfterMin > 0 && idle > settings.sleepAfterMin * 60e3) sleep(t);
   }
   push();
 }
@@ -425,7 +460,7 @@ function runAction(action, arg) {
   const t = activeTab();
   const wc = t?.view?.webContents;
   switch (action) {
-    case 'newTab': openOverlay('palette', { mode: 'new', text: '' }); break;
+    case 'newTab': if (settings.newTabPage === 'bar') openOverlay('palette', { mode: 'new', text: '' }); else { const nt = newTabObj({}); activate(nt.id); } break;
     case 'go': openOverlay('palette', { mode: 'go', text: t && !isHome(t.url) ? t.url : '', select: true }); break;
     case 'closeTab': if (t) closeTab(t.id); break;
     case 'reopenTab': { const a = state.archive.shift(); if (a) openUrl(a.url, { spaceId: a.spaceId, forceNew: true }); break; }
@@ -454,6 +489,7 @@ function runAction(action, arg) {
     case 'lastTab': if (state.prevTab && tabs.has(state.prevTab)) activate(state.prevTab); break;
     case 'copyClean': features.handle('copyClean', {}, t); break;
     case 'darkPage': features.handle('darkPage', {}, t); break;
+    case 'darkSite': if (settings.features.darkSite) darkmode.toggle(t); break;
     case 'devtools': wc?.toggleDevTools(); break;
     case 'pinTab': if (t) { t.pinned = !t.pinned; push(); } break;
     case 'cleanUp': openOverlay('overview'); break;
@@ -472,7 +508,7 @@ function contextMenu(wc, p) {
   if (p.mediaType === 'image') items.push({ label: 'Open image in new tab', click: () => openUrl(p.srcURL, { forceNew: true }) }, { label: 'Copy image', click: () => wc.copyImageAt(p.x, p.y) }, { type: 'separator' });
   if (p.isEditable) items.push({ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }, { type: 'separator' });
   else if (p.selectionText) items.push({ role: 'copy' }, { label: `Search "${p.selectionText.slice(0, 24)}"`, click: () => openUrl(settings.searchEngine.replace('%s', encodeURIComponent(p.selectionText)), { forceNew: true }) }, { type: 'separator' });
-  items.push({ label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() }, { label: 'Forward', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() }, { label: 'Reload', click: () => wc.reload() }, { label: 'Bookmark this page', click: () => runAction('bookmark') }, { label: 'Print…', click: () => wc.print() }, { type: 'separator' }, { label: 'Inspect', click: () => wc.inspectElement(p.x, p.y) });
+  items.push({ label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() }, { label: 'Forward', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() }, { label: 'Reload', click: () => wc.reload() }, { label: 'Bookmark this page', click: () => runAction('bookmark') }, { label: 'Print…', click: () => wc.print() }, ...extbridge.menuItems(wc, p), { type: 'separator' }, { label: 'Inspect', click: () => wc.inspectElement(p.x, p.y) });
   Menu.buildFromTemplate(items).popup({ window: win });
 }
 
@@ -532,10 +568,17 @@ function cosmetics(url, dom) { // answers the cosmetic preload: hide rules and s
   try {
     const hostname = new URL(url).hostname, domain = (tldParse && tldParse(url).domain) || hostname, first = !dom;
     const { active, styles, scripts } = blocker.getCosmeticsFilters({ url, hostname, domain, classes: dom?.classes, ids: dom?.ids, hrefs: dom?.hrefs, getBaseRules: first, getInjectionRules: first, getExtendedRules: false, getRulesFromHostname: first, getRulesFromDOM: !first });
-    return { active, styles, scripts: first ? scripts : [] };
+    return { active, styles, scripts: first ? scriptletGuard.guardAll(scripts) : [] };
   } catch (e) { return { active: false }; }
 }
 ipcMain.on('nova:cosmetics', (event, url) => { event.returnValue = cosmetics(url, null); });
+ipcMain.on('nova:wake', (e, url) => { // the soft-wake preload of a woken tab asks, once, what to restore
+  const t = [...tabs.values()].find((x) => x.view && !x.view.webContents.isDestroyed() && x.view.webContents === e.sender), pw = t && t.pendingWake;
+  if (!pw || /^about:/i.test(url)) { e.returnValue = null; return; }
+  t.pendingWake = null; t.snap = null;
+  const strip = (u) => String(u || '').split('#')[0];
+  e.returnValue = strip(pw.url) === strip(url) ? pw : null;
+});
 ipcMain.handle('nova:cosmetics-dom', (_e, url, dom) => cosmetics(url, dom).styles || '');
 function adblockEnable(s) {
   if (extraAdblock.has(s)) return;
@@ -560,7 +603,7 @@ function applyProfile(name) {
   const p = PROFILES[name]; if (!p) return;
   const { features: f, budget: b, adblock, ...rest } = p;
   Object.assign(settings, rest, { profile: name, features: { ...f }, budget: { ...b } });
-  try { setAdblock(adblock); } finally { saveSettings(); layout(); push(); }
+  try { setAdblock(adblock); darkmode.sync(); } finally { saveSettings(); layout(); push(); }
 }
 
 // ---------- extensions (Electron supports a subset of Chrome extension APIs) ----------
@@ -599,9 +642,10 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
     state: () => state, settings: () => settings, saveSettings, win: () => win, ui: () => ui,
     toast: (m) => toast(m), push: () => push(), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(),
     newPrivateTab: () => { const t = newTabObj({ private: true }); activate(t.id); return t; },
-    openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), budgetTabs: () => budget.get().tabs,
+    openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
     addBackgroundTab: (o) => { const t = newTabObj({ url: o.url, title: o.title, favicon: o.favicon, spaceId: state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace, pinned: o.pinned }); push(); return t; },
   });
+  darkmode.init({ sessions: () => sessions, settings: () => settings, saveSettings, tabs, toast: (m) => toast(m), push: () => push(), domainOf: (u) => (tldParse ? tldParse(u, { allowPrivateDomains: true }).domain : null) });
   const permissions = (wc, perm, cb, details) => {
     if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock'].includes(perm)) return cb(true);
     if (!['media', 'geolocation', 'notifications', 'clipboard-read'].includes(perm)) return cb(false);
@@ -634,11 +678,14 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
 
   initAdblock(sessions);
   budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => visibleTabs().map((t) => t.id), toast: (m) => toast(m), push: () => push() });
-  updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. It installs when you restart.`); push(); } });
+  sleeper.init({ tabs, settings: () => settings, visibleIds: () => visibleTabs().map((t) => t.id), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
+  app.on('before-quit', () => sleeper.flush());
+  updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. Restart to finish the update.`); push(); } else if (e.type === 'status') push(); });
+  ui.webContents.once('did-finish-load', () => setTimeout(() => { try { global.__novaBoot && global.__novaBoot.good(); } catch {} }, 8000)); // started fine: the update bundle is trusted from now on
   const feed = () => settings.updateFeed || updater.defaultFeed;
   setTimeout(() => updater.check(feed()), 20000);
   setInterval(() => updater.check(feed()), 4 * 3600e3);
-  app.on('before-quit', () => { if (updater.hasPending()) updater.apply(); });
+  app.on('before-quit', () => { try { updater.applyOnQuit(); } catch (e) { console.error('update on quit', e.message); } });
   app.on('second-instance', (_e, argv) => {
     if (win.isMinimized()) win.restore(); win.focus();
     const u = argv.slice(1).find((a) => /^https?:\/\//i.test(a) || /\.html?$/i.test(a));
@@ -646,7 +693,8 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   });
   const startUrl = process.argv.slice(1).find((a) => /^https?:\/\//i.test(a));
   if (startUrl) ui.webContents.once('did-finish-load', () => setTimeout(() => openUrl(startUrl, { forceNew: true }), 300));
-  loadExtensions(ses);
+  extbridge.init({ ses, sessions: () => sessions, tabs, state: () => state, settings: () => settings, win: () => win, openUrl: (u, o) => openUrl(u, o), activate: (id) => activate(id), wake: (t) => wake(t), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), push: () => push(), toast: (m) => toast(m), normalize: (u) => normalizeInput(u), activeTab: () => activeTab(), userDir: () => app.getPath('userData') });
+  loadExtensions(ses).then(() => extmgr.upgradeLegacy()).catch((e) => console.error('extensions', e.message));
   setInterval(idlePolicy, 30000);
   layout();
 
@@ -668,6 +716,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'archive': if (t) archiveTab(t); break;
       case 'pin': if (t) { t.pinned = !t.pinned; push(); } break;
       case 'sleep': if (t && t.id !== state.activeTab) { sleep(t); push(); } break;
+      case 'prewake': prewake(a.id); break;
       case 'restore': closeOverlay(); { const i = state.archive.findIndex((x) => x.closedAt === a.closedAt); if (i >= 0) { const [x] = state.archive.splice(i, 1); openUrl(x.url, { spaceId: x.spaceId, forceNew: true }); } } break;
       case 'moveToSpace': if (t) { t.spaceId = a.spaceId; if (t.id === state.activeTab) switchSpace(a.spaceId); push(); } break;
       case 'split': if (t && t.id !== state.activeTab) { state.split = t.id; wake(t); closeOverlay(); sync(); push(); } else { state.split = null; sync(); push(); } break;
@@ -689,17 +738,21 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         if (a.patch.theme) { settings.theme = { ...DEFAULTS.theme, ...a.patch.theme }; if (!a.patch.theme.page) settings.theme.page = a.patch.theme.surface || DEFAULTS.theme.page; for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(settings.theme.page); }
         if (a.patch.keys) settings.keys = { ...DEFAULT_KEYS, ...a.patch.keys };
         if ('adblock' in a.patch) setAdblock(a.patch.adblock);
+        if ('features' in a.patch) darkmode.sync();
+        if ('darkSites' in a.patch) darkmode.refreshAll();
         if ('lowIsolation' in a.patch) toast('Restart Nova to apply this change.');
+        if (a.patch.budget && !settings.budget.freeze) for (const x of tabs.values()) if (x.frozen) sleeper.thaw(x);
         saveSettings();
         if (prev !== JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss, settings.bookmarksBar])) layout();
         if (a.patch.theme || a.patch.wallpaper || a.patch.startPage) pushHome();
         if (a.patch.pageCss !== undefined) for (const x of tabs.values()) if (x.view) { applyPageCss(x.view.webContents); }
         push();
       } break;
+      case 'extDebug': return process.env.NOVA_DEBUG_SW ? extbridge.debug(a, t) : undefined;
       case 'applyProfile': applyProfile(a.name); break;
       case 'runSetup': closeOverlay(); setTimeout(() => openOverlay('wizard'), 60); break;
       case 'newPrivate': return features.handle('newPrivate', a, t);
-      case 'resetSettings': settings = { ...DEFAULTS, theme: { ...DEFAULTS.theme }, keys: { ...DEFAULT_KEYS }, features: { ...DEFAULTS.features }, budget: { ...DEFAULTS.budget }, firstRun: false, setupVersion: 2 }; saveSettings(); layout(); push(); break;
+      case 'resetSettings': settings = { ...DEFAULTS, theme: { ...DEFAULTS.theme }, keys: { ...DEFAULT_KEYS }, features: { ...DEFAULTS.features }, budget: { ...DEFAULTS.budget }, firstRun: false, setupVersion: 2 }; darkmode.sync(); saveSettings(); layout(); push(); break;
       case 'finishSetup': settings.firstRun = false; settings.setupVersion = 2; saveSettings(); closeOverlay(); push(); break;
       case 'loadExtension': {
         const r = await dialog.showOpenDialog(win, { title: 'Select an unpacked extension folder', properties: ['openDirectory'] });
@@ -707,7 +760,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       } break;
       case 'removeExtension': settings.extensions = settings.extensions.filter((p) => p !== a.path); saveSettings(); toast('Removed. Takes effect after restart.'); push(); break;
       case 'checkUpdate': updater.check(settings.updateFeed || updater.defaultFeed, { manual: true }); break;
-      case 'applyUpdate': if (updater.apply()) app.quit(); break;
+      case 'applyUpdate': if (await updater.apply()) app.quit(); break;
       case 'keysPause': keysPaused = !!a.on; break;
       case 'reorder': { const arr = [...tabs.entries()], i = arr.findIndex(([k]) => k === a.id); if (i < 0) break; const [item] = arr.splice(i, 1); const j = arr.findIndex(([k]) => k === a.target); arr.splice(j < 0 ? arr.length : a.after ? j + 1 : j, 0, item); tabs.clear(); arr.forEach(([k, v]) => tabs.set(k, v)); push(); } break;
       case 'pickWallpaper': return pickWallpaper();

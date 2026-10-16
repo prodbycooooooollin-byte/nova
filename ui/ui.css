@@ -104,6 +104,7 @@ kbd { font:500 10.5px/1 var(--font); color:var(--dim); background:var(--hover); 
 #bmbar { display:flex; align-items:center; gap:2px; min-width:0; } #bmbar:empty { display:none; }
 .bmk { display:flex; align-items:center; gap:7px; height:28px; padding:0 9px; border-radius:8px; color:var(--dim); font-size:12px; font-weight:500; max-width:150px; flex:none; min-width:0; transition:background .12s,color .12s; } .bmk:hover { background:var(--hover); color:var(--text); } .bmk:active { background:var(--press); }
 .bmk img, .bmk svg { width:14px; height:14px; border-radius:3px; flex:none; object-fit:contain; } .bmk span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#app.layout-top.bm-icons .bmk:not(.more) { width:30px; height:30px; padding:0; justify-content:center; max-width:none; } #app.layout-top.bm-icons .bmk:not(.more) span { display:none; }
 .bmk.more { padding:0 6px; margin-left:auto; position:sticky; right:0; background:var(--bg); }
 #app:not(.layout-top) #bmbar { flex-wrap:wrap; max-height:64px; overflow:hidden; padding:0 2px; } #app:not(.layout-top) .bmk { width:30px; height:30px; padding:0; justify-content:center; max-width:none; } #app:not(.layout-top) .bmk span { display:none; } #app:not(.layout-top) .bmk.more { margin-left:0; position:static; background:none; }
 #app.compact:not(.layout-top) #bmbar { flex-direction:column; flex-wrap:nowrap; max-height:128px; align-items:center; }
@@ -406,3 +407,25 @@ details.more { margin:14px 0 0; } details.more summary { padding:8px 2px; color:
 #app.compact:not(.layout-top) #nav { display:flex !important; flex-direction:column; gap:2px; } #app.compact:not(.layout-top) #nav .ibtn { width:30px; height:28px; }
 #app.compact:not(.layout-top) #winctl .ibtn { width:30px; height:26px; }
 #app.compact:not(.layout-top) .tab:hover .x { display:grid !important; position:absolute; top:2px; right:1px; width:17px; height:17px; border-radius:50%; background:var(--surface); box-shadow:0 0 0 1px var(--line2); } #app.compact:not(.layout-top) .tab:hover .x svg { width:9px; height:9px; }
+
+.vcard span.bad { color:var(--danger); } .vcard .btn:disabled { opacity:.5; cursor:default; }
+
+/* window buttons: always in the top right corner. With tabs on the left they sit in a slim strip above the page, with tabs on the right or on top they already are in the corner */
+#strip { display:none; }
+#app.layout-left:not(.hidden) #strip { display:block; position:absolute; left:var(--side); right:0; top:0; height:32px; }
+#app.layout-left #winctl { position:fixed; top:2px; right:8px; z-index:2; }
+#app.layout-left.compact #winctl { flex-direction:row; } #app.layout-left.compact #winctl .ibtn { width:34px; height:28px; }
+#app.layout-right.compact #head { flex-direction:column-reverse; }
+/* hub: live Web Store results */
+.hwarn { display:flex; align-items:center; gap:6px; margin-top:2px; color:var(--dim); font-size:11.5px; } .hwarn svg { width:13px; height:13px; flex:none; opacity:.8; } .hwarn span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hwait { display:flex; align-items:center; gap:10px; padding:26px 4px; color:var(--dim); font-size:12.5px; }
+.hnone { padding:18px 4px; color:var(--dim); font-size:12.5px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.hmore { display:flex; align-items:center; gap:14px; margin-top:12px; color:var(--dim); font-size:12px; } .hmore .btn.small { height:28px; padding:0 12px; font-size:12px; border-radius:8px; } .hmore.wide { margin-top:26px; }
+.hchips { display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 14px; } .hchip { height:28px; padding:0 12px; border-radius:14px; background:var(--surface); box-shadow:inset 0 0 0 1px var(--line); color:var(--dim); font-size:12px; font-weight:550; transition:background .12s,color .12s; } .hchip:hover { color:var(--text); background:var(--hover); } .hchip.on { background:var(--accent); color:var(--on-accent); box-shadow:none; }
+/* move in: file import, where Nova looked, failed extensions */
+.mi-file { display:flex; align-items:center; gap:16px; margin:14px 0 0; padding:15px 18px; border-radius:var(--r-lg); background:var(--surface); box-shadow:inset 0 0 0 1px var(--line); } .mi-file > div { flex:1; display:flex; flex-direction:column; min-width:0; } .mi-file b { font-weight:550; } .mi-file span { color:var(--dim); font-size:12.5px; } .mi-file em { color:var(--accent); font-size:12.5px; font-style:normal; margin-top:4px; }
+.mi-where { margin:12px 2px 0; } .mi-where summary { color:var(--dim); font-size:12px; cursor:pointer; list-style:none; } .mi-where summary::-webkit-details-marker { display:none; } .mi-where summary::before { content:'›'; display:inline-block; width:12px; transition:transform .15s; } .mi-where[open] summary::before { transform:rotate(90deg); }
+.mi-where ul { list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:3px; } .mi-where li { display:flex; gap:10px; font-size:11.5px; color:var(--dim); align-items:baseline; } .mi-where li b { width:104px; flex:none; font-weight:550; } .mi-where li span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .mi-where li i { font-style:normal; } .mi-where li.yes b, .mi-where li.yes i { color:var(--accent); }
+.mi-note { color:var(--dim); font-size:12.5px; max-width:60ch; } .mi-t .btn.small { align-self:flex-start; margin-top:8px; height:28px; padding:0 12px; font-size:12px; border-radius:8px; }
+.mi-warn { margin:0 0 12px; padding:10px 14px; border-radius:var(--r-md); background:var(--surface); box-shadow:inset 0 0 0 1px var(--line); color:var(--dim); font-size:12.5px; }
+.mi-fails .mi-e.bad span { color:var(--dim); } .mi-fails .mi-e.bad b { color:var(--text); font-weight:550; }

@@ -1,10 +1,10 @@
 // Nova features: data stores (history, bookmarks, session snapshots, snoozed tabs), downloads, extension store,
 // tab tools (full-text search across tabs, memory, dark page, mute, clean links) and Peek.
-const { app, BrowserWindow, WebContentsView, clipboard, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, clipboard, shell, net, dialog } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const AdmZip = require('adm-zip');
+const extmgr = require('./extmgr');
 
 let C; // context from main.js
 let history = [], bookmarks = [], snapshots = [], downloads = [], icons = {};
@@ -85,6 +85,7 @@ async function searchTabs(text) {
   const q = (text || '').trim().toLowerCase(); if (q.length < 2) return [];
   const jobs = [...C.tabs.values()].filter((t) => t.view && !t.view.webContents.isDestroyed()).map(async (t) => {
     try {
+      if (t.frozen) await C.thawTab(t); // a frozen page cannot answer
       const r = await Promise.race([t.view.webContents.executeJavaScript(`(()=>{const q=${JSON.stringify(q)};const x=(document.body&&document.body.innerText)||'';const i=x.toLowerCase().indexOf(q);return i<0?null:x.slice(Math.max(0,i-60),i+110).replace(/\\s+/g,' ')})()`), new Promise((r) => setTimeout(() => r(null), 1800))]);
       return r ? { id: t.id, snippet: r } : null;
     } catch { return null; }
@@ -124,154 +125,50 @@ function initDownloads(ses) {
   });
 }
 
-// ---------- extensions: one-click install from the Chrome Web Store ----------
-const extDir = () => path.join(app.getPath('userData'), 'extensions');
-async function installExtension(input) {
-  const id = String(input).match(/[a-p]{32}/)?.[0];
-  if (!id) return { ok: false, error: 'That is not a Chrome Web Store link or extension ID.' };
-  try {
-    const url = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=${process.versions.chrome}&acceptformat=crx2,crx3&x=${encodeURIComponent(`id=${id}&installsource=ondemand&uc`)}`;
-    const res = await fetch(url, { headers: { 'User-Agent': C.userAgent } });
-    if (!res.ok) throw new Error('Web Store answered ' + res.status);
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.subarray(0, 4).toString() !== 'Cr24') throw new Error('Unexpected file from the Web Store');
-    const ver = buf.readUInt32LE(4);
-    const zipAt = ver === 3 ? 12 + buf.readUInt32LE(8) : 16 + buf.readUInt32LE(8) + buf.readUInt32LE(12);
-    const dir = path.join(extDir(), id);
-    fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
-    new AdmZip(buf.subarray(zipAt)).extractAllTo(dir, true);
-    const ext = await C.ses.extensions.loadExtension(dir, { allowFileAccess: true });
-    const s = C.settings(); s.extensions = [...new Set([...(s.extensions || []), dir])]; C.saveSettings(); C.push();
-    return { ok: true, name: ext.name, id: ext.id };
-  } catch (e) { return { ok: false, error: e.message }; }
-}
-async function removeExtension(id) {
-  try { await C.ses.extensions.removeExtension(id); } catch {}
-  const s = C.settings(); s.extensions = (s.extensions || []).filter((p) => !p.includes(id) && !p.endsWith(id));
-  for (const e of listExtensions()) if (e.id === id) { try { fs.rmSync(e.path, { recursive: true, force: true }); } catch {} }
-  s.extensions = s.extensions.filter((p) => fs.existsSync(p)); C.saveSettings(); C.push();
-}
-const iconCache = {};
-function listExtensions() {
-  return C.ses.extensions.getAllExtensions().map((e) => {
-    const m = e.manifest || {}, icons = m.icons || (m.action || m.browser_action || {}).default_icon || {};
-    const best = typeof icons === 'string' ? icons : icons[Object.keys(icons).sort((a, b) => b - a)[0]];
-    if (best && !iconCache[e.id]) { try { iconCache[e.id] = 'data:image/png;base64,' + fs.readFileSync(path.join(e.path, best)).toString('base64'); } catch {} }
-    const act = m.action || m.browser_action || {};
-    return { id: e.id, name: e.name, path: e.path, version: e.version, icon: iconCache[e.id] || '', popup: act.default_popup || '' };
-  });
-}
-const shimPath = () => { const p = path.join(__dirname, 'ext-shim.js'), u = p.replace('app.asar', 'app.asar.unpacked'); return fs.existsSync(u) ? u : p; };
-function openPopup(id) {
-  const e = C.ses.extensions.getExtension(id), m = e?.manifest || {}, popup = (m.action || m.browser_action || {}).default_popup;
-  if (!popup) return C.toast(`${e?.name || 'This extension'} has no popup.`);
-  const b = C.win().getBounds(), right = C.settings().layout === 'right', top = C.settings().layout === 'top';
-  const pw = new BrowserWindow({ width: 380, height: 580, useContentSize: true, x: right ? b.x + b.width - 400 : b.x + (top ? b.width - 400 : 16), y: top ? b.y + 90 : b.y + b.height - 600, frame: false, resizable: false, skipTaskbar: true, alwaysOnTop: true, show: false, backgroundColor: '#ffffff', webPreferences: { session: C.ses, sandbox: true, preload: shimPath() } });
-  pw.loadURL(`chrome-extension://${id}/${popup}`).catch(() => pw.close());
-  let shown = false; const show = () => { if (!shown && !pw.isDestroyed()) { shown = true; pw.show(); } };
-  pw.once('ready-to-show', () => { // like Chrome, fit the window to what the popup asks for (width 200-800, height 100-600)
-    setTimeout(async () => {
-      try { const [w, h] = await pw.webContents.executeJavaScript('[Math.ceil(Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0)), Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0))]'); if (!pw.isDestroyed() && w > 120 && h > 60) pw.setContentSize(Math.min(800, Math.max(300, w)), Math.min(600, Math.max(200, h))); } catch {}
-      show();
-    }, 350);
-  });
-  setTimeout(show, 2500); // never leave the user waiting on a popup that stays quiet
-  pw.on('blur', () => { if (!pw.isDestroyed() && !pw.webContents.isDevToolsOpened()) pw.close(); });
-}
+// ---------- extensions: install, remove, list and popups live in extmgr.js ----------
+const installExtension = (input) => extmgr.install(input);
+const removeExtension = (id) => extmgr.remove(id);
+const listExtensions = () => extmgr.list().map(({ manifest, ...e }) => e);
+const openPopup = (id) => extmgr.openPopup(id);
 
-// ---------- import bookmarks from other browsers (plain JSON files; no logins or cookies are touched) ----------
-const BROWSERS = { Chrome: ['Google', 'Chrome'], Edge: ['Microsoft', 'Edge'], Brave: ['BraveSoftware', 'Brave-Browser'], Vivaldi: ['Vivaldi'], Opera: null };
-function bookmarkFiles() {
-  const out = {};
-  for (const [name, parts] of Object.entries(BROWSERS)) {
-    if (!parts) continue;
-    const root = path.join(process.env.LOCALAPPDATA || '', ...parts, 'User Data');
-    try { for (const p of ['Default', ...fs.readdirSync(root).filter((d) => /^Profile \d+$/.test(d))]) { const f = path.join(root, p, 'Bookmarks'); if (fs.existsSync(f)) (out[name] = out[name] || []).push(f); } } catch {}
-  }
-  return out;
-}
-function importBookmarks(name) {
-  const files = bookmarkFiles()[name] || []; let n = 0;
-  const walk = (node) => { if (node.type === 'url' && /^https?:/i.test(node.url)) { if (!isBookmarked(node.url)) { bookmarks.push({ url: node.url, title: node.name, t: Date.now() }); n++; } } (node.children || []).forEach(walk); };
-  for (const f of files) { try { Object.values(JSON.parse(fs.readFileSync(f, 'utf8')).roots || {}).forEach((r) => r && typeof r === 'object' && walk(r)); } catch {} }
-  saveSoon('bookmarks.json', () => bookmarks);
-  return n;
-}
-
-// ---------- Move in: bring bookmarks, history, extensions and the search engine over from another browser ----------
-// Nova reads only what the browsers store as plain files: the bookmarks JSON, the history database, the list of installed
-// extensions and the default search engine. Passwords and signed-in sessions are encrypted by the old browser and are not touched.
-const BROWSER_DEFS = { Chrome: ['Google', 'Chrome'], Edge: ['Microsoft', 'Edge'], Brave: ['BraveSoftware', 'Brave-Browser'], Vivaldi: ['Vivaldi'] };
-const readJsonFile = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, '')); } catch { return null; } };
-function countBookmarks(node) { let n = 0; const walk = (x) => { if (x.type === 'url') n++; (x.children || []).forEach(walk); }; Object.values(node?.roots || {}).forEach((r) => r && typeof r === 'object' && walk(r)); return n; }
-function resolveName(dir, manifest) {
-  const raw = manifest.name || '';
-  const m = /^__MSG_(.+)__$/.exec(raw); if (!m) return raw;
-  for (const loc of [manifest.default_locale, 'en', 'en_US', 'de']) { if (!loc) continue; const msgs = readJsonFile(path.join(dir, '_locales', loc, 'messages.json')); if (!msgs) continue; const k = Object.keys(msgs).find((x) => x.toLowerCase() === m[1].toLowerCase()); if (k && msgs[k].message) return msgs[k].message; }
-  return '';
-}
-function profileExtensions(profileDir) {
-  const root = path.join(profileDir, 'Extensions'), out = [];
-  let ids = []; try { ids = fs.readdirSync(root).filter((d) => /^[a-p]{32}$/.test(d)); } catch { return out; }
-  for (const id of ids) {
-    try {
-      const vers = fs.readdirSync(path.join(root, id)).sort(); const dir = path.join(root, id, vers[vers.length - 1]);
-      const manifest = readJsonFile(path.join(dir, 'manifest.json')); if (!manifest) continue;
-      const name = resolveName(dir, manifest); if (name) out.push({ id, name });
-    } catch {}
-  }
-  return out;
-}
-function scanBrowsers() {
-  const out = [];
-  for (const [browser, parts] of Object.entries(BROWSER_DEFS)) {
-    const root = path.join(process.env.LOCALAPPDATA || '', ...parts, 'User Data');
-    let dirs = []; try { dirs = ['Default', ...fs.readdirSync(root).filter((d) => /^Profile \d+$/.test(d))].filter((d) => fs.existsSync(path.join(root, d))); } catch { continue; }
-    for (const d of dirs) {
-      const dir = path.join(root, d), prefs = readJsonFile(path.join(dir, 'Preferences')) || {};
-      const bm = readJsonFile(path.join(dir, 'Bookmarks')); const tpl = prefs.default_search_provider_data?.template_url_data;
-      out.push({
-        id: `${browser}|${d}`, browser, profile: d, label: prefs.profile?.name || d,
-        bookmarks: bm ? countBookmarks(bm) : 0, history: fs.existsSync(path.join(dir, 'History')),
-        extensions: profileExtensions(dir).map((e) => ({ ...e, installed: installedExtIds().includes(e.id) })),
-        search: tpl?.url && tpl.url.includes('{searchTerms}') ? { name: tpl.short_name || hostOf(tpl.url), url: tpl.url.replace('{searchTerms}', '%s').replace(/\{[^}]+\}/g, '') } : null,
-      });
-    }
-  }
-  return out;
-}
-const installedExtIds = () => { try { return C.ses.extensions.getAllExtensions().map((e) => path.basename(e.path)); } catch { return []; } };
-const profilePath = (id) => { const [browser, d] = String(id).split('|'); const parts = BROWSER_DEFS[browser]; return parts ? path.join(process.env.LOCALAPPDATA || '', ...parts, 'User Data', d) : null; };
-
-function importBookmarksFrom(id) {
-  const dir = profilePath(id); const bm = dir && readJsonFile(path.join(dir, 'Bookmarks')); let n = 0;
-  const walk = (node) => { if (node.type === 'url' && /^https?:/i.test(node.url) && !isBookmarked(node.url)) { bookmarks.push({ url: node.url, title: node.name, t: Date.now() }); n++; } (node.children || []).forEach(walk); };
-  Object.values(bm?.roots || {}).forEach((r) => r && typeof r === 'object' && walk(r));
+// ---------- Move in: movein.js reads the other browsers, this adds what it found to Nova ----------
+const movein = require('./movein');
+const installedExtIds = () => extmgr.installedIds();
+function addBookmarks(list) {
+  let n = 0;
+  for (const b of list) { if (!b.url || isBookmarked(b.url)) continue; bookmarks.push({ url: b.url, title: b.title || '', t: Date.now() }); n++; }
   saveSoon('bookmarks.json', () => bookmarks); return n;
 }
+const scanBrowsers = () => movein.scan(installedExtIds);
+const importBookmarksFrom = (id) => addBookmarks(movein.bookmarksOf(id));
+function importBookmarks(name) { // every profile of one browser
+  let n = 0; for (const p of scanBrowsers().profiles.filter((x) => x.browser === name)) n += importBookmarksFrom(p.id); return n;
+}
 function importHistoryFrom(id) {
-  const dir = profilePath(id); if (!dir) return 0;
-  const tmp = path.join(os.tmpdir(), `nova-history-${process.pid}-${Date.now()}`);
   try {
-    fs.copyFileSync(path.join(dir, 'History'), tmp);
-    const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync(tmp, { readOnly: true });
-    const rows = db.prepare("SELECT url, title, visit_count, (last_visit_time / 1000 - 11644473600000) AS ms FROM urls WHERE hidden = 0 AND url LIKE 'http%' ORDER BY visit_count DESC, last_visit_time DESC LIMIT 4000").all(); db.close();
-    const known = new Map(history.map((h) => [h.url, h])); let n = 0;
+    const rows = movein.historyOf(id), known = new Map(history.map((h) => [h.url, h])); let n = 0;
     for (const r of rows) {
-      const t = Number(r.ms), ex = known.get(r.url);
-      if (ex) { ex.n = Math.max(ex.n, r.visit_count); continue; }
-      const h = { url: r.url, title: r.title || '', n: r.visit_count, t: t > 0 ? t : Date.now() }; history.push(h); known.set(r.url, h); n++;
+      const ex = known.get(r.url);
+      if (ex) { ex.n = Math.max(ex.n, r.n); continue; }
+      const h = { url: r.url, title: r.title || '', n: r.n, t: r.t > 0 ? r.t : Date.now() }; history.push(h); known.set(r.url, h); n++;
     }
     history.sort((a, b) => b.t - a.t); history.length = Math.min(history.length, 6000); saveSoon('history.json', () => history);
     // give the most visited sites their real icons (one small request per site you already use every day)
     const seen = new Set();
     for (const h of rows.slice(0, 40)) { const host = hostOf(h.url); if (host && !icons[host] && !seen.has(host) && seen.size < 12) { seen.add(host); setIcon(h.url, `https://${host}/favicon.ico`); } }
-    return n;
-  } catch (e) { console.error('history import', e.message); C.toast('Could not read the history: ' + e.message); return -1; } finally { try { fs.rmSync(tmp, { force: true }); } catch {} }
+    return { n };
+  } catch (e) { console.error('history import', e.message); return { n: -1, error: /EBUSY|EPERM|locked|busy/i.test(e.message) ? 'The browser is open and keeps its history locked. Close it and try again.' : e.message }; }
 }
 function importSearchFrom(id) {
-  const info = scanBrowsers().find((b) => b.id === id); if (!info?.search) return null;
-  const s = C.settings(); s.searchEngine = info.search.url; C.saveSettings(); C.push(); return info.search.name;
+  const s = movein.searchOf(id); if (!s) return null;
+  const set = C.settings(); set.searchEngine = s.url; C.saveSettings(); C.push(); return s.name;
+}
+async function importBookmarkFile() { // any browser's export: .html, or a Chrome / Firefox JSON file
+  if (process.env.NOVA_DEBUG_SW && process.env.NOVA_TEST_BOOKMARKS_FILE) { try { const list = movein.fileBookmarks(process.env.NOVA_TEST_BOOKMARKS_FILE); return { found: list.length, n: addBookmarks(list), file: path.basename(process.env.NOVA_TEST_BOOKMARKS_FILE) }; } catch (e) { return { error: e.message }; } } // test aid: the native file dialog cannot be driven from outside
+  const r = await dialog.showOpenDialog(C.win(), { title: 'Choose a bookmarks file', properties: ['openFile'], filters: [{ name: 'Bookmarks', extensions: ['html', 'htm', 'json'] }, { name: 'All files', extensions: ['*'] }] });
+  if (r.canceled || !r.filePaths[0]) return { canceled: true };
+  try { const list = movein.fileBookmarks(r.filePaths[0]); return { found: list.length, n: addBookmarks(list), file: path.basename(r.filePaths[0]) }; }
+  catch (e) { return { error: 'That file could not be read as bookmarks: ' + e.message }; }
 }
 
 // ---------- Peek: preview a link in a floating card ----------
@@ -295,6 +192,7 @@ function relayoutPeek() { if (peek) peek.view.setBounds(peekBounds()); }
 
 function init(ctx) {
   C = ctx;
+  extmgr.init({ ses: ctx.ses, settings: ctx.settings, saveSettings: ctx.saveSettings, push: ctx.push, toast: ctx.toast, userAgent: ctx.userAgent, win: ctx.win, fetch: (u, o) => net.fetch(u, o), sesFetch: (u, o) => ctx.ses.fetch(u, o) });
   history = load('history.json', []); bookmarks = load('bookmarks.json', []); snapshots = load('snapshots.json', []); icons = load('icons.json', {});
   setInterval(snapshot, 5 * 60e3); setTimeout(snapshot, 60e3);
   setInterval(wakeSnoozed, 30e3);
@@ -331,9 +229,12 @@ async function handle(name, a, t) {
     case 'showDownload': shell.showItemInFolder(a.path); return;
     case 'installExt': return installExtension(a.id);
     case 'hub': return hub();
+    case 'storeSearch': try { return await extmgr.search(a.q); } catch (e) { return { items: [], total: 0, error: e.message }; }
+    case 'storeCategory': try { return await extmgr.category(a.slug); } catch (e) { return { items: [], total: 0, error: e.message }; }
+    case 'storeCategories': return extmgr.STORE_CATEGORIES;
     case 'removeExt': return removeExtension(a.id);
     case 'extPopup': openPopup(a.id); return;
-    case 'detectBrowsers': return Object.keys(bookmarkFiles());
+    case 'detectBrowsers': return [...new Set(scanBrowsers().profiles.map((p) => p.browser))];
     case 'scanBrowsers': return scanBrowsers();
     case 'library': return library(a.kind, a.q);
     case 'removeBookmark': bookmarks = bookmarks.filter((b) => b.url !== a.url); saveSoon('bookmarks.json', () => bookmarks); C.push(); return;
@@ -342,11 +243,12 @@ async function handle(name, a, t) {
     case 'suggest': return suggest(a.q);
     case 'importPart': { // one category at a time so the interface can show live progress
       if (a.part === 'bookmarks') return { n: importBookmarksFrom(a.id) };
-      if (a.part === 'history') return { n: importHistoryFrom(a.id) };
+      if (a.part === 'history') return importHistoryFrom(a.id);
       if (a.part === 'search') return { name: importSearchFrom(a.id) };
       if (a.part === 'extension') { const r = await installExtension(a.ext); return r.ok ? { ok: true, name: r.name } : { ok: false, error: r.error }; }
       return {};
     }
+    case 'importFile': return importBookmarkFile();
     case 'importBookmarks': { const n = importBookmarks(a.name); C.toast(n ? `Imported ${n} bookmarks from ${a.name}.` : `No new bookmarks found in ${a.name}.`); return n; }
     case 'extensions': return listExtensions();
   }
@@ -376,6 +278,7 @@ async function setIcon(pageUrl, iconUrl) {
 const withIcon = (x) => ({ ...x, icon: icons[hostOf(x.url)] || '' });
 const barBookmarks = () => [...bookmarks].reverse().slice(0, 60).map((b) => ({ url: b.url, title: b.title, icon: icons[hostOf(b.url)] || '' })); // oldest first, like a bar you fill from the left
 
+function hostVisits(host) { let n = 0; for (const h of history) if (hostOf(h.url) === host) n += h.n; return n; } // page loads of a site, for smart sleep's first guess
 function topSites(n = 8) { // bookmarks first, then the most visited hosts
   const seen = new Set(), out = [];
   const add = (x) => { let host; try { host = new URL(x.url).hostname.replace(/^www\./, ''); } catch { return; } if (seen.has(host) || out.length >= n) return; seen.add(host); out.push({ url: x.url, host, title: x.title, icon: icons[host] || '' }); };
@@ -393,7 +296,7 @@ function library(kind, q = '') {
 }
 async function clearData(what, range) {
   const since = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity }[range] ?? Infinity, cut = Date.now() - since, ses = C.ses;
-  if (what.history) { history = since === Infinity ? [] : history.filter((h) => h.t < cut); C.writeJson('history.json', history); if (since === Infinity) { icons = {}; C.writeJson('icons.json', icons); } }
+  if (what.history) { C.forgetRevisits(); history = since === Infinity ? [] : history.filter((h) => h.t < cut); C.writeJson('history.json', history); if (since === Infinity) { icons = {}; C.writeJson('icons.json', icons); } }
   if (what.downloads) downloads = [];
   if (what.cookies) await ses.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] });
   if (what.cache) await ses.clearCache();
@@ -404,4 +307,4 @@ async function suggest(q) {
   const tpl = C.settings().searchEngine, e = ENGINE_SUGGEST.find(([h]) => tpl.includes(h)); if (!e || !C.settings().suggestions || !q || q.length < 2) return [];
   try { const r = await C.ses.fetch(e[1](encodeURIComponent(q)), { signal: AbortSignal.timeout(1800) }); const j = await r.json(); return (Array.isArray(j[1]) ? j[1] : []).slice(0, 5).map(String); } catch { return []; }
 }
-module.exports = { init, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, barBookmarks, isBookmarked };
+module.exports = { init, hostVisits, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, barBookmarks, isBookmarked };

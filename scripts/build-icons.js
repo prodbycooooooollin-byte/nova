@@ -9,7 +9,7 @@ const MAP = {
   layers: 'layers', keyboard: 'keyboard', code: 'code', box: 'cube', save: 'save', moon: 'asleep', gauge: 'meter', user: 'user',
   star: 'star', starf: 'star--filled', clock: 'time', download: 'download', rewind: 'recently-viewed', imp: 'document--import',
   bookmark: 'bookmark', trash: 'trash-can', open: 'launch', split: 'split-screen', globe: 'earth', check: 'checkmark', zap: 'flash',
-  camera: 'camera', film: 'video', file: 'document', link: 'link', eye: 'view', info: 'information',
+  camera: 'camera', film: 'video', file: 'document', link: 'link', eye: 'view', info: 'information', contrast: 'contrast',
 };
 const inner = (name) => {
   const f = path.join(SRC, name + '.svg');

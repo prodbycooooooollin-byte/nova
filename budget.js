@@ -22,7 +22,8 @@ function measure() {
 
 function sleepable() { // background tabs only, never the ones in view, pinned or making sound
   const visible = new Set(C.visibleIds());
-  return [...C.tabs.values()].filter((t) => t.view && !t.pinned && !t.audible && !visible.has(t.id)).sort((a, b) => a.lastActive - b.lastActive);
+  const now = Date.now(); // a tab woken by hovering its row is about to be opened: leave it alone for a while; tabs holding unrestorable input go last
+  return [...C.tabs.values()].filter((t) => t.view && !t.pinned && !t.audible && !visible.has(t.id) && !(t.warmAt && now - t.warmAt < 30000)).sort((a, b) => (!!a.dirty - !!b.dirty) || a.lastActive - b.lastActive);
 }
 
 function tick() {

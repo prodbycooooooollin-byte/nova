@@ -1,8 +1,9 @@
 {
     "name":  "nova",
-    "version":  "0.8.0",
+    "version":  "0.9.0",
     "description":  "Nova - a minimal, fully customizable Chromium browser with rethought tab management",
-    "main":  "main.js",
+    "main":  "boot.js",
+    "novaLoader":  1,
     "scripts":  {
                     "start":  "electron .",
                     "setup-ui":  "electron . --setup --src=dist/win-unpacked",
@@ -26,7 +27,11 @@
                                       "buildResources":  "build"
                                   },
                   "files":  [
+                                "boot.js",
                                 "main.js",
+                                "extmgr.js",
+                                "extbridge.js",
+                                "movein.js",
                                 "preload.js",
                                 "updater.js",
                                 "setup.js",
@@ -45,6 +50,12 @@
                                 "assets/filters/*",
                                 "yt-defuser.js",
                                 "cosmetic-preload.js",
+                                "scriptlet-guard.js",
+                                "sleeper.js",
+                                "wake-preload.js",
+                                "darkmode.js",
+                                "dark-preload.js",
+                                "assets/darkreader/*",
                                 "hub.json"
                             ],
                   "asar":  true,
