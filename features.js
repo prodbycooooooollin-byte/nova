@@ -314,6 +314,14 @@ async function handle(name, a, t) {
     case 'searchTabs': return searchTabs(a.text);
     case 'memory': return C.budgetTabs();
     case 'bookmark': if (t?.private) return C.toast('Private tabs cannot be bookmarked.'); toggleBookmark(t); return;
+    case 'bookmarkAdd': { // the star: saved at once, named afterwards in the card
+      if (!t || t.private || !/^https?:/i.test(t.url || '')) { C.toast(t?.private ? 'Private tabs cannot be bookmarked.' : 'Only web pages can be bookmarked.'); return false; }
+      if (!isBookmarked(t.url)) { bookmarks.unshift({ url: t.url, title: t.title, t: Date.now() }); saveSoon('bookmarks.json', () => bookmarks); }
+      C.push(); return true;
+    }
+    case 'bookmarkInfo': { const b = t && bookmarks.find((x) => x.url === t.url); return { url: (t && t.url) || '', title: b ? b.title : (t && t.title) || '', saved: !!b }; }
+    case 'bookmarkSet': { const b = t && bookmarks.find((x) => x.url === t.url); const name = String(a.title || '').trim().slice(0, 200); if (b && name) { b.title = name; saveSoon('bookmarks.json', () => bookmarks); C.push(); } return; }
+    case 'bookmarkRemove': { const i = t ? bookmarks.findIndex((x) => x.url === t.url) : -1; if (i >= 0) { bookmarks.splice(i, 1); saveSoon('bookmarks.json', () => bookmarks); C.push(); } return; }
     case 'screenshot': { const wc = t?.view?.webContents; if (!wc) return; let img = await wc.capturePage().catch(() => null); if (!img || img.isEmpty()) { C.win().focus(); await new Promise((r) => setTimeout(r, 300)); img = await wc.capturePage().catch(() => null); } if (!img || img.isEmpty()) return C.toast('Could not capture the page. Bring Nova to the front and try again.'); const dir = path.join(app.getPath('pictures'), 'Nova'); fs.mkdirSync(dir, { recursive: true }); const f = path.join(dir, `Nova ${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`); fs.writeFileSync(f, img.toPNG()); clipboard.writeImage(img); C.toast('Screenshot saved to Pictures/Nova and copied.'); return; }
     case 'pip': { const wc = t?.view?.webContents; if (!wc) return; const r = await wc.executeJavaScript("(()=>{const v=[...document.querySelectorAll('video')].sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0];if(!v)return 'none';if(document.pictureInPictureElement){document.exitPictureInPicture();return 'exit'}v.requestPictureInPicture();return 'ok'})()", true).catch(() => 'none'); if (r === 'none') C.toast('No video on this page.'); return; }
     case 'savePdf': { const wc = t?.view?.webContents; if (!wc) return; const data = await wc.printToPDF({ printBackground: true }); const name = (t.title || 'page').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'page'; const f = path.join(app.getPath('downloads'), name + '.pdf'); fs.writeFileSync(f, data); C.toast(`Saved ${name}.pdf to Downloads.`); return; }

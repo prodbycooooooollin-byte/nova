@@ -1,5 +1,24 @@
 [
   {
+    "version": "0.13.0",
+    "date": "2026-10-16",
+    "headline": {
+      "title": "Tabs like in Brave",
+      "text": "tabs along the top from the far left, the address bar centred below, bookmarks underneath, window buttons top right."
+    },
+    "notes": [
+      "Tabs are clearly separated and the numbers (memory, blocked ads, tab budget) are small and quiet beside the buttons.",
+      "One Extensions button opens a small list; click an extension to open its own menu.",
+      "Bookmark star left of the address bar: click it to name the page, save it or take it out again.",
+      "Spaces moved out of the tab row into a small button with a list.",
+      "Drag a tab out of the tab row (also onto another screen) and a complete second Nova opens with the same tabs, bars and options. Ctrl+N opens a new window, and a tab can be moved between windows from the tab menu.",
+      "Drag the empty part of the tab row to move the window; from full size it comes out smaller under the cursor.",
+      "Settings look plainer: text menu, simple lists, no icon tiles.",
+      "Less work in the background: the interface gets rarely changing data only when it changed, blocked ads no longer refresh everything, memory figure updates only when it moved.",
+      "If Nova ever closes unexpectedly it now writes a short log and a crash report for you in the Nova data folder."
+    ]
+  },
+  {
     "version": "0.12.0",
     "date": "2026-10-16",
     "headline": {

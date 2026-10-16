@@ -1,7 +1,7 @@
 // Skip DOM writes when nothing changed: the chrome re-renders on every title/loading event, most of them no-ops.
-(() => { const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML'); for (const id of ['nav', 'winctl', 'urlbar', 'bmbar', 'pins', 'tabhead', 'tabs', 'spaces', 'tools']) { const el = document.getElementById(id); let cur = null; Object.defineProperty(el, 'innerHTML', { configurable: true, get() { return d.get.call(el); }, set(v) { if (v === cur) return; cur = v; d.set.call(el, v); } }); } })();
+(() => { const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML'); for (const id of ['nav', 'winctl', 'urlbar', 'bmbar', 'pins', 'tabhead', 'tabs', 'spaces', 'tools', 'stats', 'bmstar']) { const el = document.getElementById(id); let cur = null; Object.defineProperty(el, 'innerHTML', { configurable: true, get() { return d.get.call(el); }, set(v) { if (v === cur) return; cur = v; d.set.call(el, v); } }); } })();
 // ---------- boot ----------
-nova.onState((s) => { if (s.bar === null && S) s.bar = S.bar; S = s; render(); if (overlay?.kind === 'overview' && overview.redraw) overview.redraw(); if ((overlay?.kind === 'library' || overlay?.kind === 'downloads') && window.updateDownloadsLive) window.updateDownloadsLive(); if (overlay?.kind === 'settings') { updateBudgetLive(); updateUpdateLive(); } });
+nova.onState((s) => { if (S) for (const k of ['bar', 'settings', 'extensions', 'archive']) if (s[k] === null) s[k] = S[k]; S = s; render(); if (overlay?.kind === 'overview' && overview.redraw) overview.redraw(); if ((overlay?.kind === 'library' || overlay?.kind === 'downloads') && window.updateDownloadsLive) window.updateDownloadsLive(); if (overlay?.kind === 'settings') { updateBudgetLive(); updateUpdateLive(); } });
 nova.onOverlay((o) => { if (!o) return clearOverlay(); if (S) setOverlay(o.kind, o.data); });
 nova.onToast(toast);
 nova.state().then((s) => { S = s; render(); });

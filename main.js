@@ -1,5 +1,5 @@
 // Nova - minimal Chromium browser. Main process: window, tabs, spaces, sleeping/archiving, adblock.
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage, net, systemPreferences, nativeTheme } = require('electron');
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage, net, systemPreferences, nativeTheme, crashReporter } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const updater = require('./updater');
@@ -27,6 +27,7 @@ const DEFAULT_KEYS = {
   toggleSidebar: ['Ctrl+B'], focusMode: ['Ctrl+Shift+F'], find: ['Ctrl+F'], settings: ['Ctrl+,'],
   zoomIn: ['Ctrl+=', 'Ctrl++'], zoomOut: ['Ctrl+-'], zoomReset: ['Ctrl+0'], devtools: ['F12'],
   pinTab: ['Ctrl+Shift+P'], hub: ['Ctrl+Shift+E'], cleanUp: ['Ctrl+Shift+K'], bookmark: ['Ctrl+D'], history: ['Ctrl+H'], downloads: ['Ctrl+J'], bookmarks: ['Ctrl+Shift+O'], screenshot: ['Ctrl+Shift+S'], privateTab: ['Ctrl+Shift+N'], print: ['Ctrl+P'], fullscreen: ['F11'], lastTab: ['Ctrl+`'], copyClean: ['Ctrl+Shift+C'], darkPage: ['Ctrl+Shift+D'],
+  newWindow: ['Ctrl+N'],
   space1: ['Alt+1'], space2: ['Alt+2'], space3: ['Alt+3'], space4: ['Alt+4'], space5: ['Alt+5'],
 };
 // Smart sleep (Settings > Resource budget): freeze background tabs, wake them invisibly, learn per site how soon to sleep them
@@ -35,7 +36,7 @@ const DEFAULTS = {
   suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0, follow: false }, startPage: { sites: true, greeting: true, stats: true },
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
   searchEngine: 'https://duckduckgo.com/?q=%s',
-  layout: 'left', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
+  layout: 'top', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
   theme: { bg: '#0b0b12', page: '#161621', surface: '#13131c', surface2: '#1c1c28', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
   customCss: '', customJs: '', pageCss: '',
   sleepAfterMin: 10, archiveAfterHours: 24, maxTabs: 25, dedupeTabs: true,
@@ -70,6 +71,21 @@ let blocker = null;
 const userFile = (n) => path.join(app.getPath('userData'), n);
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(userFile(f), 'utf8')); } catch { return d; } };
 const writeJson = (f, v) => { try { fs.writeFileSync(userFile(f), JSON.stringify(v)); } catch (e) { console.error(e); } };
+// ---------- diagnostics: crash dumps stay on this PC, and a short log of what Nova was doing explains why it closed ----------
+try { crashReporter.start({ uploadToServer: false, compress: true, productName: 'Nova', companyName: 'Nova' }); } catch { /* not available */ }
+const dlog = (m) => { try { fs.appendFileSync(userFile('nova.log'), `${new Date().toISOString()} ${m}\n`); } catch { /* disk full or locked */ } };
+try {
+  const lp = userFile('nova.log'), flag = userFile('running.flag');
+  if (fs.existsSync(lp) && fs.statSync(lp).size > 400 * 1024) fs.renameSync(lp, userFile('nova.old.log'));
+  if (fs.existsSync(flag)) dlog('!! the previous session did not end cleanly (' + fs.readFileSync(flag, 'utf8') + ')');
+  fs.writeFileSync(flag, `${app.getVersion()} pid ${process.pid} since ${new Date().toISOString()}`);
+  app.on('will-quit', () => { try { fs.unlinkSync(flag); } catch { /* gone */ } });
+} catch { /* the log is a help, never a reason to stop */ }
+process.on('uncaughtException', (e) => dlog('uncaught exception: ' + ((e && e.stack) || e)));
+process.on('unhandledRejection', (e) => dlog('unhandled rejection: ' + ((e && e.stack) || e)));
+app.on('child-process-gone', (_e, d) => dlog(`child process gone: ${d.type} ${d.reason} exit ${d.exitCode}${d.name ? ' ' + d.name : ''}`));
+app.on('render-process-gone', (_e, wc, d) => { let u = ''; try { u = wc.getURL().slice(0, 80); } catch { /* gone */ } dlog(`renderer gone: ${d.reason} exit ${d.exitCode} ${u}`); });
+
 try {
   const early = readJson('settings.json', {});
   if (early.lowIsolation) app.commandLine.appendSwitch('disable-site-isolation-trials'); // opt-in: one process for a page and its frames, about 12% less memory, weaker isolation
@@ -85,6 +101,8 @@ function loadSettings() {
   if (!['', 'orbit', 'stars', 'grid'].includes(settings.wallpaper.preset)) settings.wallpaper.preset = 'orbit'; // the old colour-blob wallpapers are gone
   if (!s.budgetV2 && s.budget) { const old = s.budget.ramMB; settings.budget.ramMB = { 1024: 800, 2048: 1500, 4096: 3000 }[old] || Math.max(400, Math.round((old || 2048) * 0.75 / 50) * 50); } // limits now count real (private) memory, which is smaller than the old figure
   settings.budgetV2 = true;
+  if (!s.layoutV2) settings.layout = 'top'; // the default is now tabs on top, address bar in the middle; switch back in Settings > Layout
+  settings.layoutV2 = true;
   applyScheme();
 }
 const saveSettings = () => writeJson('settings.json', settings);
@@ -101,8 +119,39 @@ function normalizeInput(text) {
 const activeSpace = () => state.spaces.find((s) => s.id === state.activeSpace) || state.spaces[0];
 const activeTab = () => tabs.get(state.activeTab);
 
+// ---------- windows: each one is a whole Nova (tab row, bars, settings); tabs, spaces, bookmarks and settings are shared ----------
+// A window has a record W: its active tab, its space, its split view, what its interface shows. The module variables win, ui, overlayOpen ... always belong
+// to the CURRENT window and useWin(W) switches them. Every event names its window (a message from an interface comes from that interface, an event of a page
+// from the window that shows the page), so the code below can go on speaking of "the window". state.activeTab, activeSpace, split and prevTab read and
+// write the current window's record.
+const wins = new Map(); // W.id -> W
+let curW = null, nextWid = 1;
+const firstW = () => wins.values().next().value;
+const wOfUi = (wc) => { for (const W of wins.values()) if (!W.closed && !W.ui.webContents.isDestroyed() && W.ui.webContents === wc) return W; return null; };
+function useWin(W) {
+  if (!W || W === curW || W.closed) return;
+  if (curW) Object.assign(curW, { overlayKind, overlayOpen, sidebarHidden, focusMode, pageFullscreen, uiLowered, lastBar, lastBarKey });
+  curW = W;
+  ({ win, ui, overlayKind, overlayOpen, sidebarHidden, focusMode, pageFullscreen, uiLowered, lastBar, lastBarKey } = W);
+}
+const useWinOf = (t) => { const W = t && wins.get(t.wid); if (W) useWin(W); };
+function eachWin(fn) {
+  const keep = curW;
+  for (const W of [...wins.values()]) {
+    if (W.closed || W.win.isDestroyed()) continue;
+    useWin(W);
+    try { fn(W); } catch (e) { dlog('window task: ' + ((e && e.stack) || e)); }
+  }
+  if (keep && !keep.closed) useWin(keep);
+}
+const layoutAll = () => eachWin(() => layout());
+const anyOverlay = () => { for (const W of wins.values()) if (W === curW ? overlayOpen : W.overlayOpen) return true; return false; };
+const shown = (t) => { for (const W of wins.values()) if (W.activeTab === t.id || W.split === t.id) return true; return false; }; // on screen in some window
+const allVisibleIds = () => { const ids = []; for (const W of wins.values()) { if (W.activeTab != null) ids.push(W.activeTab); if (W.split != null) ids.push(W.split); } return ids; };
+function bindState(st) { for (const k of ['activeTab', 'activeSpace', 'split', 'prevTab']) Object.defineProperty(st, k, { enumerable: true, configurable: true, get: () => (curW ? curW[k] : null), set: (v) => { if (curW) curW[k] = v; } }); }
+
 // ---------- layout ----------
-const barHeight = () => (settings.layout === 'top' && settings.bookmarksBar && features.bookmarks().length ? 34 : 0);
+const barHeight = () => (settings.layout === 'top' && settings.bookmarksBar && features.bookmarks().length ? 32 : 0);
 let lastBar = 0;
 let uiLowered = null; // tabs on the left: the interface view spans the whole window but sits BEHIND the pages, so the window buttons in its top strip show above them
 const STRIP = 32;
@@ -111,7 +160,7 @@ function layout() {
   const [w, h] = win.getContentSize();
   const gap = settings.gap;
   const side = settings.compact ? 56 : settings.sidebarWidth;
-  const top = 96 + barHeight(); // top layout: toolbar row + (bookmarks bar) + tab strip
+  const top = 86 + barHeight(); // top layout: tab row (40) + address row (46) + the bookmarks row when there are bookmarks
   const hidden = sidebarHidden || focusMode || pageFullscreen;
   let uiRect = { x: 0, y: 0, width: 0, height: 0 }, c;
   if (hidden) c = { x: 0, y: 0, width: w, height: h };
@@ -127,7 +176,7 @@ function layout() {
   vis.forEach((t, i) => {
     const each = Math.floor((c.width - gapIn) / vis.length);
     t.view.setBounds({ x: c.x + i * (each + gapIn), y: c.y, width: each, height: c.height });
-    try { t.view.setBorderRadius(hidden || t.playing ? 0 : settings.radius); } catch {} // a rounded mask makes video cost more CPU, so square corners while media plays
+    try { const r = hidden ? 0 : settings.radius; if (t.radius !== r) { t.view.setBorderRadius(r); t.radius = r; } } catch { /* view is going away */ } // only when the value really changes
   });
   win.setBackgroundColor(settings.theme.bg);
   features.relayoutPeek();
@@ -142,8 +191,9 @@ function visibleTabs() {
   return out;
 }
 function sync() { // attach visible views, keep ui on top
-  for (const t of tabs.values()) if (t.view && t.attached && !visibleTabs().includes(t)) { win.contentView.removeChildView(t.view); t.attached = false; }
-  for (const t of visibleTabs()) if (!t.attached) { win.contentView.addChildView(t.view); t.attached = true; }
+  const vis = visibleTabs();
+  for (const t of tabs.values()) if (t.wid === curW.id && t.view && t.attached && !vis.includes(t)) { win.contentView.removeChildView(t.view); t.attached = false; }
+  for (const t of vis) if (!t.attached) { win.contentView.addChildView(t.view); t.attached = true; }
   uiLowered = null; // the new page view went on top: layout() puts the interface back where it belongs
   layout();
 }
@@ -154,11 +204,13 @@ function push() {
   if (pushTimer) return;
   pushTimer = setTimeout(() => {
     pushTimer = null;
-    if (!ui || ui.webContents.isDestroyed()) return;
-    const bh = barHeight(); if (bh !== lastBar) { lastBar = bh; layout(); } // the bookmarks bar appears with the first bookmark
-    ui.webContents.send('state', publicState(false));
+    eachWin(() => {
+      if (!ui || ui.webContents.isDestroyed()) return;
+      const bh = barHeight(); if (bh !== lastBar) { lastBar = bh; layout(); } // the bookmarks bar appears with the first bookmark
+      ui.webContents.send('state', publicState(false));
+    });
     persistSoon();
-  }, 30);
+  }, 50);
 }
 let lastBarKey = '';
 function barForState(full) {
@@ -167,12 +219,23 @@ function barForState(full) {
   if (!full && key === lastBarKey) return null; // unchanged: the interface keeps the one it has
   lastBarKey = key; return bar;
 }
+// parts of the state that rarely change (settings, extension icons, the archive) travel only when they did; null tells the interface to keep the copy it has
+function partOf(name, key, make, full) {
+  const K = curW.sent || (curW.sent = {});
+  if (!full && K[name] === key) return null;
+  K[name] = key; return make();
+}
+function extForState(full) {
+  let list = []; try { list = features.listExtensions(); } catch { /* not ready */ }
+  return partOf('extensions', list.map((e) => [e.id, e.name, e.version, e.popup, e.icon ? e.icon.length : 0].join()).join('|'), () => list, full);
+}
 function publicState(full = true) {
   return {
-    tabs: [...tabs.values()].map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, frozen: !!t.frozen, sleepAt: t.sleepAt || 0, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, darkSite: settings.features.darkSite && darkmode.isOnUrl(t.url), darkKey: settings.features.darkSite ? darkmode.keyOf(t.url) : '', private: !!t.private, bookmarked: features.isBookmarked(t.url) })),
-    extensions: (() => { try { return features.listExtensions(); } catch { return []; } })(), snoozed: (state.snoozed || []).length,
+    tabs: [...tabs.values()].filter((t) => t.wid === curW.id).map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, frozen: !!t.frozen, sleepAt: t.sleepAt || 0, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, darkSite: settings.features.darkSite && darkmode.isOnUrl(t.url), darkKey: settings.features.darkSite ? darkmode.keyOf(t.url) : '', private: !!t.private, bookmarked: features.isBookmarked(t.url) })),
+    extensions: extForState(full), snoozed: (state.snoozed || []).length,
     spaces: state.spaces, activeSpace: state.activeSpace, activeTab: state.activeTab, split: state.split,
-    archive: state.archive.slice(0, 80), bar: barForState(full), dl: features.downloadsLive(), dlInfo: features.dlInfo(), settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
+    windows: [...wins.values()].filter((W) => W !== curW && !W.closed).map((W) => ({ id: W.id, title: (tabs.get(W.activeTab) || {}).title || 'Nova window' })),
+    archive: partOf('archive', state.archive.length + ':' + (state.archive[0] ? state.archive[0].closedAt : 0), () => state.archive.slice(0, 80), full), bar: barForState(full), dl: features.downloadsLive(), dlInfo: features.dlInfo(), settings: partOf('settings', JSON.stringify(settings), () => settings, full), hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
     adblock: adblockStatus, blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(), update: updater.status(),
   };
 }
@@ -181,19 +244,25 @@ function persistSoon() {
   clearTimeout(persistTimer);
   persistTimer = setTimeout(persist, 600);
 }
-function persist() {
-  writeJson('state.json', {
+let quitting = false; // Nova is ending: the tabs of every window were saved once, before the first window closed
+function persist(final) {
+  if (quitting && !final) return;
+  const body = JSON.stringify({
     spaces: state.spaces, activeSpace: state.activeSpace, activeTab: state.activeTab, archive: state.archive.slice(0, 300), snoozed: state.snoozed || [],
     tabs: [...tabs.values()].filter((t) => !t.private).map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, lastActive: t.lastActive })),
   });
+  if (body === lastPersisted) return;
+  lastPersisted = body;
+  try { fs.writeFileSync(userFile('state.json'), body); } catch (e) { console.error(e); }
 }
-let blockedCount = 0;
+let lastPersisted = '';
+let blockedCount = 0, blockTimer = null;
 
 // ---------- tabs ----------
 function newTabObj(o) {
   const id = o.id != null && !tabs.has(o.id) ? o.id : nextId++;
   nextId = Math.max(nextId, id + 1);
-  const t = { id, spaceId: o.spaceId || state.activeSpace, url: o.url || HOME, title: o.title || (!o.url || o.url === HOME ? 'New tab' : ''), favicon: o.favicon || '', pinned: !!o.pinned, private: !!o.private, lastActive: o.lastActive || Date.now(), view: null, attached: false, loading: false, audible: false, canBack: false, canForward: false, thumb: '' };
+  const t = { id, wid: o.wid || (curW ? curW.id : 0), spaceId: o.spaceId || state.activeSpace, url: o.url || HOME, title: o.title || (!o.url || o.url === HOME ? 'New tab' : ''), favicon: o.favicon || '', pinned: !!o.pinned, private: !!o.private, lastActive: o.lastActive || Date.now(), view: null, attached: false, loading: false, audible: false, canBack: false, canForward: false, thumb: '' };
   tabs.set(t.id, t);
   return t;
 }
@@ -204,35 +273,37 @@ function wake(t) {
   t.view = view; t.pendingWake = pw; t.frozen = false;
   view.setBackgroundColor((pw && pw.bg) || settings.theme.page);
   const wc = view.webContents;
+  const on = (ev, fn) => wc.on(ev, (...a) => { useWinOf(t); return fn(...a); }); // the window that shows this page is the current one while its event runs
   extbridge.watch(t);
   const upd = () => { if (wc.isDestroyed()) return; const u = wc.getURL(); t.url = isHome(u) ? HOME : u || t.url; if (t.url === HOME) t.title = 'New tab'; t.canBack = wc.navigationHistory.canGoBack(); t.canForward = wc.navigationHistory.canGoForward(); push(); };
-  wc.on('page-title-updated', (_e, title) => { t.title = isHome(t.url) ? 'New tab' : title; if (!isHome(t.url) && !t.private) features.recordVisit(wc.getURL(), title); push(); });
-  wc.on('page-favicon-updated', (_e, f) => { t.favicon = f[0] || ''; if (!t.private && settings.keepHistory) features.setIcon(wc.getURL(), f[0]); push(); });
-  wc.on('did-start-loading', () => { t.loading = true; push(); });
-  wc.on('did-stop-loading', () => { t.loading = false; upd(); if (t.id === state.activeTab) setTimeout(() => capture(t), 1500); });
-  wc.on('did-navigate', () => { upd(); applyZoom(wc); if (!t.private) features.recordVisit(wc.getURL(), wc.getTitle()); });
-  wc.on('did-navigate-in-page', upd);
-  wc.on('audio-state-changed', (e) => { t.audible = e.audible; if (!e.audible) t.audibleAt = Date.now(); features.onAudio(t); push(); });
-  wc.on('media-started-playing', () => { if (!t.playing) { t.playing = true; layout(); } });
-  wc.on('media-paused', () => { if (t.playing) { t.playing = false; layout(); } });
-  wc.on('focus', () => { if (state.activeTab !== t.id && visibleTabs().includes(t)) activate(t.id, true); });
-  wc.on('before-input-event', (e, input) => handleKey(e, input, wc));
-  wc.on('enter-html-full-screen', () => { const d = detachedByWc(wc); if (d) { d.win.setFullScreen(true); return; } pageFullscreen = true; win.setFullScreen(true); layout(); });
-  wc.on('leave-html-full-screen', () => { const d = detachedByWc(wc); if (d) { d.win.setFullScreen(false); return; } pageFullscreen = false; win.setFullScreen(false); layout(); });
-  wc.on('found-in-page', (_e, r) => ui.webContents.send('found', r));
+  on('page-title-updated', (_e, title) => { t.title = isHome(t.url) ? 'New tab' : title; if (!isHome(t.url) && !t.private) features.recordVisit(wc.getURL(), title); push(); });
+  on('page-favicon-updated', (_e, f) => { t.favicon = f[0] || ''; if (!t.private && settings.keepHistory) features.setIcon(wc.getURL(), f[0]); push(); });
+  on('did-start-loading', () => { t.loading = true; push(); });
+  on('render-process-gone', (_e, d) => { if (d.reason === 'clean-exit' || d.reason === 'killed') return; const now = Date.now(); if (now - (t.lastCrash || 0) < 30000) return; t.lastCrash = now; setTimeout(() => { if (!wc.isDestroyed()) wc.reload(); }, 400); });
+  on('did-stop-loading', () => { t.loading = false; upd(); if (t.id === state.activeTab) setTimeout(() => capture(t), 1500); });
+  on('did-navigate', () => { upd(); applyZoom(wc); if (!t.private) features.recordVisit(wc.getURL(), wc.getTitle()); });
+  on('did-navigate-in-page', upd);
+  on('audio-state-changed', (e) => { t.audible = e.audible; if (!e.audible) t.audibleAt = Date.now(); features.onAudio(t); push(); });
+  on('media-started-playing', () => { t.playing = true; });
+  on('media-paused', () => { t.playing = false; });
+  on('focus', () => { if (state.activeTab !== t.id && visibleTabs().includes(t)) activate(t.id, true); });
+  on('before-input-event', (e, input) => handleKey(e, input));
+  on('enter-html-full-screen', () => { pageFullscreen = true; win.setFullScreen(true); layout(); });
+  on('leave-html-full-screen', () => { pageFullscreen = false; win.setFullScreen(false); layout(); });
+  on('found-in-page', (_e, r) => ui.webContents.send('found', r));
   wc.setWindowOpenHandler(({ url, disposition, features }) => {
+    useWinOf(t);
     // window.open(...) with a size is a login popup: it needs its opener, so it stays a real window
     if (disposition === 'new-window' && features) {
-      const num = (k) => Number(new RegExp(k + '=(\d+)').exec(features)?.[1]) || undefined;
+      const num = (k) => Number(new RegExp(k + '=(\\d+)').exec(features)?.[1]) || undefined;
       return { action: 'allow', overrideBrowserWindowOptions: { width: num('width') || 520, height: num('height') || 700, autoHideMenuBar: true, backgroundColor: settings.theme.bg, icon: path.join(__dirname, 'build', 'icon.ico'), webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } } };
     }
     const quiet = disposition === 'background-tab'; // middle click or ctrl+click on a link: it opens behind, you stay where you are
     openUrl(url, { background: quiet, forceNew: quiet, afterId: t.id, private: t.private });
-    if (!quiet && detachedByWc(wc)) { try { win.show(); win.focus(); } catch { /* window closing */ } } // a link from a tab in its own window opens in the main window
     return { action: 'deny' };
   });
-  wc.on('context-menu', (_e, p) => contextMenu(wc, p));
-  wc.on('did-finish-load', () => {
+  on('context-menu', (_e, p) => contextMenu(wc, p));
+  on('did-finish-load', () => {
     applyPageCss(wc); if (t.dark) features.applyDark(t);
     if (isHome(wc.getURL())) pushHome(wc);
     if (isHome(wc.getURL()) && !t.private) wc.executeJavaScript(`window.novaSites && window.novaSites(${JSON.stringify(settings.keepHistory ? features.topSites(8) : [])})`).catch(() => {});
@@ -262,7 +333,7 @@ function wallColors() {
     const img = nativeImage.createFromPath(userFile('wallpaper.jpg')); if (img.isEmpty()) return false;
     settings.theme = { ...settings.theme, ...wallpalette.paletteFromBitmap(img.resize({ width: 48 }).toBitmap()) };
     for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(settings.theme.page);
-    saveSettings(); layout(); pushHome(); push(); return true;
+    saveSettings(); layoutAll(); pushHome(); push(); return true;
   } catch (e) { console.error('wallColors', e.message); return false; }
 }
 function windowsAccent() { // the colour picked in Windows settings, applied as Nova's accent only
@@ -296,6 +367,7 @@ async function capture(t) {
   const thumbs = settings.thumbnails, ghost = settings.budget.softWake && !isHome(t.url);
   if (!thumbs && !ghost) return;
   if (!t.view || !t.attached || t.view.webContents.isDestroyed()) return;
+  const W = wins.get(t.wid); if (!W || W.closed || W.win.isDestroyed() || W.win.isMinimized() || !W.win.isVisible()) return;
   try {
     const img = await t.view.webContents.capturePage();
     if (img.isEmpty()) { if (ghost) t.ghost = ''; return; } // no picture is better than one of a different scroll position
@@ -307,7 +379,7 @@ function sleep(t) {
   if (!t.view) return;
   extbridge.removed(t);
   sleeper.missed(t);
-  if (t.attached) { win.contentView.removeChildView(t.view); t.attached = false; }
+  if (t.attached) { const W = wins.get(t.wid); try { (W ? W.win : win).contentView.removeChildView(t.view); } catch { /* its window is gone */ } t.attached = false; }
   const wc = t.view.webContents;
   t.url = wc.isDestroyed() ? t.url : (isHome(wc.getURL()) ? HOME : wc.getURL() || t.url);
   if (!wc.isDestroyed()) { try { if (wc.debugger.isAttached()) wc.debugger.detach(); } catch {} wc.close(); }
@@ -315,7 +387,7 @@ function sleep(t) {
 }
 function prewake(id) { // resting the pointer on a sleeping tab's row loads it in the background, so the click finds it ready
   const t = tabs.get(id);
-  if (!t || t.view || !settings.budget.softWake || visibleTabs().includes(t)) return;
+  if (!t || t.view || !settings.budget.softWake || shown(t)) return;
   try { if (budget.get().over) return; } catch {}
   if ([...tabs.values()].filter((x) => x.view && !x.attached && x.warmAt && Date.now() - x.warmAt < 30000).length >= 2) return;
   t.warmAt = Date.now(); wake(t); push();
@@ -325,6 +397,8 @@ function destroyTab(t) { sleeper.missed(t); sleep(t); tabs.delete(t.id); }
 function activate(id, fromFocus) {
   const t = tabs.get(id);
   if (!t) return;
+  if (!wins.has(t.wid)) t.wid = curW.id;
+  else if (t.wid !== curW.id) { useWinOf(t); try { win.show(); win.focus(); } catch { /* closing */ } } // a tab of another window: go there
   if (overlayOpen && (overlayKind === 'settings' || overlayKind === 'hub') && !fromFocus && id !== state.activeTab) closeOverlay(); // settings sit beside the browser: choosing a page leaves them
   const prev = activeTab();
   if (prev && prev !== t) state.prevTab = prev.id;
@@ -369,15 +443,21 @@ function archiveTab(t, quiet) {
 function closeTab(id) {
   const t = tabs.get(id);
   if (!t) return;
-  const list = [...tabs.values()].filter((x) => x.spaceId === t.spaceId);
+  useWinOf(t); // the window that shows this tab is the one that changes
+  const mine = () => [...tabs.values()].filter((x) => x.wid === curW.id);
+  const list = mine().filter((x) => x.spaceId === t.spaceId);
   const idx = list.indexOf(t);
   const wasActive = state.activeTab === id;
   if (state.split === id) state.split = null;
   destroyTab(t);
   if (t.private && privSes && ![...tabs.values()].some((x) => x.private)) privSes.clearStorageData().catch(() => {}); // last private tab gone: forget everything
-  if (!tabs.size) { state.activeTab = null; state.split = null; const n = newTabObj({ spaceId: state.spaces.some((sp) => sp.id === t.spaceId) ? t.spaceId : state.activeSpace }); activate(n.id); push(); return; } // the last tab closed: back to the start page, the browser stays open (the window's own close button still quits)
+  if (!mine().length) {
+    state.activeTab = null; state.split = null;
+    if (wins.size > 1) { const W = curW; setTimeout(() => { try { if (!W.closed) W.win.close(); } catch { /* gone */ } }, 0); push(); return; } // the last tab of a second window: the window goes with it
+    const n = newTabObj({ spaceId: state.spaces.some((sp) => sp.id === t.spaceId) ? t.spaceId : state.activeSpace }); activate(n.id); push(); return; // the last tab closed: back to the start page, the browser stays open (the window's own close button still quits)
+  }
   if (wasActive) {
-    const rest = [...tabs.values()].filter((x) => x.spaceId === t.spaceId);
+    const rest = mine().filter((x) => x.spaceId === t.spaceId);
     const next = rest[Math.min(idx, rest.length - 1)] || null;
     if (next) activate(next.id);
     else { state.activeTab = null; const n = newTabObj({ spaceId: t.spaceId }); activate(n.id); }
@@ -387,7 +467,7 @@ function closeTab(id) {
 function enforceLimit(keepId) {
   const max = settings.maxTabs;
   if (!max) return;
-  const open = [...tabs.values()].filter((t) => !t.pinned && t.id !== keepId && t.id !== state.activeTab);
+  const open = [...tabs.values()].filter((t) => !t.pinned && t.id !== keepId && !shown(t));
   const over = tabs.size - max;
   if (over <= 0) return;
   open.sort((a, b) => a.lastActive - b.lastActive).slice(0, over).forEach((t) => archiveTab(t));
@@ -399,12 +479,12 @@ function cleanUp(mode) {
   if (mode === 'duplicates') {
     const seen = new Map();
     for (const t of [...tabs.values()]) {
-      if (seen.has(t.url) && !isHome(t.url) && t.id !== state.activeTab) { closeTab(t.id); n++; } else if (!seen.has(t.url)) seen.set(t.url, t);
+      if (seen.has(t.url) && !isHome(t.url) && !shown(t)) { closeTab(t.id); n++; } else if (!seen.has(t.url)) seen.set(t.url, t);
     }
   } else {
     const idleMs = mode === 'hour' ? 3600e3 : mode === 'day' ? 86400e3 : 0;
     for (const t of [...tabs.values()]) {
-      if (t.pinned || t.id === state.activeTab) continue;
+      if (t.pinned || shown(t)) continue;
       if (now - t.lastActive >= idleMs) { archiveTab(t); n++; }
     }
   }
@@ -417,88 +497,93 @@ function toast(msg) { if (ui && !ui.webContents.isDestroyed()) ui.webContents.se
 function idlePolicy() {
   const now = Date.now();
   for (const t of [...tabs.values()]) {
-    if (t.id === state.activeTab || visibleTabs().includes(t) || t.audible) continue;
+    if (shown(t) || t.audible) continue;
     const idle = now - t.lastActive;
     if (!t.pinned && settings.archiveAfterHours > 0 && idle > settings.archiveAfterHours * 3600e3) { archiveTab(t); continue; }
   }
-  push();
 }
 
-// ---------- tabs in windows of their own: drag a tab out of the window, or choose "Move to new window" ----------
-// The page keeps its session, its history and what it is showing. The new window has a native title bar and a slim toolbar (ui/mini.html)
-// with back, forward, reload, the address and "Back to Nova". Links that open new tabs open them in the main window.
-const detached = new Map(); // BaseWindow id -> { t, win, bar, evs, send, keep }
-const detachedByWc = (wc) => { for (const d of detached.values()) if (d.t.view && !d.t.view.webContents.isDestroyed() && d.t.view.webContents === wc) return d; return null; };
-const MINI_H = 46;
-function detachTab(id, force) {
-  const t = tabs.get(id); if (!t || !win || win.isDestroyed()) return;
-  const cur = screen.getCursorScreenPoint(), b = win.getBounds();
-  if (!force && cur.x >= b.x - 4 && cur.x <= b.x + b.width + 4 && cur.y >= b.y - 4 && cur.y <= b.y + b.height + 4) return; // let go inside Nova: nothing to do
-  if (tabs.size < 2) return toast('That is the only tab. Open another one first.');
-  if (!t.view) wake(t);
-  const wasActive = state.activeTab === id, list = [...tabs.values()].filter((x) => x.spaceId === t.spaceId), idx = list.indexOf(t);
-  if (state.split === id) state.split = null;
-  if (t.attached) { try { win.contentView.removeChildView(t.view); } catch { /* already gone */ } t.attached = false; }
-  tabs.delete(id);
-  if (wasActive) { const rest = [...tabs.values()].filter((x) => x.spaceId === t.spaceId), next = rest[Math.min(idx, rest.length - 1)] || [...tabs.values()][0]; if (next) activate(next.id); }
-  const wa = screen.getDisplayNearestPoint(cur).workArea, W = Math.min(1100, wa.width - 60), H = Math.min(760, wa.height - 60);
-  const x = force ? b.x + 60 : Math.round(cur.x - W / 2), y = force ? b.y + 60 : Math.round(cur.y - 18);
-  const bw = new BaseWindow({ x: Math.max(wa.x, Math.min(x, wa.x + wa.width - W)), y: Math.max(wa.y, Math.min(y, wa.y + wa.height - H)), width: W, height: H, minWidth: 480, minHeight: 320, backgroundColor: settings.theme.page, title: t.title || 'Nova', icon: path.join(__dirname, 'build', 'icon.ico') });
-  const bar = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'mini-preload.js'), contextIsolation: true, sandbox: true } });
-  bar.setBackgroundColor(settings.theme.bg);
-  bw.contentView.addChildView(bar); bw.contentView.addChildView(t.view);
-  const wc = t.view.webContents;
-  const lay = () => { if (bw.isDestroyed()) return; const [w, h] = bw.getContentSize(), mh = bw.isFullScreen() ? 0 : MINI_H; bar.setBounds({ x: 0, y: 0, width: w, height: mh }); t.view.setBounds({ x: 0, y: mh, width: w, height: Math.max(0, h - mh) }); };
-  const send = () => {
-    if (bw.isDestroyed() || bar.webContents.isDestroyed() || wc.isDestroyed()) return;
-    bar.webContents.send('mini:state', { url: isHome(wc.getURL()) ? '' : wc.getURL(), title: wc.getTitle(), back: wc.navigationHistory.canGoBack(), forward: wc.navigationHistory.canGoForward(), loading: wc.isLoading() });
-    try { bw.setTitle(isHome(wc.getURL()) ? 'New tab' : wc.getTitle() || 'Nova'); } catch { /* closing */ }
-  };
-  const evs = ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading'];
-  evs.forEach((ev) => wc.on(ev, send));
-  bw.on('resize', lay); bw.on('enter-full-screen', lay); bw.on('leave-full-screen', lay);
-  const ent = { t, win: bw, bar, evs, send, keep: false };
-  detached.set(bw.id, ent);
-  const q = { bg: settings.theme.bg, surface: settings.theme.surface2, text: settings.theme.text, dim: settings.theme.dim, accent: settings.theme.accent };
-  bar.webContents.loadFile(path.join(__dirname, 'ui', 'mini.html'), { query: q }).then(() => { lay(); send(); }).catch(() => {});
-  lay();
-  bw.on('closed', () => {
-    detached.delete(bw.id);
-    if (!wc.isDestroyed()) { evs.forEach((ev) => { try { wc.removeListener(ev, send); } catch { /* gone */ } }); if (!ent.keep) { try { wc.close(); } catch { /* gone */ } } }
-  });
+// ---------- more windows: Ctrl+N, "Move to new window", or drag a tab off the tab row ----------
+// A new window is a whole Nova: the same tab row, bars, settings and shortcuts. A tab keeps its session, history and scroll when it moves.
+// The last tab of a second window closes the window; closing a window puts its tabs into the archive (Ctrl+K); closing the last window ends Nova.
+function createWindow(o = {}) {
+  const W = { id: nextWid++, closed: false, activeTab: null, activeSpace: state.spaces.some((sp) => sp.id === o.activeSpace) ? o.activeSpace : state.spaces[0].id, split: null, prevTab: null, overlayKind: '', overlayOpen: false, sidebarHidden: false, focusMode: false, pageFullscreen: false, uiLowered: null, lastBar: 0, lastBarKey: '' };
+  const b = { width: o.width || 1360, height: o.height || 860 };
+  if (o.x != null && o.y != null) { b.x = Math.round(o.x); b.y = Math.round(o.y); }
+  W.win = new BaseWindow({ ...b, minWidth: 640, minHeight: 420, frame: false, backgroundColor: settings.theme.bg, title: 'Nova', icon: path.join(__dirname, 'build', 'icon.ico') });
+  if (b.x != null) W.win.setBounds(b); // once more: on a screen with another scaling the size given at creation can come out different
+  W.ui = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } });
+  W.ui.setBackgroundColor('#00000000');
+  W.win.contentView.addChildView(W.ui);
+  wins.set(W.id, W);
+  const wc = W.ui.webContents;
+  wc.on('before-input-event', (e, i) => { useWin(W); handleKey(e, i); });
+  wc.loadFile(path.join(__dirname, 'ui', 'index.html'));
+  W.win.on('resize', () => { if (!W.closed) { useWin(W); layout(); } });
+  W.win.on('maximize', () => { if (!wc.isDestroyed()) wc.send('maximized', true); });
+  W.win.on('unmaximize', () => { if (!wc.isDestroyed()) wc.send('maximized', false); });
+  W.win.on('focus', () => useWin(W)); // the window you work in is the current one for everything that has no window of its own
+  W.win.on('closed', () => windowClosed(W));
+  useWin(W);
+  if (o.maximize) W.win.maximize();
+  return W;
+}
+function windowClosed(W) {
+  W.closed = true;
+  if (quitting) { wins.delete(W.id); return; } // every window closes in turn when Nova ends: nothing is archived or saved again
+  if (wins.size <= 1) { persist(); clearTimeout(persistTimer); wins.delete(W.id); app.quit(); return; } // the last window: Nova ends and the tabs stay saved
+  wins.delete(W.id);
+  if (curW === W) { curW = null; useWin(firstW()); }
+  for (const t of [...tabs.values()]) {
+    if (t.wid !== W.id) continue;
+    t.attached = false; // the page views went with their window
+    if (t.url && !isHome(t.url) && !t.private) state.archive.unshift({ url: t.url, title: t.title, favicon: t.favicon, spaceId: t.spaceId, closedAt: Date.now() });
+    destroyTab(t);
+  }
+  state.archive = state.archive.slice(0, 300);
+  persist(); push();
+}
+// a tab moves to another window: the page view is handed over as it is
+function transferTab(t, to) {
+  const from = wins.get(t.wid);
+  if (!from || from === to || to.closed) return;
+  useWin(from);
+  const mine = [...tabs.values()].filter((x) => x.wid === from.id), same = mine.filter((x) => x.spaceId === t.spaceId), idx = same.indexOf(t), wasActive = state.activeTab === t.id;
+  if (state.split === t.id) state.split = null;
+  if (t.attached && t.view) { try { from.win.contentView.removeChildView(t.view); } catch { /* gone */ } }
+  t.attached = false; t.wid = to.id;
+  const rest = mine.filter((x) => x !== t);
+  if (wasActive) state.activeTab = null; // it is not this window's page any more: nothing to "leave"
+  if (wasActive && rest.length) { const inSpace = rest.filter((x) => x.spaceId === t.spaceId), next = inSpace[Math.min(idx, inSpace.length - 1)] || rest[0]; activate(next.id); }
+  if (!rest.length) setTimeout(() => { try { if (!from.closed) from.win.close(); } catch { /* gone */ } }, 0); // nothing left in the window it came from
+  useWin(to);
+  state.activeSpace = t.spaceId;
+  activate(t.id);
+  try { to.win.show(); to.win.focus(); } catch { /* closing */ }
   push();
 }
-function attachTab(ent) {
-  const t = ent.t, wc = t.view && t.view.webContents;
-  if (!wc || wc.isDestroyed()) return ent.win.close();
-  ent.keep = true;
-  try { ent.win.contentView.removeChildView(t.view); } catch { /* gone */ }
-  ent.win.close();
-  t.attached = false; t.spaceId = state.spaces.some((s) => s.id === t.spaceId) ? t.spaceId : state.activeSpace;
-  tabs.set(t.id, t); activate(t.id);
-  try { win.show(); win.focus(); } catch { /* closing */ }
+const inside = (p, b, m = 4) => p.x >= b.x - m && p.x <= b.x + b.width + m && p.y >= b.y - m && p.y <= b.y + b.height + m;
+function detachTab(id, force) {
+  const t = tabs.get(id); if (!t) return;
+  useWinOf(t);
+  const cur = screen.getCursorScreenPoint(), b = win.getBounds();
+  if (!force) {
+    if (inside(cur, b)) return; // let go inside this window: nothing to do
+    for (const W of wins.values()) if (W !== curW && !W.closed && !W.win.isDestroyed() && inside(cur, W.win.getBounds(), 0)) return transferTab(t, W); // let go over another Nova window: the tab joins it
+  }
+  if ([...tabs.values()].filter((x) => x.wid === curW.id).length < 2) return toast('That is the only tab of this window.');
+  const nb = win.getNormalBounds(), wa = screen.getDisplayNearestPoint(force ? { x: b.x + 40, y: b.y + 40 } : cur).workArea;
+  const w = Math.min(nb.width > 0 ? nb.width : 1360, wa.width - 40), h = Math.min(nb.height > 0 ? nb.height : 860, wa.height - 40);
+  const x = force ? b.x + 40 : cur.x - 130, y = force ? b.y + 40 : cur.y - 18;
+  const W = createWindow({ x: Math.max(wa.x, Math.min(x, wa.x + wa.width - w)), y: Math.max(wa.y, Math.min(y, wa.y + wa.height - h)), width: w, height: h, activeSpace: t.spaceId });
+  transferTab(t, W);
 }
-ipcMain.on('mini:cmd', (e, name, arg) => {
-  const ent = [...detached.values()].find((d) => d.bar.webContents === e.sender);
-  if (!ent || ent.win.isDestroyed()) return;
-  const wc = ent.t.view && ent.t.view.webContents; if (!wc || wc.isDestroyed()) return;
-  if (name === 'back') wc.navigationHistory.goBack(); else if (name === 'forward') wc.navigationHistory.goForward();
-  else if (name === 'reload') { if (wc.isLoading()) wc.stop(); else wc.reload(); }
-  else if (name === 'go') wc.loadURL(normalizeInput(String(arg || ''))).catch(() => {});
-  else if (name === 'return') attachTab(ent);
-});
-function detachedKey(e, input, ent) {
-  if (input.type !== 'keyDown') return;
-  const a = accel(input), wc = ent.t.view.webContents;
-  if (a === 'Ctrl+W') { e.preventDefault(); ent.win.close(); }
-  else if (a === 'Ctrl+R' || a === 'F5') { e.preventDefault(); wc.reload(); }
-  else if (a === 'Alt+ArrowLeft') { e.preventDefault(); wc.navigationHistory.goBack(); }
-  else if (a === 'Alt+ArrowRight') { e.preventDefault(); wc.navigationHistory.goForward(); }
-  else if (a === 'Ctrl+L' || a === 'Ctrl+K') { e.preventDefault(); ent.bar.webContents.focus(); ent.bar.webContents.send('mini:focus'); }
-  else if (a === 'Ctrl+=' || a === 'Ctrl++') { e.preventDefault(); wc.setZoomLevel(wc.getZoomLevel() + 0.5); }
-  else if (a === 'Ctrl+-') { e.preventDefault(); wc.setZoomLevel(wc.getZoomLevel() - 0.5); }
-  else if (a === 'Ctrl+0') { e.preventDefault(); wc.setZoomLevel(0); }
-  else if (a === 'F12') { e.preventDefault(); wc.toggleDevTools(); }
+function newWindow(url) {
+  const b = win.getBounds(), max = win.isMaximized(), wa = screen.getDisplayMatching(b).workArea;
+  const o = { width: b.width, height: b.height, maximize: max, activeSpace: state.activeSpace };
+  if (!max) { o.x = Math.max(wa.x, Math.min(b.x + 36, wa.x + wa.width - b.width)); o.y = Math.max(wa.y, Math.min(b.y + 36, wa.y + wa.height - b.height)); }
+  createWindow(o);
+  const t = newTabObj({ url: url || undefined }); activate(t.id);
 }
 
 // ---------- what's new: the first start after an update shows the notes of what came with it ----------
@@ -519,39 +604,40 @@ function whatsNew() {
 let drag = null;
 function startDrag() {
   endDrag();
-  const c0 = screen.getCursorScreenPoint(); let moved = false;
-  drag = { started: Date.now(), timer: setInterval(() => {
+  const w = win, c0 = screen.getCursorScreenPoint(); let moved = false; // w: the window being dragged, whichever window is current when the timer runs
+  drag = { w, started: Date.now(), timer: setInterval(() => {
     if (!drag) return;
+    if (w.isDestroyed()) return endDrag();
     const c = screen.getCursorScreenPoint();
     if (!moved) {
       if (Math.hypot(c.x - c0.x, c.y - c0.y) < 4) return; moved = true; drag.moved = true;
-      let b = win.getBounds(); const grabX = c0.x - b.x, grabY = c0.y - b.y;
-      if (win.isMaximized() || win.isFullScreen()) { // pull the window out of full size and keep the grip under the cursor
-        const ratio = grabX / Math.max(1, b.width), nb = win.getNormalBounds(), wa = screen.getDisplayNearestPoint(c).workArea, wasFull = win.isFullScreen();
-        if (wasFull) win.setFullScreen(false); else win.unmaximize();
+      let b = w.getBounds(); const grabX = c0.x - b.x, grabY = c0.y - b.y;
+      if (w.isMaximized() || w.isFullScreen()) { // pull the window out of full size and keep the grip under the cursor
+        const ratio = grabX / Math.max(1, b.width), nb = w.getNormalBounds(), wa = screen.getDisplayNearestPoint(c).workArea, wasFull = w.isFullScreen();
+        if (wasFull) w.setFullScreen(false); else w.unmaximize();
         // a window clearly smaller than the screen, put under the cursor in one step, so it never jumps to another monitor first
-        const w = Math.min(nb.width > 0 ? nb.width : 1360, Math.round(wa.width * 0.82)), h = Math.min(nb.height > 0 ? nb.height : 860, Math.round(wa.height * 0.82)), gy = Math.min(grabY, 40);
-        win.setBounds({ x: Math.round(c.x - ratio * w), y: Math.round(c.y - gy), width: w, height: h });
-        if (wasFull) setTimeout(() => { try { if (!win.isDestroyed() && !win.isFullScreen() && !win.isMaximized()) { const cur = win.getBounds(); if (cur.width !== w || cur.height !== h) win.setSize(w, h); } } catch { /* window closed */ } }, 90); // leaving full screen restores the old size a moment later on Windows
-        drag.off = { x: Math.round(ratio * w), y: gy }; drag.fromFull = true; // from here on only the position changes
+        const ww = Math.min(nb.width > 0 ? nb.width : 1360, Math.round(wa.width * 0.82)), hh = Math.min(nb.height > 0 ? nb.height : 860, Math.round(wa.height * 0.82)), gy = Math.min(grabY, 40);
+        w.setBounds({ x: Math.round(c.x - ratio * ww), y: Math.round(c.y - gy), width: ww, height: hh });
+        if (wasFull) setTimeout(() => { try { if (!w.isDestroyed() && !w.isFullScreen() && !w.isMaximized()) { const cur = w.getBounds(); if (cur.width !== ww || cur.height !== hh) w.setSize(ww, hh); } } catch { /* window closed */ } }, 90); // leaving full screen restores the old size a moment later on Windows
+        drag.off = { x: Math.round(ratio * ww), y: gy }; drag.fromFull = true; // from here on only the position changes
       } else drag.off = { x: grabX, y: grabY };
     }
     // only the position changes, never the size: moving between screens with different scaling must not resize or snap the window
-    win.setPosition(Math.round(c.x - drag.off.x), Math.round(c.y - drag.off.y));
+    if (c.x !== drag.lx || c.y !== drag.ly) { drag.lx = c.x; drag.ly = c.y; w.setPosition(Math.round(c.x - drag.off.x), Math.round(c.y - drag.off.y)); }
     if (Date.now() - drag.started > 60000) endDrag();
-  }, 6) };
+  }, 10) };
 }
 function endDrag() {
   if (!drag) return;
   clearInterval(drag.timer);
-  const c = screen.getCursorScreenPoint(), wa = screen.getDisplayNearestPoint(c).workArea;
-  if (drag.moved && !drag.fromFull && c.y <= wa.y + 1) win.maximize(); // drop on the top edge to maximize; a window pulled out of full size stays small, full size is the user's own choice
+  const w = drag.w, c = screen.getCursorScreenPoint(), wa = screen.getDisplayNearestPoint(c).workArea;
+  if (!w.isDestroyed() && drag.moved && !drag.fromFull && c.y <= wa.y + 1) w.maximize(); // drop on the top edge to maximize; a window pulled out of full size stays small, full size is the user's own choice
   drag = null;
 }
 
 // ---------- overlay & keys ----------
 function openOverlay(kind, data) {
-  overlayOpen = true; overlayKind = kind;
+  overlayOpen = true; overlayKind = kind; dlog('overlay ' + kind);
   layout();
   win.contentView.addChildView(ui);
   ui.webContents.focus();
@@ -577,8 +663,7 @@ function accel(input) {
   return parts.join('+');
 }
 let keysPaused = false; // true while the Shortcuts page records a new key combination
-function handleKey(e, input, src) {
-  if (src) { const d = detachedByWc(src); if (d) return detachedKey(e, input, d); }
+function handleKey(e, input) {
   if (input.type !== 'keyDown' || keysPaused) return;
   const a = accel(input);
   if (!a || a === 'Escape') return;
@@ -587,7 +672,7 @@ function handleKey(e, input, src) {
   }
 }
 const cycle = (dir) => {
-  const list = [...tabs.values()].filter((t) => t.spaceId === state.activeSpace);
+  const list = [...tabs.values()].filter((t) => t.spaceId === state.activeSpace && t.wid === curW.id);
   if (!list.length) return;
   const i = list.findIndex((t) => t.id === state.activeTab);
   activate(list[(i + dir + list.length) % list.length].id);
@@ -596,6 +681,7 @@ function runAction(action, arg) {
   const t = activeTab();
   const wc = t?.view?.webContents;
   switch (action) {
+    case 'newWindow': newWindow(); break;
     case 'newTab': if (settings.newTabPage === 'bar') openOverlay('palette', { mode: 'new', text: '' }); else { const nt = newTabObj({}); activate(nt.id); } break;
     case 'go': openOverlay('palette', { mode: 'go', text: t && !isHome(t.url) ? t.url : '', select: true }); break;
     case 'closeTab': if (t) closeTab(t.id); break;
@@ -613,7 +699,7 @@ function runAction(action, arg) {
     case 'zoomIn': wc?.setZoomLevel(wc.getZoomLevel() + 0.5); saveZoom(wc); break;
     case 'zoomOut': wc?.setZoomLevel(wc.getZoomLevel() - 0.5); saveZoom(wc); break;
     case 'zoomReset': wc?.setZoomLevel(0); saveZoom(wc); break;
-    case 'bookmark': features.handle('bookmark', {}, t); push(); break;
+    case 'bookmark': if (overlayOpen && overlayKind === 'bookmark') { closeOverlay(); break; } if (features.handle('bookmarkAdd', {}, t)) { push(); openOverlay('bookmark'); } break;
     case 'history': openOverlay('library', { tab: 'History' }); break;
     case 'downloads': openOverlay('downloads'); break;
     case 'bookmarks': openOverlay('library', { tab: 'Bookmarks' }); break;
@@ -635,7 +721,7 @@ function runAction(action, arg) {
 }
 function switchSpace(id) {
   state.activeSpace = id;
-  const t = [...tabs.values()].filter((x) => x.spaceId === id).sort((a, b) => b.lastActive - a.lastActive)[0] || newTabObj({ spaceId: id });
+  const t = [...tabs.values()].filter((x) => x.spaceId === id && x.wid === curW.id).sort((a, b) => b.lastActive - a.lastActive)[0] || newTabObj({ spaceId: id });
   activate(t.id);
 }
 function contextMenu(wc, p) {
@@ -682,7 +768,7 @@ async function initAdblock(list) {
     try { const st = fs.statSync(adblockCache()); b = ElectronBlocker.deserialize(fs.readFileSync(adblockCache())); source = 'saved copy'; updated = st.mtimeMs; } catch { b = null; }
     if (!b) { const r = await buildBlocker(); b = r.blocker; source = r.source; updated = Date.now(); saveAdblockCache(b); }
     blocker = b;
-    blocker.on('request-blocked', () => { blockedCount++; push(); });
+    blocker.on('request-blocked', () => { blockedCount++; if (!blockTimer) blockTimer = setTimeout(() => { blockTimer = null; push(); }, 2000); });
     if (settings.adblock) list.forEach((s) => adblockEnable(s));
     adblockStatus = { state: 'ready', source, updated }; push();
     if (Date.now() - updated > 24 * 3600e3) setTimeout(refreshAdblock, 45000); // lists older than a day are refreshed quietly; they apply from the next start
@@ -739,7 +825,7 @@ function applyProfile(name) {
   const p = PROFILES[name]; if (!p) return;
   const { features: f, budget: b, adblock, ...rest } = p;
   Object.assign(settings, rest, { profile: name, features: { ...f }, budget: { ...b } });
-  try { setAdblock(adblock); darkmode.sync(); webtools.sync(); passwords.sync(); } finally { saveSettings(); layout(); push(); }
+  try { setAdblock(adblock); darkmode.sync(); webtools.sync(); passwords.sync(); } finally { saveSettings(); layoutAll(); push(); }
 }
 
 // ---------- extensions (Electron supports a subset of Chrome extension APIs) ----------
@@ -763,7 +849,8 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   { const fr = readJson('first-run.json', null); try { fs.rmSync(userFile('first-run.json'), { force: true }); } catch {}
     if (fr && PROFILES[fr.profile]) { const { features: f, budget: b, ...rest } = PROFILES[fr.profile]; Object.assign(settings, rest, { profile: fr.profile, features: { ...f }, budget: { ...b } }); saveSettings(); } }
   const saved = readJson('state.json', null);
-  state = { spaces: saved?.spaces?.length ? saved.spaces : [{ id: 1, name: 'Main', color: '#7c8cff' }], activeSpace: saved?.activeSpace || 1, activeTab: null, archive: saved?.archive || [], snoozed: saved?.snoozed || [], split: null };
+  state = { spaces: saved?.spaces?.length ? saved.spaces : [{ id: 1, name: 'Main', color: '#7c8cff' }], archive: saved?.archive || [], snoozed: saved?.snoozed || [] };
+  bindState(state); // activeTab, activeSpace, split and prevTab live in each window's record
   Menu.setApplicationMenu(null);
 
   const ses = session.fromPartition('persist:nova');
@@ -792,32 +879,23 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   };
   for (const s of sessions) s.setPermissionRequestHandler(permissions);
 
-  win = new BaseWindow({ width: 1360, height: 860, minWidth: 640, minHeight: 420, frame: false, backgroundColor: settings.theme.bg, title: 'Nova', icon: path.join(__dirname, 'build', 'icon.ico') });
-  ui = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } });
-  ui.setBackgroundColor('#00000000');
-  win.contentView.addChildView(ui);
-  ui.webContents.on('before-input-event', (e, i) => handleKey(e, i));
-  ui.webContents.loadFile(path.join(__dirname, 'ui', 'index.html'));
-  win.on('resize', layout);
-  win.on('maximize', () => ui.webContents.send('maximized', true));
-  win.on('unmaximize', () => ui.webContents.send('maximized', false));
-  win.on('closed', () => { persist(); app.quit(); });
+  const first = createWindow({ activeSpace: saved?.activeSpace });
 
   // restore tabs lazily (all asleep except the active one)
   if (saved?.tabs?.length) {
     for (const s of saved.tabs) if (s && s.id != null && !tabs.has(s.id)) newTabObj(s); // saved states from older versions can list a tab twice
     const sp = [...tabs.values()].filter((t) => t.spaceId === state.activeSpace);
     const pick = tabs.get(saved.activeTab) || sp[0] || [...tabs.values()][0];
-    ui.webContents.once('did-finish-load', () => activate(pick.id));
+    ui.webContents.once('did-finish-load', () => { useWin(first); activate(pick.id); });
   } else {
-    ui.webContents.once('did-finish-load', () => { const t = newTabObj({}); activate(t.id); });
+    ui.webContents.once('did-finish-load', () => { useWin(first); const t = newTabObj({}); activate(t.id); });
   }
   ui.webContents.once('did-finish-load', () => { if (settings.firstRun || settings.setupVersion < 2) { settings.seenVersion = updater.version; saveSettings(); openOverlay('wizard'); } else whatsNew(); });
 
   initAdblock(sessions);
-  budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => visibleTabs().map((t) => t.id), toast: (m) => toast(m), push: () => push() });
-  sleeper.init({ tabs, settings: () => settings, visibleIds: () => visibleTabs().map((t) => t.id), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
-  app.on('before-quit', () => { sleeper.flush(); features.shutdown(); });
+  budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => allVisibleIds(), toast: (m) => toast(m), push: () => push(), watching: () => anyOverlay() });
+  sleeper.init({ tabs, settings: () => settings, visibleIds: () => allVisibleIds(), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
+  app.on('before-quit', () => { persist(true); quitting = true; sleeper.flush(); features.shutdown(); });
   updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. Restart to finish the update.`); push(); } else if (e.type === 'status') push(); });
   ui.webContents.once('did-finish-load', () => setTimeout(() => { try { global.__novaBoot && global.__novaBoot.good(); } catch {} }, 8000)); // started fine: the update bundle is trusted from now on
   const feed = () => settings.updateFeed || updater.defaultFeed;
@@ -825,6 +903,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   setInterval(() => updater.check(feed()), 4 * 3600e3);
   app.on('before-quit', () => { try { updater.applyOnQuit(); } catch (e) { console.error('update on quit', e.message); } });
   app.on('second-instance', (_e, argv) => {
+    const W = curW || firstW(); if (!W) return; useWin(W);
     if (win.isMinimized()) win.restore(); win.focus();
     const u = argv.slice(1).find((a) => /^https?:\/\//i.test(a) || /\.html?$/i.test(a));
     if (u) openUrl(/^https?:/i.test(u) ? u : pathToFileURL(u).href, { forceNew: true });
@@ -837,9 +916,10 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   layout();
 
   // ----- IPC from the UI -----
-  ipcMain.handle('state', () => publicState(true));
+  ipcMain.handle('state', (e) => { useWin(wOfUi(e.sender)); return publicState(true); });
   ipcMain.handle('thumbs', () => Object.fromEntries([...tabs.values()].filter((t) => t.thumb).map((t) => [t.id, t.thumb])));
   ipcMain.handle('cmd', async (_e, name, a = {}) => {
+    useWin(wOfUi(_e.sender)); // the window whose interface sent this is the one that changes
     const t = (a.id && tabs.get(a.id)) || activeTab();
     switch (name) {
       case 'activate': closeOverlay(); activate(a.id); break;
@@ -868,7 +948,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'switchSpace': switchSpace(a.id); break;
       case 'addSpace': { const id = Math.max(...state.spaces.map((s) => s.id)) + 1; state.spaces.push({ id, name: a.name || 'Space ' + id, color: a.color || '#7c8cff' }); switchSpace(id); } break;
       case 'renameSpace': { const s = state.spaces.find((x) => x.id === a.id); if (s) { if (a.name) s.name = a.name; if (a.color) s.color = a.color; push(); } } break;
-      case 'deleteSpace': if (state.spaces.length > 1) { for (const x of [...tabs.values()]) if (x.spaceId === a.id) destroyTab(x); state.spaces = state.spaces.filter((s) => s.id !== a.id); switchSpace(state.spaces[0].id); } break;
+      case 'deleteSpace': if (state.spaces.length > 1) { for (const x of [...tabs.values()]) if (x.spaceId === a.id) destroyTab(x); state.spaces = state.spaces.filter((s) => s.id !== a.id); switchSpace(state.spaces[0].id); eachWin((W) => { if (W.closed) return; if (!state.spaces.some((sp) => sp.id === state.activeSpace)) state.activeSpace = state.spaces[0].id; const mine = [...tabs.values()].filter((x) => x.wid === W.id); if (!mine.length) { if (wins.size > 1) setTimeout(() => { try { W.win.close(); } catch { /* gone */ } }, 0); else activate(newTabObj({}).id); } else if (!tabs.get(state.activeTab) || tabs.get(state.activeTab).wid !== W.id) { state.activeTab = null; activate((mine.find((x) => x.spaceId === state.activeSpace) || mine[0]).id); } }); } break;
       case 'cleanUp': cleanUp(a.mode); break;
       case 'settings': {
         const prev = JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss, settings.bookmarksBar]);
@@ -882,7 +962,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         if ('lowIsolation' in a.patch) toast('Restart Nova to apply this change.');
         if (a.patch.budget && !settings.budget.freeze) for (const x of tabs.values()) if (x.frozen) sleeper.thaw(x);
         saveSettings();
-        if (prev !== JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss, settings.bookmarksBar])) layout();
+        if (prev !== JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss, settings.bookmarksBar])) layoutAll();
         if (a.patch.theme || a.patch.wallpaper || a.patch.startPage) pushHome();
         if (a.patch.pageCss !== undefined) for (const x of tabs.values()) if (x.view) { applyPageCss(x.view.webContents); }
         push();
@@ -892,7 +972,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'applyProfile': applyProfile(a.name); break;
       case 'runSetup': closeOverlay(); setTimeout(() => openOverlay('wizard'), 60); break;
       case 'newPrivate': return features.handle('newPrivate', a, t);
-      case 'resetSettings': settings = { ...DEFAULTS, theme: { ...DEFAULTS.theme }, keys: { ...DEFAULT_KEYS }, features: { ...DEFAULTS.features }, budget: { ...DEFAULTS.budget }, downloads: { ...DEFAULTS.downloads }, cache: { ...DEFAULTS.cache }, firstRun: false, setupVersion: 2 }; darkmode.sync(); webtools.sync(); passwords.sync(); saveSettings(); layout(); push(); break;
+      case 'resetSettings': settings = { ...DEFAULTS, theme: { ...DEFAULTS.theme }, keys: { ...DEFAULT_KEYS }, features: { ...DEFAULTS.features }, budget: { ...DEFAULTS.budget }, downloads: { ...DEFAULTS.downloads }, cache: { ...DEFAULTS.cache }, firstRun: false, setupVersion: 2 }; darkmode.sync(); webtools.sync(); passwords.sync(); saveSettings(); layoutAll(); push(); break;
       case 'finishSetup': settings.firstRun = false; settings.setupVersion = 2; saveSettings(); closeOverlay(); push(); break;
       case 'loadExtension': {
         const r = await dialog.showOpenDialog(win, { title: 'Select an unpacked extension folder', properties: ['openDirectory'] });
@@ -903,6 +983,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'applyUpdate': if (await updater.apply()) app.quit(); break;
       case 'keysPause': keysPaused = !!a.on; break;
       case 'detachTab': detachTab(a.id, !!a.force); break;
+      case 'moveToWindow': { const tt = tabs.get(a.id), to = wins.get(a.wid); if (tt && to) transferTab(tt, to); } break;
       case 'reorder': { const arr = [...tabs.entries()], i = arr.findIndex(([k]) => k === a.id); if (i < 0) break; const [item] = arr.splice(i, 1); const j = arr.findIndex(([k]) => k === a.target); arr.splice(j < 0 ? arr.length : a.after ? j + 1 : j, 0, item); tabs.clear(); arr.forEach(([k, v]) => tabs.set(k, v)); push(); } break;
       case 'pickWallpaper': return pickWallpaper();
       case 'wallColors': return wallColors();

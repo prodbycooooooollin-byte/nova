@@ -70,7 +70,7 @@ const WALL_OF = {'Nova': 'orbit', 'Daylight': 'orbit', 'Nebula': 'orbit', 'Super
 const WIZARD_THEMES = ['Nova', 'Daylight', 'Nebula', 'Aurora', 'Midnight', 'Rosé', 'Forest', 'Tokyo Night', 'Graphite'];
 const WALLS = [['theme', 'Follow theme'], ['none', 'Plain'], ['orbit', 'Orbit'], ['stars', 'Stars'], ['grid', 'Grid']];
 const ACTIONS = {
-  newTab: 'New tab', go: 'Address and search bar', closeTab: 'Close tab', reopenTab: 'Reopen closed tab', nextTab: 'Next tab', prevTab: 'Previous tab',
+  newTab: 'New tab', newWindow: 'New window', go: 'Address and search bar', closeTab: 'Close tab', reopenTab: 'Reopen closed tab', nextTab: 'Next tab', prevTab: 'Previous tab',
   overview: 'Tab overview', reload: 'Reload', back: 'Back', forward: 'Forward', toggleSidebar: 'Toggle sidebar', focusMode: 'Focus mode',
   find: 'Find in page', settings: 'Settings', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Reset zoom', devtools: 'Developer tools', pinTab: 'Pin or unpin tab',
   hub: 'Extension hub', history: 'History', downloads: 'Downloads', bookmarks: 'Bookmarks', cleanUp: 'Clean up tabs', screenshot: 'Take screenshot', privateTab: 'New private tab', space1: 'Space 1', space2: 'Space 2', space3: 'Space 3', space4: 'Space 4', space5: 'Space 5',
@@ -103,6 +103,26 @@ const ENGINES = { DuckDuckGo: 'https://duckduckgo.com/?q=%s', Google: 'https://w
 
 let S = null, overlay = null, customJsApplied = null;
 
+// ---------- the chrome as rows (tabs on top) or as one column (sidebar) ----------
+// Tabs on top: row one holds the tabs and the window buttons, row two the address bar exactly in the middle with back/forward and the bookmark star
+// on its left and the buttons on its right, row three the bookmarks. The same elements serve the sidebar layouts, so they move when the layout changes.
+function arrangeChrome(top) {
+  const c = document.getElementById('chrome'); if (!c || c.dataset.top === (top ? '1' : '0')) return;
+  c.dataset.top = top ? '1' : '0';
+  const g = (id) => document.getElementById(id), mk = (id) => g(id) || Object.assign(document.createElement('div'), { id });
+  if (top) {
+    const rt = mk('rowtabs'), rb = mk('rowbar'), rm = mk('rowbm'), bl = mk('barl'), br = mk('barr');
+    rt.append(g('pins'), g('tabs'), g('winctl')); c.append(g('spaces')); // the tab row belongs to the tabs; the spaces sit in a menu (hidden here)
+    bl.append(g('nav'), g('bmstar')); br.append(g('stats'), g('tools'));
+    rb.append(bl, g('urlbar'), br); rm.append(g('bmbar'));
+    c.append(rt, rb, rm);
+  } else {
+    const head = g('head'); head.append(g('nav'), g('winctl'));
+    c.append(head, g('urlbar'), g('bmstar'), g('bmbar'), g('pins'), g('tabhead'), g('tabs'), g('spaces'), g('dltray'), g('stats'), g('tools'));
+    for (const id of ['rowtabs', 'rowbar', 'rowbm', 'barl', 'barr']) { const e = g(id); if (e) e.remove(); }
+  }
+}
+
 // ---------- settings -> DOM ----------
 function applySettings() {
   const s = S.settings, r = document.documentElement.style;
@@ -113,7 +133,8 @@ function applySettings() {
   r.setProperty('--radius', s.radius + 'px'); r.setProperty('--gap', s.gap + 'px'); r.setProperty('--side', (s.compact ? 56 : s.sidebarWidth) + 'px');
   r.setProperty('--fs', s.fontSize + 'px'); r.setProperty('--font', `${s.font || "'Inter'"}, 'Inter', system-ui, sans-serif`);
   { const ord = blockOrder(s); BLOCKS.forEach((b) => r.setProperty('--o-' + b[0], ord.indexOf(b[0]) + 1)); }
-  $('#app').className = `layout-${s.layout}` + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '');
+  arrangeChrome(s.layout === 'top');
+  $('#app').className = `layout-${s.layout}` + (S.spaces && S.spaces.length < 2 ? ' one-space' : '') + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '');
   $('#user-css').textContent = s.customCss || '';
   dockOverlay();
   if (s.customJs !== customJsApplied) {
@@ -138,6 +159,8 @@ document.addEventListener('error', (e) => { const el = e.target; if (el.tagName 
 
 const fmtBytes = (n) => (n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(n >= 1.0e8 ? 0 : 1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 const fmtEta = (s) => (s >= 3600 ? Math.floor(s / 3600) + ' h ' + Math.round((s % 3600) / 60) + ' min' : s >= 60 ? Math.round(s / 60) + ' min' : s + ' s');
+const extMenuButton = () => `<button class="ibtn extbtn" data-do="extmenu" title="Extensions">${ic('box')}</button>`;
+const spaceButton = () => { const sp = (S.spaces || []).find((x) => x.id === S.activeSpace); return S.spaces && S.spaces.length > 1 && sp ? `<button class="spacebtn" data-do="spacemenu" title="Spaces: ${esc(sp.name)}"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>` : ''; };
 const hubButton = () => `<button class="ibtn hubbtn" data-do="hub" title="Extension hub: add extensions in one click">${ic('box')}</button>`;
 // the download button next to reload: a ring that fills while files come down, a check for a minute after the last one
 function dlButton() {
@@ -152,14 +175,15 @@ function render() {
   if (!S) return;
   if (typeof dragTab !== 'undefined' && dragTab !== null) { if (Date.now() - dragSince < 5000) { deferredRender = true; return; } dragTab = null; dropInfo = null; } // a drag that never ended must not freeze the tab list
   applySettings();
-  const cur = S.tabs.find((t) => t.id === S.activeTab);
-  $('#nav').innerHTML = `<img id="mark" src="mark.svg" alt="">` + ibtn('back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn('fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn('reload', 'Reload (Ctrl+R)', 'reload') + dlButton();
+  const cur = S.tabs.find((t) => t.id === S.activeTab), top = S.settings.layout === 'top';
+  $('#nav').innerHTML = `<img id="mark" src="mark.svg" alt="">` + ibtn('back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn('fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn('reload', 'Reload (Ctrl+R)', 'reload') + (top ? '' : dlButton());
   $('#winctl').innerHTML = ibtn('min', 'Minimize', 'min') + ibtn('max', 'Maximize', 'max') + ibtn('x', 'Close', 'wclose', 'close');
   let label = '<span>Search or enter address</span>', icon = 'search';
   if (cur && cur.url !== HOME) {
     try { const u = new URL(cur.url); icon = u.protocol === 'https:' ? 'lock' : 'globe'; label = `<b>${esc(u.hostname.replace(/^www\./, ''))}</b><span>${esc((u.pathname + u.search).replace(/^\/$/, '').slice(0, 60))}</span>`; } catch { label = `<b>${esc(cur.url)}</b>`; }
   }
-  $('#urlbar').innerHTML = `${ic(icon)}<span id="url-text">${label}</span>${cur?.bookmarked ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
+  $('#urlbar').innerHTML = `${ic(icon)}<span id="url-text">${label}</span>${cur?.bookmarked && !top ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
+  { const star = document.getElementById('bmstar'), page = !!(cur && /^https?:/i.test(cur.url || '')); star.innerHTML = ic(cur?.bookmarked ? 'starf' : 'star'); star.classList.toggle('on', !!cur?.bookmarked); star.classList.toggle('off', !page); star.title = cur?.bookmarked ? 'Edit this bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)'; }
 
   $('#bmbar').innerHTML = (S.bar || []).length ? S.bar.map((b) => `<button class="bmk" data-bm="${esc(b.url)}" title="${esc(b.title || b.url)}">${b.icon ? `<img src="${b.icon}" alt="">` : ic('globe')}<span>${esc(b.title || hostOf(b.url))}</span></button>`).join('') + `<button class="bmk more" data-do="bookmarks" title="All bookmarks (Ctrl+Shift+O)">${ic('fwd')}</button>` : '';
   const tabs = spaceTabs(), maxAge = (S.settings.archiveAfterHours || 24) * 3600e3;
@@ -173,13 +197,14 @@ function render() {
   }).join('') + `<button class="newrow" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}<span>New tab</span></button>`;
   $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
   const bud = S.budget, pct = bud.enabled && bud.cap ? Math.min(100, Math.round(bud.used / bud.cap * 100)) : 0;
-  const exts = (S.extensions || []).filter((e) => e.popup).slice(0, 6).map((e) => `<button class="ibtn" title="${esc(e.name)}" data-extpop="${e.id}">${e.icon ? `<img src="${e.icon}" width="16" height="16" style="border-radius:4px">` : ic('box')}</button>`).join('');
   dlTrayDraw();
-  // two rows: what Nova tells you (updates, blocked ads, memory) above, the buttons below, so nothing wraps
   const chips = (S.updateReady ? `<button class="upd" data-do="update" title="Restart to install the update">Update</button>` : '') + (S.settings.adblock ? (() => { const st = (S.adblock || {}).state; return `<span class="chip ${st === 'failed' ? 'warn' : ''}" title="${st === 'failed' ? 'The ad blocker is not loaded. Open Settings > Search & privacy to retry.' : st === 'loading' ? 'The ad blocker is loading its filter lists' : 'Ads and trackers blocked'}">${ic('shield')}<b>${st === 'failed' ? '!' : st === 'loading' ? '…' : S.blockedCount}</b></span>`; })() : '') + (bud.enabled ? `<button class="ram ${bud.over || pct >= 90 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova of your ${bud.cap} MB budget"><span class="lab">RAM</span><b>${bud.used}</b><small>MB</small><i style="width:${pct}%"></i></button>` : '');
-  $('#tools').innerHTML = (chips ? `<div class="trow st">${chips}</div>` : '') + `<div class="trow ac">` + hubButton() + (exts ? `<div class="exts">${exts}</div>` : '') + `<span class="grow"></span>` + ibtn('bookmark', 'Library: bookmarks, history, downloads (Ctrl+H)', 'library') + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings') + `</div>`;
+  // the tab budget shows only when it matters (the last fifth of it), as a quiet number next to the other small figures
+  const tcount = S.settings.maxTabs && S.tabs.length >= S.settings.maxTabs * 0.8 ? `<span class="tcount ${S.tabs.length >= S.settings.maxTabs - 3 ? 'hot' : ''}" title="Open tabs / tab budget">${S.tabs.length} / ${S.settings.maxTabs}</span>` : '';
+  $('#stats').innerHTML = tcount + chips;
+  $('#tools').innerHTML = (top ? spaceButton() + dlButton() : '') + extMenuButton() + `<span class="grow"></span>` + (top ? '' : ibtn('bookmark', 'Library: bookmarks, history, downloads (Ctrl+H)', 'library')) + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings');
 }
-setInterval(() => { if (S) { S.now = Date.now(); render(); } }, 20000);
+setInterval(() => { if (S && !document.hidden) { S.now = Date.now(); render(); } }, 60000); // only the dimming of idle tabs changes with time
 
 document.addEventListener('click', (e) => {
   if (menuOpen && e.target.closest('#menu')) return;
@@ -187,7 +212,7 @@ document.addEventListener('click', (e) => {
   const d = e.target.closest('[data-do]')?.dataset.do;
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
-    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: () => dlToggle(), hub: A('hub'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
+    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: () => dlToggle(), hub: A('hub'), bookmark: A('bookmark'), extmenu: () => nova.cmd('overlay', { kind: 'extmenu' }), spacemenu: () => nova.cmd('overlay', { kind: 'spacemenu' }), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
     return m[d]?.();
   }
   if (e.target.closest('#urlbar')) return nova.cmd('action', { name: 'go' });
@@ -229,6 +254,7 @@ function tabMenu(id) {
     { label: id === S.split ? 'Close split view' : 'Open in split view', run: () => nova.cmd('split', { id }) },
     { label: 'Put to sleep', run: () => nova.cmd('sleep', { id }) },
     ...(S.tabs.length > 1 ? [{ label: 'Move to new window', run: () => nova.cmd('detachTab', { id, force: true }) }] : []),
+    ...((S.windows || []).length ? ['-', { label: 'Move to window' }, ...S.windows.map((w) => ({ label: (w.title || 'Nova window').slice(0, 30), run: () => nova.cmd('moveToWindow', { id, wid: w.id }) }))] : []),
     ...(others.length ? ['-', { label: 'Move to space' }, ...others.map((s) => ({ label: s.name, run: () => nova.cmd('moveToSpace', { id, spaceId: s.id }) }))] : []),
     '-', { label: 'Archive to Stardust', run: () => nova.cmd('archive', { id }) }, { label: 'Close tab', run: () => nova.cmd('close', { id }) },
   ];
@@ -265,8 +291,8 @@ function setOverlay(kind, data) {
   if (kind === 'menu') return;
   const o = $('#overlay'); o.hidden = false; o.innerHTML = '';
   o.onmousedown = (e) => { if (e.target === o && kind !== 'wizard') nova.cmd('closeOverlay'); };
-  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
-  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew })[kind](o, data || {});
+  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' || kind === 'extmenu' || kind === 'bookmark' || kind === 'spacemenu' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
+  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew, extmenu: extMenu, bookmark: bookmarkPop, spacemenu: spacePop })[kind](o, data || {});
 }
 function clearOverlay() { if (askResolve && askShown) { const r = askResolve; askResolve = null; askShown = false; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; o.className = ''; }
 // Settings and the hub sit beside the browser, not over it: the sidebar (or the top bar) stays sharp and live while you change things
@@ -314,7 +340,7 @@ function commands() {
     { t: cur?.pinned ? 'Unpin tab' : 'Pin tab', k: 'Ctrl ⇧ P', run: A('pinTab') },
     { t: 'Find in page', k: 'Ctrl F', run: () => nova.cmd('overlay', { kind: 'palette', data: { mode: 'find', text: '' } }) },
     { t: 'Print', k: 'Ctrl P', run: A('print') }, { t: 'Full screen', k: 'F11', run: A('fullscreen') },
-    { t: 'New space', run: () => setTimeout(newSpaceFlow, 80) },
+    { t: 'New window', k: 'Ctrl N', run: A('newWindow') }, { t: 'New space', run: () => setTimeout(newSpaceFlow, 80) },
     { t: 'Toggle sidebar', k: 'Ctrl B', run: A('toggleSidebar') }, { t: 'Focus mode', s: 'Hide all interface', k: 'Ctrl ⇧ F', run: A('focusMode') },
     { t: 'Sidebar on the left', run: set({ layout: 'left' }) }, { t: 'Sidebar on the right', run: set({ layout: 'right' }) }, { t: 'Tabs on top', run: set({ layout: 'top' }) },
     { t: 'Open the extension hub', s: 'Find and add extensions', run: A('hub') },

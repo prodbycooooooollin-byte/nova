@@ -45,9 +45,10 @@ function tick() {
       if ((m.cpu[t.id] || 0) > b.cpuPct) { const n = (hot.get(t.id) || 0) + 1; hot.set(t.id, n); if (n >= 3 && !slept.includes(t)) { C.sleepTab(t); slept.push(t); hot.delete(t.id); } } else hot.delete(t.id);
     }
   }
+  const was = snap;
   snap = { used: m.used, tabs: m.tabs, cpu: m.cpu, cpuTotal: m.cpuTotal, over: b.enabled && cap > 0 && m.used > cap };
   if (slept.length && Date.now() - lastToast > 45000) { lastToast = Date.now(); C.toast(`Staying within your budget: put ${slept.length} background tab${slept.length > 1 ? 's' : ''} to sleep.`); }
-  C.push();
+  if (slept.length || snap.over !== was.over || Math.abs(snap.used - was.used) >= 10 || (C.watching && C.watching())) C.push(); // the small number in the corner does not need an update every five seconds
 }
 
 function init(ctx) { C = ctx; setInterval(tick, 5000); setTimeout(tick, 2500); }
