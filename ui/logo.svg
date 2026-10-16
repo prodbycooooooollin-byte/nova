@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="n" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#b3a0ff"/></linearGradient>
+    <radialGradient id="sf" cx="50%" cy="50%" r="55%"><stop offset="0" stop-color="#fff"/><stop offset=".35" stop-color="#f3eeff"/><stop offset=".75" stop-color="#c3b3ff"/><stop offset="1" stop-color="#8366ff"/></radialGradient>
+    <filter id="gs" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="7"/></filter>
+    <path id="star" d="M256 20C274 180 332 238 492 256C332 274 274 332 256 492C238 332 180 274 20 256C180 238 238 180 256 20Z"/>
+  </defs>
+  <path d="M130 440V150L330 440V150" fill="none" stroke="url(#n)" stroke-width="66" stroke-linejoin="round" stroke-linecap="round"/>
+  <use href="#star" fill="url(#sf)" transform="translate(330 132) scale(.5) translate(-256 -256)"/>
+  <circle cx="330" cy="132" r="17" fill="#fff" filter="url(#gs)"/>
+</svg>

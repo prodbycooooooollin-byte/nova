@@ -20,29 +20,17 @@ function library(o, d) {
       if (!items.length) { ll.innerHTML = `<div class="lempty">${ic(NAV.find((n) => n[0] === name)[1])}<b>${q ? 'Nothing matches' : 'Nothing here yet'}</b><span>${name === 'Bookmarks' ? 'Press Ctrl+D on any page to save it.' : name === 'History' ? 'Pages you visit will show up here.' : 'Downloaded files will show up here.'}</span></div>`; return; }
       let last = '';
       ll.innerHTML = items.map((x) => {
-        if (name === 'Downloads') return `<div class="lrow">${ic('download')}<div class="lt"><b>${esc(x.name)}</b><span>${x.state === 'completed' ? 'Saved' : esc(x.state)} · ${time(x.t)}</span></div><button class="btn" data-show="${esc(x.path)}">${ic('open')}Show in folder</button></div>`;
-        const g = name === 'History' ? ago(x.t) : ''; const gh = g && g !== last ? `<div class="lgrp mono">${g}</div>` : ''; last = g || last;
+        if (name === 'Downloads') return dlDoneRow(x);
+        const g = name === 'History' ? ago(x.t) : ''; const gh = g && g !== last ? `<div class="lgrp">${g}</div>` : ''; last = g || last;
         return `${gh}<div class="lrow" data-url="${esc(x.url)}">${icon(x)}<div class="lt"><b>${esc(x.title || x.url)}</b><span>${esc(hostOf(x.url))}${name === 'History' ? ' · ' + time(x.t) : ''}</span></div><button class="ibtn sm" data-del="${esc(x.url)}" title="Remove">${ic('x')}</button></div>`;
       }).join('');
       ll.querySelectorAll('[data-url]').forEach((r) => (r.onclick = (e) => { if (e.target.closest('[data-del]')) return; nova.cmd('open', { text: r.dataset.url, newTab: true }); }));
       ll.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => { await nova.cmd(name === 'Bookmarks' ? 'removeBookmark' : 'removeHistory', { url: b.dataset.del }); draw(); }));
-      ll.querySelectorAll('[data-show]').forEach((b) => (b.onclick = () => nova.cmd('showDownload', { path: b.dataset.show })));
+      if (name === 'Downloads') bindDlRows(ll, () => draw());
     };
     // running downloads sit above the finished ones and update live from the state Nova pushes
-    let prevActive = -1;
-    const dlRow = (j) => {
-      const pct = j.size ? Math.min(100, Math.round(j.received / j.size * 100)) : 0, paused = j.state === 'paused';
-      const info = `${fmtBytes(j.received)}${j.size ? ' of ' + fmtBytes(j.size) : ''}${paused ? ' · paused' : j.speed ? ' · ' + fmtBytes(j.speed) + '/s' : ''}${!paused && j.eta ? ' · ' + fmtEta(j.eta) + ' left' : ''}${j.ranged && !paused ? ' · ' + j.conns + ' connections' : ''}`;
-      return `<div class="lrow dlrow">${ic('download')}<div class="lt"><b>${esc(j.name)}</b><div class="dlbar"><i style="width:${pct}%"></i></div><span>${info}</span></div><button class="ibtn sm" data-dl="${paused ? 'resume' : 'pause'}" data-id="${j.id}" title="${paused ? 'Resume' : 'Pause'}">${ic(paused ? 'play' : 'pause')}</button><button class="ibtn sm" data-dl="cancel" data-id="${j.id}" title="Cancel">${ic('x')}</button></div>`;
-    };
-    const drawLive = () => {
-      const el = $('#dl-live'); if (!el) return;
-      const jobs = S.dl || [];
-      el.innerHTML = jobs.map(dlRow).join('');
-      el.querySelectorAll('[data-dl]').forEach((b) => (b.onclick = () => nova.cmd({ pause: 'dlPause', resume: 'dlResume', cancel: 'dlCancel' }[b.dataset.dl], { id: +b.dataset.id })));
-      if (prevActive >= 0 && jobs.length < prevActive) draw(); // one finished: it now belongs to the list below
-      prevActive = jobs.length;
-    };
+    const st = { key: null }; let prevActive = -1;
+    const drawLive = () => { const n = paintLive($('#dl-live'), st, () => draw()); if (prevActive >= 0 && n < prevActive) draw(); prevActive = n; };
     window.updateDownloadsLive = name === 'Downloads' ? drawLive : null;
     let t; $('#lq').addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 120); });
     await draw(); drawLive(); $('#lq').focus();

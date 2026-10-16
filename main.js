@@ -7,6 +7,7 @@ const features = require('./features');
 const wallpalette = require('./wallpalette');
 const darkmode = require('./darkmode');
 const webtools = require('./webtools');
+const passwords = require('./passwords');
 const extbridge = require('./extbridge');
 const scriptletGuard = require('./scriptlet-guard');
 const extmgr = require('./extmgr');
@@ -40,8 +41,8 @@ const DEFAULTS = {
   sleepAfterMin: 10, archiveAfterHours: 24, maxTabs: 25, dedupeTabs: true,
   adblock: true, extensions: [], keys: {}, updateFeed: '', zoom: {},
   // Optional features. Everything beyond the essentials is off until the user turns it on.
-  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8 }, cache: { limitMB: 500, auto: true }, layoutBlocks: { order: [], hidden: [] },
-  features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, autoPip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false, videoSpeed: false, sponsorBlock: false, ytDislike: false, cookieBanners: false },
+  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false }, cache: { limitMB: 500, auto: true }, layoutBlocks: { order: [], hidden: [] },
+  features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, autoPip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false, videoSpeed: false, sponsorBlock: false, ytDislike: false, cookieBanners: false, passwords: false },
   darkSites: [],
   bookmarkNames: true, // false: the bookmarks bar shows only the small icons
   newTabPage: 'home', // what a new tab shows: the start page ('home') or the address bar to type into ('bar')
@@ -52,7 +53,7 @@ const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
 const isHome = (u) => u === HOME || (u || '').startsWith(HOME_FILE);
 const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, fx: settings.effects ? 1 : 0, wall: settings.wallpaper.mode === 'none' ? '' : settings.wallpaper.preset });
 // Profiles: one switch that decides how much Nova does.
-const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'darkSite', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate', 'privateTabs', 'videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners'];
+const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'darkSite', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate', 'privateTabs', 'videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners', 'passwords'];
 const featureSet = (on) => Object.fromEntries(FEATURE_KEYS.map((k) => [k, on]));
 const PROFILES = {
   ultra: { blockAutoplay: true, effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 800, cpuGuard: true, cpuPct: 20, ...SMART } },
@@ -61,7 +62,7 @@ const PROFILES = {
 };
 let sessions = [], privSes = null;
 let win, ui, settings, state;
-let overlayOpen = false, sidebarHidden = false, focusMode = false, pageFullscreen = false;
+let overlayKind = '', overlayOpen = false, sidebarHidden = false, focusMode = false, pageFullscreen = false;
 const tabs = new Map(); // id -> tab
 let nextId = 1;
 let blocker = null;
@@ -127,6 +128,7 @@ function layout() {
   });
   win.setBackgroundColor(settings.theme.bg);
   features.relayoutPeek();
+  passwords.relayout();
 }
 function visibleTabs() {
   const a = activeTab();
@@ -167,7 +169,7 @@ function publicState(full = true) {
     tabs: [...tabs.values()].map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, frozen: !!t.frozen, sleepAt: t.sleepAt || 0, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, darkSite: settings.features.darkSite && darkmode.isOnUrl(t.url), darkKey: settings.features.darkSite ? darkmode.keyOf(t.url) : '', private: !!t.private, bookmarked: features.isBookmarked(t.url) })),
     extensions: (() => { try { return features.listExtensions(); } catch { return []; } })(), snoozed: (state.snoozed || []).length,
     spaces: state.spaces, activeSpace: state.activeSpace, activeTab: state.activeTab, split: state.split,
-    archive: state.archive.slice(0, 80), bar: barForState(full), dl: features.downloadsLive(), settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
+    archive: state.archive.slice(0, 80), bar: barForState(full), dl: features.downloadsLive(), dlInfo: features.dlInfo(), settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
     adblock: adblockStatus, blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(), update: updater.status(),
   };
 }
@@ -316,6 +318,7 @@ function destroyTab(t) { sleeper.missed(t); sleep(t); tabs.delete(t.id); }
 function activate(id, fromFocus) {
   const t = tabs.get(id);
   if (!t) return;
+  if (overlayOpen && (overlayKind === 'settings' || overlayKind === 'hub') && !fromFocus && id !== state.activeTab) closeOverlay(); // settings sit beside the browser: choosing a page leaves them
   const prev = activeTab();
   if (prev && prev !== t) state.prevTab = prev.id;
   if (prev && prev !== t) { features.onLeave(prev); capture(prev); prev.lastActive = Date.now(); sleeper.left(prev); }
@@ -414,6 +417,20 @@ function idlePolicy() {
   push();
 }
 
+// ---------- what's new: the first start after an update shows the notes of what came with it ----------
+const semNewer = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; };
+function whatsNew() {
+  try {
+    const version = updater.version, seen = settings.seenVersion;
+    if (seen === version) return;
+    settings.seenVersion = version; saveSettings();
+    const log = JSON.parse(fs.readFileSync(path.join(__dirname, 'changelog.json'), 'utf8'));
+    const entries = (seen ? log.filter((e) => semNewer(e.version, seen) && !semNewer(e.version, version)) : log.filter((e) => e.version === version)).slice(0, 3);
+    if (!entries.length) return; // a development run, or a version without notes
+    setTimeout(() => { if (!overlayOpen) openOverlay('whatsnew', { version, entries }); }, 900);
+  } catch (e) { console.error('whatsnew', e.message); }
+}
+
 // ---------- window dragging ----------
 let drag = null;
 function startDrag() {
@@ -426,9 +443,13 @@ function startDrag() {
       if (Math.hypot(c.x - c0.x, c.y - c0.y) < 4) return; moved = true; drag.moved = true;
       let b = win.getBounds(); const grabX = c0.x - b.x, grabY = c0.y - b.y;
       if (win.isMaximized() || win.isFullScreen()) { // pull the window out of full size and keep the grip under the cursor
-        const ratio = grabX / Math.max(1, b.width);
-        if (win.isFullScreen()) win.setFullScreen(false); else win.unmaximize();
-        b = win.getBounds(); drag.off = { x: Math.round(b.width * ratio), y: Math.min(grabY, 40) };
+        const ratio = grabX / Math.max(1, b.width), nb = win.getNormalBounds(), wa = screen.getDisplayNearestPoint(c).workArea, wasFull = win.isFullScreen();
+        if (wasFull) win.setFullScreen(false); else win.unmaximize();
+        // a window clearly smaller than the screen, put under the cursor in one step, so it never jumps to another monitor first
+        const w = Math.min(nb.width > 0 ? nb.width : 1360, Math.round(wa.width * 0.82)), h = Math.min(nb.height > 0 ? nb.height : 860, Math.round(wa.height * 0.82)), gy = Math.min(grabY, 40);
+        win.setBounds({ x: Math.round(c.x - ratio * w), y: Math.round(c.y - gy), width: w, height: h });
+        if (wasFull) setTimeout(() => { try { if (!win.isDestroyed() && !win.isFullScreen() && !win.isMaximized()) { const cur = win.getBounds(); if (cur.width !== w || cur.height !== h) win.setSize(w, h); } } catch { /* window closed */ } }, 90); // leaving full screen restores the old size a moment later on Windows
+        drag.off = { x: Math.round(ratio * w), y: gy }; drag.fromFull = true; // from here on only the position changes
       } else drag.off = { x: grabX, y: grabY };
     }
     // only the position changes, never the size: moving between screens with different scaling must not resize or snap the window
@@ -440,13 +461,13 @@ function endDrag() {
   if (!drag) return;
   clearInterval(drag.timer);
   const c = screen.getCursorScreenPoint(), wa = screen.getDisplayNearestPoint(c).workArea;
-  if (drag.moved && c.y <= wa.y + 1) win.maximize(); // drop on the top edge to maximize
+  if (drag.moved && !drag.fromFull && c.y <= wa.y + 1) win.maximize(); // drop on the top edge to maximize; a window pulled out of full size stays small, full size is the user's own choice
   drag = null;
 }
 
 // ---------- overlay & keys ----------
 function openOverlay(kind, data) {
-  overlayOpen = true;
+  overlayOpen = true; overlayKind = kind;
   layout();
   win.contentView.addChildView(ui);
   ui.webContents.focus();
@@ -509,7 +530,7 @@ function runAction(action, arg) {
     case 'zoomReset': wc?.setZoomLevel(0); saveZoom(wc); break;
     case 'bookmark': features.handle('bookmark', {}, t); push(); break;
     case 'history': openOverlay('library', { tab: 'History' }); break;
-    case 'downloads': openOverlay('library', { tab: 'Downloads' }); break;
+    case 'downloads': openOverlay('downloads'); break;
     case 'bookmarks': openOverlay('library', { tab: 'Bookmarks' }); break;
     case 'hub': openOverlay('hub'); break;
     case 'screenshot': features.handle('screenshot', {}, t); break;
@@ -633,7 +654,7 @@ function applyProfile(name) {
   const p = PROFILES[name]; if (!p) return;
   const { features: f, budget: b, adblock, ...rest } = p;
   Object.assign(settings, rest, { profile: name, features: { ...f }, budget: { ...b } });
-  try { setAdblock(adblock); darkmode.sync(); webtools.sync(); } finally { saveSettings(); layout(); push(); }
+  try { setAdblock(adblock); darkmode.sync(); webtools.sync(); passwords.sync(); } finally { saveSettings(); layout(); push(); }
 }
 
 // ---------- extensions (Electron supports a subset of Chrome extension APIs) ----------
@@ -670,13 +691,14 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   features.init({
     app, ses, privSes, tabs, userFile, readJson, writeJson, userAgent: UA,
     state: () => state, settings: () => settings, saveSettings, win: () => win, ui: () => ui,
-    toast: (m) => toast(m), push: () => push(), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(),
+    toast: (m) => toast(m), push: () => push(), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(), overlayBusy: () => overlayOpen,
     newPrivateTab: () => { const t = newTabObj({ private: true }); activate(t.id); return t; },
     openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
     addBackgroundTab: (o) => { const t = newTabObj({ url: o.url, title: o.title, favicon: o.favicon, spaceId: state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace, pinned: o.pinned }); push(); return t; },
   });
   webtools.init({ sessions: () => sessions, settings: () => settings });
   darkmode.init({ sessions: () => sessions, settings: () => settings, saveSettings, tabs, toast: (m) => toast(m), push: () => push(), domainOf: (u) => (tldParse ? tldParse(u, { allowPrivateDomains: true }).domain : null) });
+  passwords.init({ sessions: () => sessions, privateSession: () => privSes, settings: () => settings, tabs, activeTab: () => activeTab(), overlayOpen: () => overlayOpen, win: () => win, ui: () => ui, userFile, toast: (m) => toast(m), openOverlay: (k, d) => openOverlay(k, d) });
   const permissions = (wc, perm, cb, details) => {
     if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock'].includes(perm)) return cb(true);
     if (!['media', 'geolocation', 'notifications', 'clipboard-read'].includes(perm)) return cb(false);
@@ -705,7 +727,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   } else {
     ui.webContents.once('did-finish-load', () => { const t = newTabObj({}); activate(t.id); });
   }
-  ui.webContents.once('did-finish-load', () => { if (settings.firstRun || settings.setupVersion < 2) openOverlay('wizard'); });
+  ui.webContents.once('did-finish-load', () => { if (settings.firstRun || settings.setupVersion < 2) { settings.seenVersion = updater.version; saveSettings(); openOverlay('wizard'); } else whatsNew(); });
 
   initAdblock(sessions);
   budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => visibleTabs().map((t) => t.id), toast: (m) => toast(m), push: () => push() });
@@ -769,7 +791,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         if (a.patch.theme) { settings.theme = { ...DEFAULTS.theme, ...a.patch.theme }; if (!a.patch.theme.page) settings.theme.page = a.patch.theme.surface || DEFAULTS.theme.page; for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(settings.theme.page); }
         if (a.patch.keys) settings.keys = { ...DEFAULT_KEYS, ...a.patch.keys };
         if ('adblock' in a.patch) setAdblock(a.patch.adblock);
-        if ('features' in a.patch) { darkmode.sync(); webtools.sync(); }
+        if ('features' in a.patch) { darkmode.sync(); webtools.sync(); passwords.sync(); }
         if ('darkSites' in a.patch) darkmode.refreshAll();
         if ('lowIsolation' in a.patch) toast('Restart Nova to apply this change.');
         if (a.patch.budget && !settings.budget.freeze) for (const x of tabs.values()) if (x.frozen) sleeper.thaw(x);
@@ -779,11 +801,12 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         if (a.patch.pageCss !== undefined) for (const x of tabs.values()) if (x.view) { applyPageCss(x.view.webContents); }
         push();
       } break;
+      case 'pw': return passwords.cmd(_e, a);
       case 'extDebug': return process.env.NOVA_DEBUG_SW ? extbridge.debug(a, t) : undefined;
       case 'applyProfile': applyProfile(a.name); break;
       case 'runSetup': closeOverlay(); setTimeout(() => openOverlay('wizard'), 60); break;
       case 'newPrivate': return features.handle('newPrivate', a, t);
-      case 'resetSettings': settings = { ...DEFAULTS, theme: { ...DEFAULTS.theme }, keys: { ...DEFAULT_KEYS }, features: { ...DEFAULTS.features }, budget: { ...DEFAULTS.budget }, downloads: { ...DEFAULTS.downloads }, cache: { ...DEFAULTS.cache }, firstRun: false, setupVersion: 2 }; darkmode.sync(); webtools.sync(); saveSettings(); layout(); push(); break;
+      case 'resetSettings': settings = { ...DEFAULTS, theme: { ...DEFAULTS.theme }, keys: { ...DEFAULT_KEYS }, features: { ...DEFAULTS.features }, budget: { ...DEFAULTS.budget }, downloads: { ...DEFAULTS.downloads }, cache: { ...DEFAULTS.cache }, firstRun: false, setupVersion: 2 }; darkmode.sync(); webtools.sync(); passwords.sync(); saveSettings(); layout(); push(); break;
       case 'finishSetup': settings.firstRun = false; settings.setupVersion = 2; saveSettings(); closeOverlay(); push(); break;
       case 'loadExtension': {
         const r = await dialog.showOpenDialog(win, { title: 'Select an unpacked extension folder', properties: ['openDirectory'] });

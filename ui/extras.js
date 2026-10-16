@@ -20,10 +20,10 @@ function bindInstall(root, redraw) {
     setTimeout(redraw, 200);
   }));
 }
-function extensionsHtml() {
+function extensionsHtml(opts = {}) {
   const list = S.extensions || [];
-  return (list.length ? `<div class="group">${list.map((e) => `<div class="row"><div class="l" style="display:flex;gap:12px;align-items:center">${e.icon ? `<img src="${e.icon}" width="24" height="24" style="border-radius:6px">` : '<span class="fav" style="background:var(--surface2)">+</span>'}<div>${esc(e.name)}<small>Version ${esc(e.version)}</small></div></div><button class="btn danger" data-rmext="${esc(e.id)}">Remove</button></div>`).join('')}</div>` : '<p>No extensions yet.</p>')
-    + `<div class="hubbanner"><span class="tile big">${ic('box')}</span><div><b>Extension hub</b><small>Hand-picked extensions that are checked to start cleanly in Nova: password managers, YouTube tools, privacy helpers and more.</small></div><button class="btn primary" id="openhub">Open the hub</button></div>`
+  return (list.length ? `<div class="group">${list.map((e) => `<div class="row"><div class="l" style="display:flex;gap:12px;align-items:center">${e.icon ? `<img src="${e.icon}" width="24" height="24" style="border-radius:6px">` : '<span class="fav" style="background:var(--surface2)">+</span>'}<div>${esc(e.name)}<small>Version ${esc(e.version)}</small></div></div><button class="btn danger" data-rmext="${esc(e.id)}">Remove</button></div>`).join('')}</div>` : `<div class="lempty">${ic('box')}<b>No extensions yet</b><span>Open Discover and add one in a click.</span></div>`)
+    + (opts.banner === false ? '' : `<div class="hubbanner"><span class="tile big">${ic('box')}</span><div><b>Extension hub</b><small>Hand-picked extensions that are checked to start cleanly in Nova: password managers, YouTube tools, privacy helpers and more.</small></div><button class="btn primary" id="openhub">Open the hub</button></div>`)
     + `<h4>Install from the Chrome Web Store</h4><div class="group"><div class="row"><div class="l">Paste a Web Store link or extension ID<small>Nova downloads it and installs it right here.</small></div><div style="display:flex;gap:8px"><input type="text" id="storeid" placeholder="https://chromewebstore.google.com/detail/…" style="width:230px"><button class="btn primary" id="storego">Install</button></div></div></div>`
     + '<p style="margin-top:12px;font-size:12px">Nova runs Chromium extensions, but Electron implements only part of the Chrome extension API. Simple extensions work best; if one misbehaves, remove it. <a href="#" id="unpacked" style="color:var(--accent)">Load an unpacked folder</a></p>';
 }

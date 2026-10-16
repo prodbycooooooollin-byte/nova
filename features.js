@@ -114,11 +114,18 @@ function onAudio(t) { // "one sound at a time"
 }
 
 // ---------- downloads ----------
-// Big files go through Nova's accelerated downloader (downloader.js): several connections at once, pause and resume, survives a restart.
-// Chromium's own download starts first (so the file name and the URL are known), is held for a moment while the server is asked what it
-// supports, and is either handed over or simply let go on, so nothing is ever lost when a server cannot do ranges.
-let fast = null;
-const dlCfg = () => ({ fast: true, connections: 8, limitMBs: 0, minMB: 8, ...(C.settings().downloads || {}) });
+// Everything on its way to disk, whether Chromium or Nova's accelerated downloader (downloader.js) does the work, is one list: progress,
+// speed, time left, pause, resume and cancel in the Downloads panel. Finished files go to a history that is kept between starts.
+// Big files are handed to the accelerated downloader: Chromium's own download starts first (so the file name and the URL are known), is held
+// for a moment while the server is asked what it supports, and is either handed over or simply let go on, so nothing is lost when a server
+// cannot do ranges.
+let fast = null, dlRev = 0, dlSeen = 0, dlDoneAt = 0, liveSeq = 0;
+const liveNormal = new Map(); // id -> { item, rec, samples, probing, handedOver, last }
+const finishedFast = new Set();
+const bumpDl = () => { dlRev++; C.push(); };
+const saveDownloads = () => { downloads.length = Math.min(downloads.length, 60); C.writeJson('downloads.json', downloads); };
+const remember = (rec, priv) => { dlDoneAt = Date.now(); if (!priv) { downloads.unshift(rec); saveDownloads(); } bumpDl(); };
+const dlCfg = () => ({ fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false, ...(C.settings().downloads || {}) });
 const dlOptions = () => { const c = dlCfg(); return { connections: Math.max(1, Math.min(32, +c.connections || 8)), minSplitMB: Math.max(1, +c.minMB || 8), limitBps: Math.max(0, +c.limitMBs || 0) * 1048576 }; };
 function fastDownloader() {
   if (fast) return fast;
@@ -127,35 +134,77 @@ function fastDownloader() {
     stateFile: file('downloads-active.json'),
     options: dlOptions(),
     onChange: (s) => {
-      if (['done', 'error', 'cancelled'].includes(s.state)) { // finished jobs move into the normal list
-        if (s.state === 'done') { downloads.unshift({ name: s.name, path: s.path, state: 'completed', t: Date.now(), accel: true }); C.toast(`Downloaded ${s.name}. Ctrl+K › “downloads” to open it.`); }
-        else if (s.state === 'error') { downloads.unshift({ name: s.name, path: s.path, state: 'interrupted', t: Date.now(), accel: true }); C.toast(`Download failed: ${s.name} (${s.error})`); }
-        downloads.length = Math.min(downloads.length, 30);
-        setTimeout(() => fast && fast.remove(s.id), 0);
+      if ((s.state === 'done' || s.state === 'error') && !finishedFast.has(s.id)) {
+        finishedFast.add(s.id);
+        remember({ name: s.name, path: s.path, url: s.url, size: s.size, state: s.state === 'done' ? 'completed' : 'interrupted', t: Date.now(), accel: true });
       }
+      if (['done', 'error', 'cancelled'].includes(s.state)) setTimeout(() => fast && fast.remove(s.id), 0);
       C.push();
     },
   });
   fast.restore();
   return fast;
 }
-const downloadsLive = () => { if (!fast) return []; fast.setOptions(dlOptions()); return fast.list().filter((j) => ['downloading', 'paused', 'queued'].includes(j.state)); };
-function initDownloads(ses) {
+const liveSpeed = (v) => {
+  const now = Date.now(); v.samples.push([now, v.rec.received]);
+  while (v.samples.length > 2 && now - v.samples[0][0] > 3000) v.samples.shift();
+  const dt = (now - v.samples[0][0]) / 1000;
+  return dt > 0.4 ? Math.max(0, Math.round((v.rec.received - v.samples[0][1]) / dt)) : 0;
+};
+const downloadsLive = () => {
+  const out = [];
+  if (fast) { fast.setOptions(dlOptions()); for (const j of fast.list()) if (['downloading', 'paused', 'queued'].includes(j.state)) out.push({ ...j, id: 'f' + j.id, accel: true }); }
+  for (const v of liveNormal.values()) if (!v.probing && !v.handedOver) out.push(v.rec);
+  return out;
+};
+const dlInfo = () => ({ rev: dlRev, seen: dlSeen, doneAt: dlDoneAt });
+function trackNormal(item, p, priv) {
+  const id = 'n' + (++liveSeq);
+  const rec = { id, name: path.basename(p), path: p, url: item.getURL(), state: 'downloading', size: 0, received: 0, speed: 0, eta: 0, conns: 1, ranged: false, error: '', started: Date.now(), finished: 0, accel: false };
+  const v = { item, rec, samples: [[Date.now(), 0]], probing: false, handedOver: false, last: 0 };
+  liveNormal.set(id, v);
+  item.on('updated', (_e, st) => {
+    if (v.handedOver || v.probing) return;
+    rec.state = st === 'interrupted' ? (item.canResume() ? 'paused' : 'error') : item.isPaused() ? 'paused' : 'downloading';
+    const now = Date.now(); if (now - v.last < 400 && rec.state === 'downloading') return; v.last = now;
+    rec.received = item.getReceivedBytes(); rec.size = item.getTotalBytes();
+    rec.speed = rec.state === 'downloading' ? liveSpeed(v) : 0;
+    rec.eta = rec.speed > 0 && rec.size > rec.received ? Math.round((rec.size - rec.received) / rec.speed) : 0;
+    C.push();
+  });
+  item.on('done', (_e, st) => {
+    liveNormal.delete(id);
+    if (v.handedOver) return;
+    const got = item.getReceivedBytes(), size = item.getTotalBytes() || got;
+    if (st === 'completed') remember({ name: rec.name, path: p, url: rec.url, size, state: 'completed', t: Date.now() }, priv);
+    else if (st === 'interrupted') remember({ name: rec.name, path: p, url: rec.url, size, state: 'interrupted', t: Date.now() }, priv);
+    else bumpDl(); // cancelled: nothing to keep
+  });
+  return v;
+}
+function dlControl(op, id) {
+  id = String(id);
+  if (id[0] === 'n') {
+    const v = liveNormal.get(id); if (!v) return;
+    try { if (op === 'pause') v.item.pause(); else if (op === 'resume') v.item.resume(); else v.item.cancel(); } catch { /* it just finished */ }
+    if (op === 'pause') { v.rec.state = 'paused'; v.rec.speed = 0; v.rec.eta = 0; } else if (op === 'resume') v.rec.state = 'downloading';
+    return C.push();
+  }
+  const f = fastDownloader(), n = +id.slice(1);
+  if (op === 'pause') f.pause(n); else if (op === 'resume') f.resume(n); else f.cancel(n);
+  C.push();
+}
+function initDownloads(ses, priv) {
   ses.on('will-download', (_e, item, wc) => {
+    dlSeen++;
     const dir = app.getPath('downloads'); let name = item.getFilename(), p = path.join(dir, name), i = 1;
     const ext = path.extname(name), base = path.basename(name, ext);
     while (fs.existsSync(p)) p = path.join(dir, `${base} (${i++})${ext}`);
     item.setSavePath(p);
-    const d = { name: path.basename(p), path: p, state: 'progressing', t: Date.now() };
-    const url = item.getURL(), cfg = dlCfg();
-    const candidate = cfg.fast !== false && ses === C.ses && /^https?:/i.test(url);
-    const normal = () => { downloads.unshift(d); downloads.length = Math.min(downloads.length, 30); C.toast(`Downloading ${d.name}…`); };
-    item.on('done', (_ev, state) => {
-      if (d.handedOver) return;
-      d.state = state; C.toast(state === 'completed' ? `Downloaded ${d.name}. Ctrl+K › “downloads” to open it.` : `Download ${state}: ${d.name}`);
-    });
-    if (!candidate) return normal();
-    try { item.pause(); } catch { return normal(); }
+    const v = trackNormal(item, p, !!priv), url = item.getURL();
+    const shown = () => { bumpDl(); try { if (dlCfg().panel && !(C.overlayBusy && C.overlayBusy())) C.openOverlay('downloads', { auto: true }); } catch { /* window is closing */ } };
+    if (priv || dlCfg().fast === false || !/^https?:/i.test(url)) return shown();
+    try { item.pause(); v.probing = true; } catch { return shown(); }
     (async () => {
       try {
         const f = fastDownloader(); f.setOptions(dlOptions());
@@ -163,13 +212,14 @@ function initDownloads(ses) {
         const headers = /^https?:/i.test(ref) ? { Referer: ref } : {};
         const info = await f.probe(url, headers);
         if (info.ok && info.ranges && info.size >= dlOptions().minSplitMB * 1048576) {
-          d.handedOver = true; item.cancel();
-          const j = f.add({ url, headers, dir, name: item.getFilename(), probed: info });
-          C.toast(`Downloading ${j.name || item.getFilename()} with up to ${dlOptions().connections} connections…`); C.push(); return;
+          v.handedOver = true; liveNormal.delete(v.rec.id); item.cancel();
+          f.add({ url, headers, dir, name: item.getFilename(), probed: info });
+          return shown();
         }
       } catch (e) { console.error('fast download', e.message); }
+      v.probing = false;
       try { item.resume(); } catch { /* the download was cancelled meanwhile */ }
-      normal();
+      shown();
     })();
   });
 }
@@ -245,7 +295,8 @@ function init(ctx) {
   history = load('history.json', []); bookmarks = load('bookmarks.json', []); snapshots = load('snapshots.json', []); icons = load('icons.json', {});
   setInterval(snapshot, 5 * 60e3); setTimeout(snapshot, 60e3);
   setInterval(wakeSnoozed, 30e3);
-  initDownloads(ctx.ses); if (ctx.privSes) initDownloads(ctx.privSes);
+  downloads = load('downloads.json', []);
+  initDownloads(ctx.ses, false); if (ctx.privSes) initDownloads(ctx.privSes, true);
   setTimeout(cacheGuard, 45e3); setInterval(cacheGuard, 30 * 60e3);
 }
 
@@ -278,9 +329,13 @@ async function handle(name, a, t) {
     case 'peekOpen': { const u = peekUrl() || a.url; C.closeOverlay(); C.openUrl(u, { forceNew: true }); return; }
     case 'showDownload': shell.showItemInFolder(a.path); return;
     case 'openDownloadsFolder': shell.openPath(app.getPath('downloads')); return;
-    case 'dlPause': fastDownloader().pause(a.id); C.push(); return;
-    case 'dlResume': fastDownloader().resume(a.id); C.push(); return;
-    case 'dlCancel': fastDownloader().cancel(a.id); C.push(); return;
+    case 'dlPause': dlControl('pause', a.id); return;
+    case 'dlResume': dlControl('resume', a.id); return;
+    case 'dlCancel': dlControl('cancel', a.id); return;
+    case 'dlOpen': if (a.path && fs.existsSync(a.path)) shell.openPath(a.path); return;
+    case 'dlRemove': downloads = downloads.filter((x) => x.t !== a.t); saveDownloads(); bumpDl(); return;
+    case 'dlClear': downloads = []; saveDownloads(); bumpDl(); return;
+    case 'dlRecent': return downloads.slice(0, Math.min(40, +a.n || 12)).map((x) => ({ ...x, exists: fs.existsSync(x.path) }));
     case 'installExt': return installExtension(a.id);
     case 'hub': return hub();
     case 'storeSearch': try { return await extmgr.search(a.q); } catch (e) { return { items: [], total: 0, error: e.message }; }
@@ -392,7 +447,7 @@ function library(kind, q = '') {
   const f = (list) => (q ? list.filter((x) => score(q, x.title, x.url) >= 0) : list);
   if (kind === 'bookmarks') return f(bookmarks).slice(0, 500).map(withIcon);
   if (kind === 'history') return f(history).slice(0, 400).map(withIcon);
-  if (kind === 'downloads') return downloads.slice(0, 100);
+  if (kind === 'downloads') return downloads.slice(0, 100).map((x) => ({ ...x, exists: fs.existsSync(x.path) }));
   return [];
 }
 // The page cache on disk. Chromium keeps it under the limit by itself (the disk-cache-size switch set at start); this is the safety net
@@ -419,7 +474,7 @@ function onArrive(t) {
 async function clearData(what, range) {
   const since = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity }[range] ?? Infinity, cut = Date.now() - since, ses = C.ses;
   if (what.history) { C.forgetRevisits(); history = since === Infinity ? [] : history.filter((h) => h.t < cut); C.writeJson('history.json', history); if (since === Infinity) { icons = {}; C.writeJson('icons.json', icons); } }
-  if (what.downloads) downloads = [];
+  if (what.downloads) { downloads = []; saveDownloads(); dlRev++; }
   if (what.cookies) await ses.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] });
   if (what.cache) await ses.clearCache();
   C.toast('Cleared.');
@@ -429,4 +484,4 @@ async function suggest(q) {
   const tpl = C.settings().searchEngine, e = ENGINE_SUGGEST.find(([h]) => tpl.includes(h)); if (!e || !C.settings().suggestions || !q || q.length < 2) return [];
   try { const r = await C.ses.fetch(e[1](encodeURIComponent(q)), { signal: AbortSignal.timeout(1800) }); const j = await r.json(); return (Array.isArray(j[1]) ? j[1] : []).slice(0, 5).map(String); } catch { return []; }
 }
-module.exports = { init, onLeave, onArrive, downloadsLive, shutdown: () => { if (fast) fast.shutdown(); }, hostVisits, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, barBookmarks, isBookmarked };
+module.exports = { init, onLeave, onArrive, downloadsLive, dlInfo, shutdown: () => { if (fast) fast.shutdown(); }, hostVisits, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, barBookmarks, isBookmarked };

@@ -1,0 +1,31 @@
+[
+  {
+    "version": "0.11.0",
+    "date": "2026-10-16",
+    "notes": [
+      "Settings rebuilt: clearer pages, feature cards, and a docked panel that leaves your sidebar visible so every change shows live.",
+      "Layout page now holds the sidebar arrangement: move parts up and down, hide the ones you do not use.",
+      "Download button next to reload with a progress ring and a panel for all downloads: speed, time left, pause, resume, cancel, open.",
+      "Extension hub opens straight from Settings and from a button in the dock, with an Installed view.",
+      "Tab overview and library redesigned.",
+      "New logo and icons, and a new animated Setup with a supernova.",
+      "This update screen: logo, version and what is new after every update.",
+      "Built-in password saver (optional, off by default): saves and fills logins with encrypted storage, CSV import and export.",
+      "Dragging the window out of full screen now restores a smaller window under the pointer.",
+      "Setup assistant offers the built-in tools instead of extensions."
+    ]
+  },
+  {
+    "version": "0.10.0",
+    "date": "2026-10-16",
+    "notes": [
+      "Faster downloads: big files come down over up to 8 connections at once, with pause, resume and continue after a restart.",
+      "Disk cache limit with automatic cleaning, under Settings > Performance.",
+      "Float video when you switch tabs.",
+      "Colours from your wallpaper and the Windows accent colour.",
+      "Layout editor: reorder and hide the parts of the sidebar.",
+      "Built in instead of extensions, all off by default: video speed keys, SponsorBlock, YouTube dislike count and cookie banner hiding.",
+      "A new Setup window with an animated look."
+    ]
+  }
+]

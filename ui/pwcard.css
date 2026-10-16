@@ -1,0 +1,48 @@
+/* The card of the password saver: "Save password?" and the list of saved logins. It fills the whole view, which passwords.js sizes
+   from the content (fixed row heights below), so nothing here depends on the width of the window. Colours come from Nova's theme. */
+@font-face { font-family:'Inter'; src:url(fonts/inter-latin-wght-normal.woff2) format('woff2'); font-weight:100 900; unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+:root {
+  --bg:#0b0b12; --surface:#13131c; --surface2:#1c1c28; --text:#ececf3; --dim:#8b8ba0; --accent:#8b7dff; --danger:#ff6b7a; --on-accent:#fff; --radius:12px; --font:'Inter',system-ui,sans-serif;
+  --line:color-mix(in srgb,var(--text) 9%,transparent); --line2:color-mix(in srgb,var(--text) 15%,transparent);
+  --hover:color-mix(in srgb,var(--text) 7%,transparent); --press:color-mix(in srgb,var(--text) 11%,transparent); --sel:color-mix(in srgb,var(--accent) 18%,transparent);
+  --r-sm:calc(var(--radius) * .6);
+}
+* { box-sizing:border-box; margin:0; }
+html, body { height:100%; background:transparent; overflow:hidden; }
+body { font:13px/1.4 var(--font); color:var(--text); -webkit-font-smoothing:antialiased; user-select:none; cursor:default; }
+button { font:inherit; color:inherit; background:none; border:0; cursor:default; }
+svg.cb { fill:currentColor; stroke:currentColor; stroke-width:.7; width:100%; height:100%; }
+
+.card { height:100%; display:flex; flex-direction:column; background:var(--surface2); border-radius:var(--radius); box-shadow:inset 0 0 0 1px var(--line2); padding:14px; gap:14px; }
+body.fx .card { animation:in .16s cubic-bezier(.2,.8,.2,1); } @keyframes in { from { opacity:0; transform:translateY(-6px); } }
+
+.head { display:flex; align-items:center; gap:12px; height:40px; min-width:0; flex:none; }
+.tile { width:40px; height:40px; border-radius:11px; display:grid; place-items:center; flex:none; color:var(--accent); background:color-mix(in srgb,var(--accent) 15%,transparent); }
+.tile svg { width:20px; height:20px; }
+.t { min-width:0; display:flex; flex-direction:column; }
+.t b { font-size:13.5px; font-weight:600; letter-spacing:-.005em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.t span { color:var(--dim); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.plain { display:flex; align-items:center; gap:8px; height:14px; margin-top:-4px; color:var(--dim); font-size:12px; flex:none; }
+.plain svg { width:14px; height:14px; flex:none; color:var(--danger); }
+
+.acts { display:flex; align-items:center; gap:8px; margin-top:auto; flex:none; }
+.sp { flex:1; }
+.b { height:34px; padding:0 15px; border-radius:var(--r-sm); font-weight:550; background:var(--surface); box-shadow:inset 0 0 0 1px var(--line); transition:background .12s,transform .1s; }
+.b:hover { background:var(--press); } .b:active { transform:scale(.97); }
+.b.primary { background:var(--accent); color:var(--on-accent); box-shadow:none; } .b.primary:hover { filter:brightness(1.08); }
+.b.ghost { background:transparent; box-shadow:none; color:var(--dim); padding:0 11px; } .b.ghost:hover { background:var(--hover); color:var(--text); }
+.b:focus-visible, .it:focus-visible { outline:2px solid color-mix(in srgb,var(--accent) 70%,transparent); outline-offset:1px; }
+
+/* the list of saved logins under a sign-in field */
+.card.pick { padding:0; gap:0; }
+.list { padding:6px; display:flex; flex-direction:column; }
+.it { height:44px; width:100%; display:flex; align-items:center; gap:12px; padding:0 10px; border-radius:var(--r-sm); text-align:left; flex:none; }
+.it:hover { background:var(--hover); } .it.sel { background:var(--sel); }
+.it .tile { width:28px; height:28px; border-radius:8px; } .it .tile svg { width:15px; height:15px; }
+.it .u { flex:1; min-width:0; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.it .u.none { color:var(--dim); font-weight:450; }
+.it .d { color:var(--dim); font-size:9px; letter-spacing:.18em; flex:none; }
+.foot { height:41px; border-top:1px solid var(--line); padding:5px 6px; flex:none; }
+.foot button { height:30px; width:100%; display:flex; align-items:center; gap:9px; padding:0 10px; color:var(--dim); border-radius:var(--r-sm); text-align:left; font-size:12.5px; }
+.foot button:hover { background:var(--hover); color:var(--text); }
+.foot svg { width:14px; height:14px; flex:none; }

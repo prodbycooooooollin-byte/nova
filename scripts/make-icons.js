@@ -3,11 +3,13 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs'), path = require('path');
 app.disableHardwareAcceleration();
 app.whenReady().then(async () => {
-  const svg = fs.readFileSync(path.join(__dirname, '../build/icon.svg'), 'utf8');
+  // the small sizes get a simpler drawing (one bold star): the orbit ring would only blur at 16 or 32 pixels
+  const svgBig = fs.readFileSync(path.join(__dirname, '../build/icon.svg'), 'utf8'), svgSmall = fs.readFileSync(path.join(__dirname, '../build/icon-small.svg'), 'utf8');
   const sizes = [16, 24, 32, 48, 64, 128, 256];
   const win = new BrowserWindow({ show: false, width: 256, height: 256, transparent: true, frame: false, webPreferences: { offscreen: true } });
   const pngs = [];
   for (const s of sizes) {
+    const svg = s <= 48 ? svgSmall : svgBig;
     win.setContentSize(s, s);
     await win.loadURL('data:text/html,' + encodeURIComponent(`<body style="margin:0;background:transparent;overflow:hidden"><img src="data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}" width="${s}" height="${s}" style="display:block">`));
     await new Promise((r) => setTimeout(r, 250));

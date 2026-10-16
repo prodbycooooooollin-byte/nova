@@ -94,8 +94,9 @@ const FEATURES = [
   ['savePdf', 'Save page as PDF', 'Export the current page to your Downloads folder.'],
   ['translate', 'Translate page', 'Open the current page through Google Translate.'],
   ['privateTabs', 'Private tabs', 'Tabs that keep no history, cookies or cache (Ctrl+Shift+N).'],
+  ['passwords', 'Password saver', 'Offers to keep a login after you sign in and fills it only when you pick it, on the exact same site. Encrypted with your Windows account. Skip it if you use a password manager extension.'],
 ];
-const FEATURE_GROUPS = [['Tab tools', ['tabSearch', 'snooze', 'rewind', 'soloAudio']], ['Page tools', ['peek', 'darkPage', 'darkSite', 'cleanLinks', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate']], ['Instead of extensions', ['videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners']], ['Privacy', ['privateTabs']]];
+const FEATURE_GROUPS = [['Tab tools', ['tabSearch', 'snooze', 'rewind', 'soloAudio']], ['Page tools', ['peek', 'darkPage', 'darkSite', 'cleanLinks', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate']], ['Instead of extensions', ['videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners']], ['Privacy', ['privateTabs', 'passwords']]];
 const ENGINES = { DuckDuckGo: 'https://duckduckgo.com/?q=%s', Google: 'https://www.google.com/search?q=%s', Brave: 'https://search.brave.com/search?q=%s', Startpage: 'https://www.startpage.com/do/search?q=%s', Ecosia: 'https://www.ecosia.org/search?q=%s', Bing: 'https://www.bing.com/search?q=%s' };
 
 let S = null, overlay = null, customJsApplied = null;
@@ -111,6 +112,7 @@ function applySettings() {
   { const ord = blockOrder(s); BLOCKS.forEach((b) => r.setProperty('--o-' + b[0], ord.indexOf(b[0]) + 1)); }
   $('#app').className = `layout-${s.layout}` + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '');
   $('#user-css').textContent = s.customCss || '';
+  dockOverlay();
   if (s.customJs !== customJsApplied) {
     customJsApplied = s.customJs;
     if (s.customJs) { try { new Function('nova', 'state', s.customJs)(window.nova, S); } catch (e) { toast('Custom JS error: ' + e.message); } }
@@ -133,19 +135,22 @@ document.addEventListener('error', (e) => { const el = e.target; if (el.tagName 
 
 const fmtBytes = (n) => (n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(n >= 1.0e8 ? 0 : 1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 const fmtEta = (s) => (s >= 3600 ? Math.floor(s / 3600) + ' h ' + Math.round((s % 3600) / 60) + ' min' : s >= 60 ? Math.round(s / 60) + ' min' : s + ' s');
-// the dock shows a download while one runs: percent and speed, one click opens the list
-function dlChip() {
-  const jobs = (S && S.dl) || []; if (!jobs.length) return '';
-  const run = jobs.filter((j) => j.state === 'downloading'), size = jobs.reduce((n, j) => n + j.size, 0), got = jobs.reduce((n, j) => n + j.received, 0), speed = run.reduce((n, j) => n + j.speed, 0);
-  const pct = size ? Math.min(100, Math.round(got / size * 100)) : 0;
-  return `<button class="chip dl" data-do="downloads" title="${jobs.length} download${jobs.length > 1 ? 's' : ''}: click to open the list">${ic('download')}<b>${run.length ? (size ? pct + '%' : '…') : 'Paused'}</b>${run.length && speed ? `<small>${fmtBytes(speed)}/s</small>` : ''}</button>`;
+const hubButton = () => `<button class="ibtn hubbtn" data-do="hub" title="Extension hub: add extensions in one click">${ic('box')}</button>`;
+// the download button next to reload: a ring that fills while files come down, a check for a minute after the last one
+function dlButton() {
+  const jobs = (S && S.dl) || [], info = (S && S.dlInfo) || {};
+  if (!jobs.length && !info.seen) return '';
+  const run = jobs.filter((j) => j.state === 'downloading' || j.state === 'queued'), size = jobs.reduce((n, j) => n + j.size, 0), got = jobs.reduce((n, j) => n + j.received, 0), speed = run.reduce((n, j) => n + j.speed, 0);
+  const pct = size ? Math.min(1, got / size) : 0, busy = jobs.length > 0, fresh = !busy && Date.now() - (info.doneAt || 0) < 60000;
+  const title = busy ? `${jobs.length} download${jobs.length > 1 ? 's' : ''}${speed ? ' · ' + fmtBytes(speed) + '/s' : ''}: click for details` : 'Downloads';
+  return `<button class="ibtn dlbtn ${busy ? 'busy' : ''} ${fresh ? 'fresh' : ''}" data-do="downloads" title="${title}"><svg class="ring" viewBox="0 0 32 32"><circle class="track" cx="16" cy="16" r="14"/>${busy ? `<circle class="val" cx="16" cy="16" r="14" stroke-dasharray="${(pct * 87.96).toFixed(1)} 100"/>` : ''}</svg>${ic(fresh ? 'check' : 'download')}</button>`;
 }
 function render() {
   if (!S) return;
   if (typeof dragTab !== 'undefined' && dragTab !== null) { if (Date.now() - dragSince < 5000) { deferredRender = true; return; } dragTab = null; dropInfo = null; } // a drag that never ended must not freeze the tab list
   applySettings();
   const cur = S.tabs.find((t) => t.id === S.activeTab);
-  $('#nav').innerHTML = `<img id="mark" src="mark.svg" alt="">` + ibtn('back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn('fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn('reload', 'Reload (Ctrl+R)', 'reload');
+  $('#nav').innerHTML = `<img id="mark" src="mark.svg" alt="">` + ibtn('back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn('fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn('reload', 'Reload (Ctrl+R)', 'reload') + dlButton();
   $('#winctl').innerHTML = ibtn('min', 'Minimize', 'min') + ibtn('max', 'Maximize', 'max') + ibtn('x', 'Close', 'wclose', 'close');
   let label = '<span>Search or enter address</span>', icon = 'search';
   if (cur && cur.url !== HOME) {
@@ -166,8 +171,7 @@ function render() {
   $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
   const bud = S.budget, pct = bud.enabled && bud.cap ? Math.min(100, Math.round(bud.used / bud.cap * 100)) : 0;
   const exts = (S.extensions || []).filter((e) => e.popup).slice(0, 6).map((e) => `<button class="ibtn" title="${esc(e.name)}" data-extpop="${e.id}">${e.icon ? `<img src="${e.icon}" width="16" height="16" style="border-radius:4px">` : ic('box')}</button>`).join('');
-  $('#tools').innerHTML = (exts ? `<div class="exts">${exts}</div>` : '')
-    + dlChip()
+  $('#tools').innerHTML = hubButton() + (exts ? `<div class="exts">${exts}</div>` : '')
     + (S.updateReady ? `<button class="upd" data-do="update" title="Restart to install the update">Update</button>` : '')
     + (S.settings.adblock ? (() => { const st = (S.adblock || {}).state; return `<span class="chip ${st === 'failed' ? 'warn' : ''}" title="${st === 'failed' ? 'The ad blocker is not loaded. Open Settings > Search & privacy to retry.' : st === 'loading' ? 'The ad blocker is loading its filter lists' : 'Ads and trackers blocked'}">${ic('shield')}<b>${st === 'failed' ? '!' : st === 'loading' ? '…' : S.blockedCount}</b></span>`; })() : '')
     + (bud.enabled ? `<button class="ram ${bud.over || pct >= 90 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova of your ${bud.cap} MB budget"><span class="lab">RAM</span><b>${bud.used}</b><small>MB</small><i style="width:${pct}%"></i></button>` : '')
@@ -181,7 +185,7 @@ document.addEventListener('click', (e) => {
   const d = e.target.closest('[data-do]')?.dataset.do;
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
-    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: A('downloads'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
+    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: A('downloads'), hub: A('hub'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
     return m[d]?.();
   }
   if (e.target.closest('#urlbar')) return nova.cmd('action', { name: 'go' });
@@ -258,9 +262,19 @@ function setOverlay(kind, data) {
   if (kind === 'menu') return;
   const o = $('#overlay'); o.hidden = false; o.innerHTML = '';
   o.onmousedown = (e) => { if (e.target === o && kind !== 'wizard') nova.cmd('closeOverlay'); };
-  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub })[kind](o, data || {});
+  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
+  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew })[kind](o, data || {});
 }
-function clearOverlay() { if (askResolve && askShown) { const r = askResolve; askResolve = null; askShown = false; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; }
+function clearOverlay() { if (askResolve && askShown) { const r = askResolve; askResolve = null; askShown = false; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; o.className = ''; }
+// Settings and the hub sit beside the browser, not over it: the sidebar (or the top bar) stays sharp and live while you change things
+function dockOverlay() {
+  const o = $('#overlay'); if (!o || !o.classList.contains('docked')) return;
+  const c = $('#chrome').getBoundingClientRect(), lay = (S && S.settings && S.settings.layout) || 'left';
+  let l = 0, r = 0, t = 0;
+  if (c.width > 0 && c.height > 0) { if (lay === 'top') t = Math.round(c.bottom); else if (lay === 'right') r = Math.round(innerWidth - c.left); else l = Math.round(c.right); }
+  o.style.setProperty('--dl', l + 'px'); o.style.setProperty('--dr', r + 'px'); o.style.setProperty('--dt', t + 'px');
+}
+addEventListener('resize', dockOverlay);
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && overlay) { e.preventDefault(); nova.cmd(overlay.kind === 'wizard' ? 'finishSetup' : 'closeOverlay'); } }, true);
 
 // ---------- command palette ----------
@@ -289,6 +303,7 @@ function commands() {
     ...(F.pip ? [{ t: 'Picture in picture', s: 'Pop the biggest video into a floating window', run: () => { nova.cmd('closeOverlay'); nova.cmd('pip'); } }] : []),
     ...(F.savePdf ? [{ t: 'Save page as PDF', run: () => { nova.cmd('closeOverlay'); nova.cmd('savePdf'); } }] : []),
     ...(F.translate ? [{ t: 'Translate this page', run: () => { nova.cmd('closeOverlay'); nova.cmd('translate'); } }] : []),
+    ...(F.passwords ? [{ t: 'Saved passwords', s: 'Manage, import or export what Nova has saved', run: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Passwords' } }) }] : []),
     ...(F.privateTabs ? [{ t: 'New private tab', s: 'Keeps no history, cookies or cache', k: 'Ctrl ⇧ N', run: A('privateTab') }] : []),
     ...(F.cleanLinks ? [{ t: 'Copy link without tracking junk', k: 'Ctrl ⇧ C', run: A('copyClean') }] : []),
     { t: 'Resource budget', s: 'Set how much memory Nova may use', run: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }) },
@@ -381,26 +396,49 @@ nova.onPeek((p) => { const t = $('#pk-t'); if (t) { t.textContent = p.title || '
 
 // ---------- tab overview ----------
 async function overview(o) {
-  const thumbs = await nova.thumbs(), mem = S.budget.tabs, total = S.budget.used;
-  o.innerHTML = `<div class="box overview"><div class="ov-head"><div class="pinput">${ic('search')}<input id="ovq" placeholder="Filter ${S.tabs.length} tabs" autocomplete="off"></div><button class="btn" data-c="hour" title="Archive tabs not touched for an hour">Archive idle</button><button class="btn" data-c="duplicates">Close duplicates</button><button class="btn" id="bud" title="Open your resource budget">Nova uses ${total} MB</button><button class="btn primary" id="ovx">Done</button></div><div class="ov-body" id="ovb"></div></div>`;
+  const thumbs = await nova.thumbs(), mem = (S.budget && S.budget.tabs) || {};
+  let space = 0, sort = 'recent';
+  o.innerHTML = `<div class="box overview">
+    <div class="ov-top"><div class="ov-title"><h2>Tabs</h2><span id="ovsum"></span></div>
+      <div class="ov-find">${ic('search')}<input id="ovq" placeholder="Filter your tabs" autocomplete="off" spellcheck="false"></div>
+      <div class="ov-acts"><button class="btn withicon" data-c="hour" title="Archive tabs not touched for an hour">${ic('archive')}Archive idle</button><button class="btn withicon" data-c="duplicates" title="Close tabs that show the same page">${ic('layers')}Close duplicates</button><button class="btn withicon" id="bud" title="Open Performance settings">${ic('gauge')}<span id="ovmb"></span></button><button class="btn primary" id="ovx">Done</button></div></div>
+    <div class="ov-bar"><div class="ov-spaces" id="ovsp"></div><div class="seg" id="ovsort">${[['recent', 'Recent'], ['memory', 'Memory'], ['space', 'By space']].map(([v, l]) => `<button data-sort="${v}">${l}</button>`).join('')}</div></div>
+    <div class="ov-body" id="ovb"></div></div>`;
   const body = $('#ovb'), qi = $('#ovq');
   const ago = (ms) => { const m = Math.round(ms / 60000); return m < 1 ? 'now' : m < 60 ? m + ' min' : m < 1440 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d'; };
+  const card = (t) => {
+    const old = S.now - t.lastActive > 3600e3 && t.id !== S.activeTab, host = hostOf(t.url);
+    return `<div class="card ${t.id === S.activeTab ? 'active' : ''} ${old ? 'stale' : ''} ${t.asleep ? 'asleep' : ''}" data-tab="${t.id}"><div class="th" style="${thumbs[t.id] ? `background-image:url(${thumbs[t.id]})` : ''}">${thumbs[t.id] ? '' : esc((t.title || '·')[0])}</div>`
+      + `<div class="badges">${t.id === S.activeTab ? '<span class="badge act">Here</span>' : ''}${t.pinned ? '<span class="badge">Pinned</span>' : ''}${t.asleep ? '<span class="badge">Asleep</span>' : t.frozen ? '<span class="badge">Resting</span>' : ''}</div>`
+      + `<div class="acts"><button class="ibtn" data-act="pin" title="${t.pinned ? 'Unpin' : 'Pin'}">${ic('pin')}</button><button class="ibtn" data-act="archive" title="Archive">${ic('archive')}</button><button class="ibtn" data-act="close" title="Close">${ic('x')}</button></div>`
+      + `<div class="cbody">${favHtml(t)}<div class="ct"><b>${esc(t.title || 'New tab')}</b><span>${esc(host || 'Start page')} · ${ago(S.now - t.lastActive)}${mem[t.id] ? ` · ${mem[t.id]} MB` : ''}</span></div></div></div>`;
+  };
   const draw = () => {
-    const v = qi.value.trim();
-    body.innerHTML = S.spaces.map((sp) => {
-      const ts = S.tabs.filter((t) => t.spaceId === sp.id && (!v || score(v, t.title, t.url) >= 0));
-      if (!ts.length) return '';
-      return `<h3><span class="dot" style="background:${sp.color}"></span>${esc(sp.name)} <small>${ts.length}</small></h3><div class="grid">${ts.map((t) => `<div class="card ${t.id === S.activeTab ? 'active' : ''} ${S.now - t.lastActive > 3600e3 && t.id !== S.activeTab ? 'stale' : ''}" data-tab="${t.id}"><div class="th" style="${thumbs[t.id] ? `background-image:url(${thumbs[t.id]})` : ''}">${thumbs[t.id] ? '' : esc((t.title || '·')[0])}</div><span class="age">${t.pinned ? 'Pinned · ' : ''}${t.asleep ? 'Asleep · ' : ''}${ago(S.now - t.lastActive)}${mem?.[t.id] ? ` · ${mem[t.id]} MB` : ''}</span><div class="acts"><button class="ibtn" data-act="pin" title="Pin">${ic('pin')}</button><button class="ibtn" data-act="archive" title="Archive">${ic('archive')}</button><button class="ibtn" data-act="close" title="Close">${ic('x')}</button></div><div class="cb">${favHtml(t)}<span>${esc(t.title || 'New tab')}</span></div></div>`).join('')}</div>`;
-    }).join('') || '<p style="color:var(--dim);padding:30px">No tabs match.</p>';
+    const v = qi.value.trim(), asleep = S.tabs.filter((t) => t.asleep).length;
+    $('#ovsum').textContent = `${S.tabs.length} open${asleep ? ' · ' + asleep + ' asleep' : ''}`;
+    $('#ovmb').textContent = `${S.budget.used} MB`;
+    $('#ovsp').innerHTML = `<button class="ovchip ${!space ? 'on' : ''}" data-sp="0">All<small>${S.tabs.length}</small></button>` + S.spaces.map((sp) => `<button class="ovchip ${space === sp.id ? 'on' : ''}" data-sp="${sp.id}"><i style="background:${sp.color}"></i>${esc(sp.name)}<small>${S.tabs.filter((t) => t.spaceId === sp.id).length}</small></button>`).join('');
+    o.querySelectorAll('[data-sort]').forEach((b) => b.classList.toggle('on', b.dataset.sort === sort));
+    const list = S.tabs.filter((t) => (!space || t.spaceId === space) && (!v || score(v, t.title, t.url) >= 0));
+    if (!list.length) { body.innerHTML = `<div class="lempty">${ic('search')}<b>No tabs match</b><span>Try another word, or pick All spaces.</span></div>`; return; }
+    if (sort === 'space') {
+      body.innerHTML = S.spaces.map((sp) => { const ts = list.filter((t) => t.spaceId === sp.id); return ts.length ? `<h3><span class="dot" style="background:${sp.color}"></span>${esc(sp.name)} <small>${ts.length}</small></h3><div class="grid">${ts.map(card).join('')}</div>` : ''; }).join('');
+    } else {
+      const sorted = [...list].sort(sort === 'memory' ? (a, b) => (mem[b.id] || 0) - (mem[a.id] || 0) : (a, b) => b.lastActive - a.lastActive);
+      body.innerHTML = `<div class="grid">${sorted.map(card).join('')}</div>`;
+    }
   };
   qi.addEventListener('input', draw);
+  qi.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const first = body.querySelector('.card'); if (first) nova.cmd('activate', { id: +first.dataset.tab }); } });
   body.addEventListener('click', async (e) => {
     const card = e.target.closest('.card'); if (!card) return; const id = +card.dataset.tab, act = e.target.closest('[data-act]')?.dataset.act;
     if (act) { e.stopPropagation(); await nova.cmd(act, { id }); return; }
     nova.cmd('activate', { id });
   });
+  $('#ovsp').addEventListener('click', (e) => { const b = e.target.closest('[data-sp]'); if (b) { space = +b.dataset.sp; draw(); } });
+  $('#ovsort').addEventListener('click', (e) => { const b = e.target.closest('[data-sort]'); if (b) { sort = b.dataset.sort; draw(); } });
   o.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => nova.cmd('cleanUp', { mode: b.dataset.c })));
-  $('#bud').onclick = () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } });
+  $('#bud').onclick = () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Performance' } });
   $('#ovx').onclick = () => nova.cmd('closeOverlay');
   overview.redraw = draw; draw(); qi.focus();
 }

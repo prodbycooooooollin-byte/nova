@@ -1,4 +1,13 @@
 // ---------- first-run onboarding ----------
+// what the setup offers as built-in tools: the jobs people usually install extensions for
+const WIZARD_TOOLS = [
+  ['darkSite', 'Dark mode for any site', 'Dark Reader’s engine, built in, remembered per site.'],
+  ['videoSpeed', 'Video speed keys', 'S and D change the speed of any video, R resets it.'],
+  ['sponsorBlock', 'Skip YouTube sponsors', 'Jumps over sponsor segments reported by viewers.'],
+  ['ytDislike', 'YouTube dislike count', 'Brings the dislike number back next to the button.'],
+  ['cookieBanners', 'Hide cookie banners', 'The consent boxes of the common tools are hidden.'],
+  ['autoPip', 'Float video when you switch tabs', 'A playing video pops out and follows you around.'],
+];
 function wizard(o) {
   let i = 0, dir = 'fwd', sky = null;
   const choice = { profile: S.settings.profile || 'nova', layout: S.settings.layout, theme: 'Nova', engine: 'DuckDuckGo' };
@@ -9,7 +18,7 @@ function wizard(o) {
 
   const defs = {
     hello: { label: 'Welcome', cta: 'Get started', hint: 'Enter to begin', render: () => `<div class="hello3">
-      <img id="bmark" class="hmark" src="mark.svg" alt="">
+      <img id="bmark" class="hmark" data-flare=".645,.258" src="logo.svg" alt="">
       <h1 class="mega">${letters('Nova', 'mg')}</h1>
       <p class="hsub">A browser, reduced.</p>
       <ul class="pillars">
@@ -24,20 +33,20 @@ function wizard(o) {
     search: { label: 'Search', title: 'Choose your search', sub: 'Used by the address bar and the home page.', render: () => `<div class="engines big">${Object.keys(ENGINES).map((n, k) => `<button class="engine ${choice.engine === n ? 'on' : ''}" data-e="${n}" style="--i:${k}">${brand('eng-' + n.toLowerCase())}${n}<span class="tick">${ic('check')}</span></button>`).join('')}</div>`, after: (r) => pickInto(r, 'data-e', (b) => { choice.engine = b.dataset.e; nova.cmd('settings', { patch: { searchEngine: ENGINES[choice.engine] } }); }) },
     budget: { label: 'Memory', title: 'How light should Nova be?', sub: 'Nova keeps its memory use under a limit you choose, by quietly sleeping tabs you are not using.', render: () => `<div class="budrow">${ring(S.settings.budget.enabled ? Math.min(100, S.settings.budget.ramMB / 40) : 0)}<div class="ocards four">${[[800, 'Light', 'Up to 0.8 GB'], [1500, 'Balanced', 'Up to 1.5 GB'], [3000, 'Roomy', 'Up to 3 GB'], [0, 'No limit', 'Never sleep tabs for memory']].map(([v, t, sub], n) => `<button class="ocard small ${(S.settings.budget.enabled ? S.settings.budget.ramMB : 0) === v ? 'on' : ''}" data-b="${v}" style="--i:${n}"><div class="ph"><b>${t}</b></div><p>${sub}</p><span class="tick">${ic('check')}</span></button>`).join('')}</div></div>`, after: (r) => pickInto(r, 'data-b', (b) => { const v = +b.dataset.b; nova.cmd('settings', { patch: { budget: { ...S.settings.budget, enabled: v > 0, ramMB: v || S.settings.budget.ramMB } } }); const ringEl = $('#ob-ring'); if (ringEl) ringEl.setAttribute('stroke-dasharray', `${((v ? Math.min(100, v / 40) : 0) * 3.267).toFixed(1)} 400`); $('#ob-mb').textContent = v || '∞'; }) },
     bookmarks: { label: 'Move in', title: 'Bring your things over', sub: 'Coming from Chrome, Edge, Firefox or another browser? Move bookmarks, history, extensions and your search engine in one go.', render: () => '<div id="wz-mi"></div>', after: (r) => { mi = null; renderMoveIn(r.querySelector('#wz-mi'), { hub: false, onReady: (c) => { mi = c; ctaSync(); } }); } },
-    extras: { label: 'Extras', title: 'Add only what you need', sub: 'The ad blocker is built in. Install a password manager with one click, right here.', render: () => catalogHtml([CATALOG[0], CATALOG[1], CATALOG[3]].map((c) => c.id)), after: (r) => bindInstall(r, paint) },
+    tools: { label: 'Built in', title: 'What should be built in?', sub: 'These do the work of extensions you would otherwise install, without the extra memory. Switch on what you like. All of it can change later in Settings.', render: () => `<div class="ocards four tools">${WIZARD_TOOLS.map(([k, t, sub], n) => `<button class="ocard small ${(choice.feat || S.settings.features)[k] ? 'on' : ''}" data-tool="${k}" style="--i:${n}"><div class="ph"><b>${t}</b></div><p>${sub}</p><span class="tick">${ic('check')}</span></button>`).join('')}</div>`, after: (r) => r.querySelectorAll('[data-tool]').forEach((b) => (b.onclick = () => { choice.feat = choice.feat || { ...S.settings.features }; const on = !choice.feat[b.dataset.tool]; choice.feat[b.dataset.tool] = on; b.classList.toggle('on', on); nova.cmd('settings', { patch: { features: { ...choice.feat } } }); })) },
     done: { label: 'Done', cta: 'Open Nova', hint: 'Enter to open Nova', render: () => `<div class="hello3 fin">
       <h1 class="mega small">${letters('Ready.', 'mg')}</h1>
       <p class="hsub">Press <kbd>Ctrl</kbd> <kbd>K</kbd> for everything.</p>
       <div class="specs">${[['Profile', PROFILE_INFO.find((p) => p[0] === choice.profile)[1]], ['Tabs', { left: 'Sidebar left', right: 'Sidebar right', top: 'On top' }[choice.layout]], ['Look', choice.theme], ['Search', choice.engine], ['Memory', S.settings.budget.enabled ? S.settings.budget.ramMB + ' MB limit' : 'No limit']].map(([k, v], n) => `<div class="spec" style="--i:${n}"><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
       <p class="specnote">Everything else lives in Settings, <kbd>Ctrl</kbd> <kbd>,</kbd></p></div>` },
   };
-  const order = () => (choice.profile === 'ultra' ? ['hello', 'profile', 'layout', 'search', 'bookmarks', 'done'] : ['hello', 'profile', 'layout', 'look', 'search', 'budget', 'bookmarks', 'extras', 'done']);
+  const order = () => (choice.profile === 'ultra' ? ['hello', 'profile', 'layout', 'search', 'bookmarks', 'done'] : ['hello', 'profile', 'layout', 'look', 'search', 'budget', 'tools', 'bookmarks', 'done']);
 
   o.innerHTML = `<div class="onb"><canvas id="obsky"></canvas>
     <div class="otop"><div class="obrand"><img src="mark.svg" alt="">Nova</div><button class="skip" id="skip">Skip setup</button></div>
     <div class="ostage" id="ostage"></div>
     <div class="onav"><button class="btn ghost" id="wb">Back</button><div class="osteps" id="osteps"></div><button class="btn primary big" id="wn"><span id="wnl"></span><span class="arr">${ic('fwd')}</span></button></div></div>`;
-  if (S.settings.effects) sky = NovaSky($('#obsky'), { fps: 30, origin: () => { const el = document.querySelector('#bmark') || document.querySelector('.mega'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; } });
+  if (S.settings.effects) sky = NovaSky($('#obsky'), { fps: 30, origin: () => { const el = document.querySelector('#bmark') || document.querySelector('.mega'); if (!el) return null; const r = el.getBoundingClientRect(), f = (el.dataset.flare || '.5,.5').split(',').map(Number); return { x: r.left + r.width * f[0], y: r.top + r.height * f[1] }; } });
 
   let mi = null; // the Move in step reports here whether there is something left to bring over
   const ctaSync = () => { const k = order()[i]; if (k === 'bookmarks') $('#wnl').textContent = mi && mi.pending() ? 'Bring it over and continue' : 'Continue'; };

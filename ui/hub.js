@@ -1,6 +1,6 @@
 // ---------- extension hub: hand-picked extensions that start cleanly in Nova, plus the whole Chrome Web Store ----------
 function extHub(o, d) {
-  const CATS = [['All', 'All', 'grid'], ['security', 'Security', 'lock'], ['privacy', 'Privacy', 'shield'], ['video', 'Video', 'film'], ['productivity', 'Productivity', 'clock'], ['writing', 'Writing', 'file'], ['developer', 'Developer', 'code'], ['appearance', 'Appearance', 'palette'], ['reading', 'Reading', 'eye'], ['store', 'Web Store', 'globe']];
+  const CATS = [['All', 'Discover', 'grid'], ['installed', 'Installed', 'check'], ['security', 'Security', 'lock'], ['privacy', 'Privacy', 'shield'], ['video', 'Video', 'film'], ['productivity', 'Productivity', 'clock'], ['writing', 'Writing', 'file'], ['developer', 'Developer', 'code'], ['appearance', 'Appearance', 'palette'], ['reading', 'Reading', 'eye'], ['store', 'Web Store', 'globe']];
   let items = [], cat = d.cat || 'All', q = '';
   const store = { q: '', res: null, loading: false, err: '', cats: [], slug: '', byCat: {}, catLoading: false, catErr: '' };
   const busy = new Set(), added = new Set(), gone = new Set();
@@ -57,10 +57,11 @@ function extHub(o, d) {
   function paint() {
     mark();
     const term = q.trim().toLowerCase();
-    const match = (e) => (cat === 'All' || cat === 'store' || e.cat === cat) && (!term || `${e.name} ${e.tagline} ${e.cat}`.toLowerCase().includes(term));
+    const match = (e) => (cat === 'All' || cat === 'store' || cat === 'installed' || e.cat === cat) && (!term || `${e.name} ${e.tagline} ${e.cat}`.toLowerCase().includes(term));
     let html = `<div class="pghead"><span class="tile big">${ic('box')}</span><div><h2>Extension hub</h2><p>Hand-picked extensions that start cleanly in Nova, and every other extension in the Chrome Web Store. Add one in a single click.</p></div></div><div class="lsearch">${ic('search')}<input id="hq" placeholder="Search every extension" value="${esc(q)}" autocomplete="off" spellcheck="false"></div>`;
     let curatedIds = new Set();
-    if (cat === 'store' && !term) html += browse();
+    if (cat === 'installed' && !term) html += extensionsHtml({ banner: false });
+    else if (cat === 'store' && !term) html += browse();
     else if (cat === 'All' && !term) {
       html += shelf('Must-have', 'What most people install first', items.filter((e) => e.must))
         + shelf('Popular', 'Most used worldwide', [...items].sort((a, b) => b.users - a.users).slice(0, 8))
@@ -72,6 +73,7 @@ function extHub(o, d) {
       html += list.length ? `<div class="hgrid">${list.map(card).join('')}</div>` : (term.length >= 2 ? '' : `<div class="lempty">${ic('search')}<b>Nothing found</b><span>Search the Chrome Web Store above, or paste a store link.</span></div>`);
     }
     html += storeSection(term, curatedIds);
+    if (cat === 'installed' && !term) setTimeout(() => bindExtensions(body, keep), 0);
     html += `<p class="hnote">Nova runs Chromium extensions, but Electron implements only part of Chrome's extension interface. Extensions marked “Limited here” install fine but lose the features named there. Every extension runs in its own process and typically uses 40 to 70 MB of memory.</p>`;
     body.innerHTML = html;
     const search = $('#hq'); if (search) { search.oninput = () => { q = search.value; const pos = search.selectionStart; paint(); const s2 = $('#hq'); s2.focus(); s2.setSelectionRange(pos, pos); schedule(); }; if (d.focus !== false && !term && !body.dataset.f) { search.focus(); body.dataset.f = '1'; } }
