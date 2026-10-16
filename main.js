@@ -108,13 +108,14 @@ function loadSettings() {
   applyScheme();
 }
 const saveSettings = () => writeJson('settings.json', settings);
+const runVersion = () => { try { return updater.version || app.getVersion(); } catch { return app.getVersion(); } };
 // The window icon must be a real file: Windows reads it by path, and a file that carries the version in its name never meets an old picture in the icon cache.
 let iconFile = null;
 function appIcon() {
   if (iconFile) return iconFile;
   const src = path.join(__dirname, 'build', 'icon.ico');
   try {
-    const dir = userFile('icons'), f = path.join(dir, `nova-${app.getVersion()}.ico`);
+    const dir = userFile('icons'), f = path.join(dir, `nova-${runVersion()}.ico`);
     if (!fs.existsSync(f)) {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(f, fs.readFileSync(src)); // reading through app.asar, writing a plain file
@@ -127,7 +128,7 @@ function appIcon() {
 // Nova's own shortcuts (Start menu, desktop, taskbar) get that icon file and the new identity, once per version
 function repairShortcuts() {
   if (process.platform !== 'win32' || !app.isPackaged) return;
-  const key = app.getVersion() + '|' + AUMID;
+  const key = runVersion() + '|' + AUMID;
   if (settings.shortcutsFixed === key) return;
   const ico = appIcon(), exe = process.execPath.toLowerCase(), links = [path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Nova.lnk'), path.join(app.getPath('desktop'), 'Nova.lnk')];
   try { const pinned = path.join(process.env.APPDATA || '', 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar'); for (const f of fs.existsSync(pinned) ? fs.readdirSync(pinned) : []) if (/^nova.*\.lnk$/i.test(f)) links.push(path.join(pinned, f)); } catch { /* no taskbar folder */ }
@@ -180,6 +181,20 @@ function eachWin(fn) {
   if (keep && !keep.closed) useWin(keep);
 }
 const layoutAll = () => eachWin(() => layout());
+// "Maximized" is Nova's own: the window fills the work area of its screen and remembers the size it had. Windows' own maximize could not be undone from code
+// here (unmaximize() changed nothing in the log, so a maximized window could never be pulled out of full size), and a normal window can always be moved and sized.
+const sendMax = (W, v) => { try { if (!W.ui.webContents.isDestroyed()) W.ui.webContents.send('maximized', v); } catch { /* closing */ } };
+function fillWindow(W) {
+  const w = W.win; if (W.fill || w.isDestroyed() || w.isFullScreen()) return;
+  const normal = w.getBounds(), rect = screen.getDisplayMatching(normal).workArea;
+  W.fill = { normal, rect };
+  w.setBounds(rect); sendMax(W, true);
+}
+function unfillWindow(W) {
+  if (!W.fill) return;
+  const { normal } = W.fill; W.fill = null;
+  W.win.setBounds(normal); sendMax(W, false);
+}
 const anyOverlay = () => { for (const W of wins.values()) if (W === curW ? overlayOpen : W.overlayOpen) return true; return false; };
 const shown = (t) => { for (const W of wins.values()) if (W.activeTab === t.id || W.split === t.id) return true; return false; }; // on screen in some window
 const allVisibleIds = () => { const ids = []; for (const W of wins.values()) { if (W.activeTab != null) ids.push(W.activeTab); if (W.split != null) ids.push(W.split); } return ids; };
@@ -542,7 +557,7 @@ function idlePolicy() {
 // A new window is a whole Nova: the same tab row, bars, settings and shortcuts. A tab keeps its session, history and scroll when it moves.
 // The last tab of a second window closes the window; closing a window puts its tabs into the archive (Ctrl+K); closing the last window ends Nova.
 function createWindow(o = {}) {
-  const W = { id: nextWid++, closed: false, activeTab: null, activeSpace: state.spaces.some((sp) => sp.id === o.activeSpace) ? o.activeSpace : state.spaces[0].id, split: null, prevTab: null, overlayKind: '', overlayOpen: false, sidebarHidden: false, focusMode: false, pageFullscreen: false, uiLowered: null, lastBar: 0, lastBarKey: '' };
+  const W = { id: nextWid++, closed: false, activeTab: null, activeSpace: state.spaces.some((sp) => sp.id === o.activeSpace) ? o.activeSpace : state.spaces[0].id, split: null, prevTab: null, overlayKind: '', overlayOpen: false, sidebarHidden: false, focusMode: false, pageFullscreen: false, uiLowered: null, lastBar: 0, lastBarKey: '', fill: null };
   const b = { width: o.width || 1360, height: o.height || 860 };
   if (o.x != null && o.y != null) { b.x = Math.round(o.x); b.y = Math.round(o.y); }
   W.win = new BaseWindow({ ...b, minWidth: 640, minHeight: 420, frame: false, backgroundColor: settings.theme.bg, title: 'Nova', icon: appIcon() });
@@ -554,13 +569,18 @@ function createWindow(o = {}) {
   const wc = W.ui.webContents;
   wc.on('before-input-event', (e, i) => { useWin(W); handleKey(e, i); });
   wc.loadFile(path.join(__dirname, 'ui', 'index.html'));
-  W.win.on('resize', () => { if (!W.closed) { useWin(W); layout(); } });
+  W.win.on('resize', () => {
+    if (W.closed) return;
+    useWin(W);
+    if (W.fill) { const r = W.win.getBounds(); if (Math.abs(r.width - W.fill.rect.width) > 8 || Math.abs(r.height - W.fill.rect.height) > 8) { W.fill = null; sendMax(W, false); } } // sized by hand: no longer "maximized"
+    layout();
+  });
   W.win.on('maximize', () => { if (!wc.isDestroyed()) wc.send('maximized', true); });
   W.win.on('unmaximize', () => { if (!wc.isDestroyed()) wc.send('maximized', false); });
   W.win.on('focus', () => useWin(W)); // the window you work in is the current one for everything that has no window of its own
   W.win.on('closed', () => windowClosed(W));
   useWin(W);
-  if (o.maximize) W.win.maximize();
+  if (o.maximize) fillWindow(W);
   return W;
 }
 function windowClosed(W) {
@@ -607,14 +627,14 @@ function detachTab(id, force) {
     for (const W of wins.values()) if (W !== curW && !W.closed && !W.win.isDestroyed() && inside(cur, W.win.getBounds(), 0)) return transferTab(t, W); // let go over another Nova window: the tab joins it
   }
   if ([...tabs.values()].filter((x) => x.wid === curW.id).length < 2) return toast('That is the only tab of this window.');
-  const nb = win.getNormalBounds(), wa = screen.getDisplayNearestPoint(force ? { x: b.x + 40, y: b.y + 40 } : cur).workArea;
+  const nb = curW.fill ? curW.fill.normal : win.getNormalBounds(), wa = screen.getDisplayNearestPoint(force ? { x: b.x + 40, y: b.y + 40 } : cur).workArea;
   const w = Math.min(nb.width > 0 ? nb.width : 1360, wa.width - 40), h = Math.min(nb.height > 0 ? nb.height : 860, wa.height - 40);
   const x = force ? b.x + 40 : cur.x - 130, y = force ? b.y + 40 : cur.y - 18;
   const W = createWindow({ x: Math.max(wa.x, Math.min(x, wa.x + wa.width - w)), y: Math.max(wa.y, Math.min(y, wa.y + wa.height - h)), width: w, height: h, activeSpace: t.spaceId });
   transferTab(t, W);
 }
 function newWindow(url) {
-  const b = win.getBounds(), max = win.isMaximized(), wa = screen.getDisplayMatching(b).workArea;
+  const max = !!curW.fill || win.isMaximized(), b = curW.fill ? curW.fill.normal : win.getBounds(), wa = screen.getDisplayMatching(b).workArea;
   const o = { width: b.width, height: b.height, maximize: max, activeSpace: state.activeSpace };
   if (!max) { o.x = Math.max(wa.x, Math.min(b.x + 36, wa.x + wa.width - b.width)); o.y = Math.max(wa.y, Math.min(b.y + 36, wa.y + wa.height - b.height)); }
   createWindow(o);
@@ -639,9 +659,9 @@ function whatsNew() {
 let drag = null;
 function startDrag() {
   endDrag();
-  const w = win, c0 = screen.getCursorScreenPoint(), full = w.isFullScreen(), big = full || w.isMaximized(); // w: the window being dragged, whichever window is current when the timer runs
+  const w = win, W = curW, c0 = screen.getCursorScreenPoint(), full = w.isFullScreen(), big = full || !!W.fill || w.isMaximized(); // w: the window being dragged, whichever window is current when the timer runs
   let phase = 'wait'; // wait: the cursor has not moved yet; pull: leaving full size; follow: the window goes where the cursor goes
-  drag = { w, started: Date.now(), timer: setInterval(() => {
+  drag = { w, W, started: Date.now(), timer: setInterval(() => {
     if (!drag) return;
     if (w.isDestroyed()) return endDrag();
     const c = screen.getCursorScreenPoint(), now = Date.now();
@@ -651,9 +671,9 @@ function startDrag() {
       const b = w.getBounds();
       if (!big) { drag.off = { x: c0.x - b.x, y: c0.y - b.y }; phase = 'follow'; }
       else { // pull the window out of full size and keep the grip under the cursor
-        drag.grab = { rx: (c0.x - b.x) / Math.max(1, b.width), ry: Math.min(Math.max(0, c0.y - b.y), 40) }; drag.nb = w.getNormalBounds(); drag.fromFull = true; drag.pullAt = now; drag.lastCall = now; phase = 'pull';
-        dlog(`drag: leaving ${full ? 'full screen' : 'maximized'}`);
-        if (full) w.setFullScreen(false); else w.unmaximize();
+        drag.grab = { rx: (c0.x - b.x) / Math.max(1, b.width), ry: Math.min(Math.max(0, c0.y - b.y), 40) }; drag.nb = W.fill ? W.fill.normal : w.getNormalBounds(); drag.fromFull = true; drag.pullAt = now; drag.lastCall = now; phase = 'pull';
+        dlog(`drag: leaving ${full ? 'full screen' : W.fill ? 'maximized (Nova)' : 'maximized (Windows)'}`);
+        if (full) w.setFullScreen(false); else if (!W.fill) w.unmaximize();
         return;
       }
     }
@@ -665,10 +685,11 @@ function startDrag() {
         if (w.isMaximized()) { if (now - drag.lastCall > 80) { drag.lastCall = now; w.unmaximize(); } return; }
       }
       const wa = screen.getDisplayNearestPoint(c).workArea, nb = drag.nb;
+      if (W.fill) { W.fill = null; sendMax(W, false); }
       const ww = Math.min(nb.width > 0 ? nb.width : 1360, Math.round(wa.width * 0.82)), hh = Math.min(nb.height > 0 ? nb.height : 860, Math.round(wa.height * 0.82));
       w.setBounds({ x: Math.round(c.x - drag.grab.rx * ww), y: Math.round(c.y - drag.grab.ry), width: ww, height: hh });
       drag.off = { x: Math.round(drag.grab.rx * ww), y: Math.round(drag.grab.ry) }; drag.lx = c.x; drag.ly = c.y; phase = 'follow';
-      dlog(`drag: normal window after ${waited} ms (${ww}x${hh}${w.isMaximized() ? ', still maximized' : ''})`);
+      dlog(`drag: normal window after ${waited} ms (${ww}x${hh}${w.isMaximized() ? ', still maximized by Windows, resizable ' + w.isResizable() + ', maximizable ' + w.isMaximizable() : ''})`);
       for (const ms of [90, 300]) setTimeout(() => { try { if (!w.isDestroyed() && !w.isFullScreen() && !w.isMaximized()) { const cur = w.getBounds(); if (cur.width !== ww || cur.height !== hh) w.setSize(ww, hh); } } catch { /* window closed */ } }, ms); // Windows may put the old size back a moment later
       return;
     }
@@ -681,7 +702,7 @@ function endDrag() {
   if (!drag) return;
   clearInterval(drag.timer);
   const w = drag.w, c = screen.getCursorScreenPoint(), wa = screen.getDisplayNearestPoint(c).workArea;
-  if (!w.isDestroyed() && drag.moved && !drag.fromFull && c.y <= wa.y + 1) w.maximize(); // drop on the top edge to maximize; a window pulled out of full size stays small, full size is the user's own choice
+  if (!w.isDestroyed() && drag.moved && !drag.fromFull && c.y <= wa.y + 1) fillWindow(drag.W); // drop on the top edge to maximize; a window pulled out of full size stays small, full size is the user's own choice
   drag = null;
 }
 
@@ -1043,7 +1064,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'dragEnd': endDrag(); break;
       case 'external': shell.openExternal(a.url); break;
       default: return features.handle(name, a, t);
-      case 'win': if (a.op === 'min') win.minimize(); else if (a.op === 'max') (win.isMaximized() ? win.unmaximize() : win.maximize()); else if (a.op === 'close') win.close(); break;
+      case 'win': if (a.op === 'min') win.minimize(); else if (a.op === 'max') { if (win.isMaximized()) win.unmaximize(); else if (curW.fill) unfillWindow(curW); else fillWindow(curW); } else if (a.op === 'close') win.close(); break;
     }
   });
 });

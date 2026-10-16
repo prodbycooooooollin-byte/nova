@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.13.3",
+    "date": "2026-10-16",
+    "notes": [
+      "Maximizing is now Nova's own: the window fills the work area and remembers its old size. Dragging the tab row out of a maximized window, or out of full screen, brings out a smaller window that follows the mouse, also onto another screen.",
+      "The maximize button and a double click on the tab row use the same maximize.",
+      "The shortcut and icon repair now keys on the version Nova really runs, so it applies again after each update."
+    ]
+  },
+  {
     "version": "0.13.2",
     "date": "2026-10-16",
     "notes": [
