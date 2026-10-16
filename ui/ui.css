@@ -118,7 +118,7 @@ kbd { font:500 10.5px/1 var(--font); color:var(--dim); background:var(--hover); 
 /* top layout: toolbar row + tab strip */
 #app.layout-top #chrome { left:0; right:0; top:0; height:96px; display:grid; grid-template-columns:auto auto minmax(0,1fr) auto auto; grid-template-rows:44px 38px; gap:4px 10px; padding:6px 10px; align-items:center; box-shadow:inset 0 -1px 0 var(--line); }
 #app.layout-top #head { display:contents; }
-#app.layout-top #nav { grid-column:1 / 3; grid-row:1; } #app.layout-top #mark { display:none; }
+#app.layout-top #nav { grid-column:1 / 3; grid-row:1; } #app.layout-top #mark { display:block; flex:none; width:21px; height:21px; margin:0 9px 0 5px; opacity:1; }
 #app.layout-top #urlbar { grid-column:3; grid-row:1; justify-self:center; width:min(100%,660px); height:36px; }
 #app.layout-top #tools { grid-column:4; grid-row:1; background:none; box-shadow:none; padding:0; } #app.layout-top #tools .grow { display:none; }
 #app.layout-top #winctl { grid-column:5; grid-row:1; }
@@ -554,7 +554,7 @@ details.more { margin:14px 0 0; } details.more summary { padding:8px 2px; color:
 #rowtabs #stats .tcount { display:inline; opacity:.65; font-size:11px; } #rowtabs #stats .tcount.hot { color:var(--danger); opacity:1; }
 #rowtabs #stats .chip, #rowtabs #stats .ram { height:24px; padding:0 4px; background:none; box-shadow:none; gap:4px; } #rowtabs #stats .ram i { display:none; } #rowtabs #stats .ram .lab { display:none; } #rowtabs #stats .chip svg { width:13px; height:13px; }
 #rowtabs #winctl { flex:none; display:flex; align-self:flex-start; margin-top:-6px; margin-left:2px; } #rowtabs #winctl .ibtn { width:44px; height:34px; border-radius:0; } #rowtabs #winctl .ibtn.close:hover { background:#e5484d; color:#fff; }
-#rowbar { display:grid; grid-template-columns:minmax(150px,1fr) minmax(240px,720px) minmax(150px,1fr); align-items:center; gap:10px; height:46px; padding:0 10px 4px; flex:none; }
+#rowbar { display:grid; grid-template-columns:minmax(184px,1fr) minmax(240px,720px) minmax(184px,1fr); align-items:center; gap:10px; height:46px; padding:0 10px 4px; flex:none; }
 #barl { display:flex; align-items:center; gap:2px; min-width:0; } #barl #nav { display:flex; align-items:center; gap:2px; } #barl #bmstar { margin-left:auto; flex:none; }
 #barr { display:flex; justify-content:flex-end; align-items:center; min-width:0; }
 #app.layout-top #urlbar { grid-column:2; grid-row:auto; justify-self:stretch; width:100%; max-width:none; height:36px; border-radius:18px; }

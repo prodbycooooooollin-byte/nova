@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.13.1",
+    "date": "2026-10-16",
+    "notes": [
+      "The Nova crystal is back in the toolbar, at the far left before the back button.",
+      "The left and right sides of the toolbar keep a little more room in narrow windows, so the address bar stays centred."
+    ]
+  },
+  {
     "version": "0.13.0",
     "date": "2026-10-16",
     "headline": {
