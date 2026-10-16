@@ -34,6 +34,17 @@ document.addEventListener('error', (e) => { const el = e.target; if (el.tagName 
 const ibtn = (n, title, id, cls = '') => `<button class="ibtn ${cls}" title="${esc(title)}" data-do="${id}">${ic(n)}</button>`;
 const STAR = '<span class="star"><svg viewBox="0 0 24 24"><path d="M12 1c.7 6.6 4.4 10.3 11 11-6.6.7-10.3 4.4-11 11-.7-6.6-4.4-10.3-11-11C7.6 11.3 11.3 7.6 12 1z"/></svg></span>';
 
+// the parts of the sidebar, in their default order: id, name, what it is, icon, and whether it can be hidden
+const BLOCKS = [
+  ['urlbar', 'Search bar', 'Where you type addresses and searches.', 'search2', false],
+  ['bmbar', 'Bookmarks bar', 'Your bookmarks as small icons.', 'bookmark', true],
+  ['pins', 'Pinned tabs', 'The tabs you pinned, as small tiles.', 'pin', true],
+  ['tabhead', 'Tab heading', 'The “Tabs” label with the count and the new tab button.', 'layers', true],
+  ['tabs', 'Tab list', 'All your open tabs.', 'grid', false],
+  ['spaces', 'Spaces', 'The switcher between your spaces.', 'layout', true],
+  ['tools', 'Dock', 'Extensions, downloads and the memory meter.', 'sliders', true],
+];
+const blockOrder = (s) => { const o = ((s.layoutBlocks || {}).order || []).filter((id, i, a) => BLOCKS.some((b) => b[0] === id) && a.indexOf(id) === i); for (const b of BLOCKS) if (!o.includes(b[0])) o.push(b[0]); return o; };
 const PRESETS = {
   'Nova': { bg: '#0b0b12', page: '#161621', surface: '#13131c', surface2: '#1c1c28', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
   'Daylight': { bg: '#e9e8ee', page: '#ffffff', surface: '#f6f5f9', surface2: '#ffffff', text: '#1b1b22', dim: '#76758a', accent: '#5b4bf0', danger: '#ff6b7a' },
@@ -75,11 +86,16 @@ const FEATURES = [
   ['cleanLinks', 'Copy clean links', 'Strip tracking parameters when copying a link.'],
   ['screenshot', 'Screenshots', 'Capture the page to Pictures and the clipboard (Ctrl+Shift+S).'],
   ['pip', 'Picture in picture', 'Pop the biggest video on a page into a floating window.'],
+  ['autoPip', 'Float video when you switch tabs', 'A video that is playing pops out into a small window when you leave its tab, and goes back when you return.'],
+  ['videoSpeed', 'Video speed keys', 'S slower, D faster, R back to normal, Z and X jump ten seconds. Works on any video.'],
+  ['sponsorBlock', 'Skip YouTube sponsors', 'Jumps over sponsor, self-promotion and reminder segments reported by viewers (SponsorBlock). Sends only a short code of the video, never the video itself.'],
+  ['ytDislike', 'Show YouTube dislikes', 'Brings the dislike count back next to the button (Return YouTube Dislike).'],
+  ['cookieBanners', 'Hide cookie banners', 'Hides the consent boxes of the common cookie tools and lifts the scroll lock they leave behind. It never clicks accept for you.'],
   ['savePdf', 'Save page as PDF', 'Export the current page to your Downloads folder.'],
   ['translate', 'Translate page', 'Open the current page through Google Translate.'],
   ['privateTabs', 'Private tabs', 'Tabs that keep no history, cookies or cache (Ctrl+Shift+N).'],
 ];
-const FEATURE_GROUPS = [['Tab tools', ['tabSearch', 'snooze', 'rewind', 'soloAudio']], ['Page tools', ['peek', 'darkPage', 'darkSite', 'cleanLinks', 'screenshot', 'pip', 'savePdf', 'translate']], ['Privacy', ['privateTabs']]];
+const FEATURE_GROUPS = [['Tab tools', ['tabSearch', 'snooze', 'rewind', 'soloAudio']], ['Page tools', ['peek', 'darkPage', 'darkSite', 'cleanLinks', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate']], ['Instead of extensions', ['videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners']], ['Privacy', ['privateTabs']]];
 const ENGINES = { DuckDuckGo: 'https://duckduckgo.com/?q=%s', Google: 'https://www.google.com/search?q=%s', Brave: 'https://search.brave.com/search?q=%s', Startpage: 'https://www.startpage.com/do/search?q=%s', Ecosia: 'https://www.ecosia.org/search?q=%s', Bing: 'https://www.bing.com/search?q=%s' };
 
 let S = null, overlay = null, customJsApplied = null;
@@ -92,7 +108,8 @@ function applySettings() {
   r.setProperty('--tab-h', { compact: '32px', comfortable: '38px', spacious: '45px' }[s.density] || '38px');
   r.setProperty('--radius', s.radius + 'px'); r.setProperty('--gap', s.gap + 'px'); r.setProperty('--side', (s.compact ? 56 : s.sidebarWidth) + 'px');
   r.setProperty('--fs', s.fontSize + 'px'); r.setProperty('--font', `${s.font || "'Inter'"}, 'Inter', system-ui, sans-serif`);
-  $('#app').className = `layout-${s.layout}` + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '');
+  { const ord = blockOrder(s); BLOCKS.forEach((b) => r.setProperty('--o-' + b[0], ord.indexOf(b[0]) + 1)); }
+  $('#app').className = `layout-${s.layout}` + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '');
   $('#user-css').textContent = s.customCss || '';
   if (s.customJs !== customJsApplied) {
     customJsApplied = s.customJs;
@@ -114,6 +131,15 @@ const hue = (s) => { let n = 0; for (const c of s) n = (n * 31 + c.charCodeAt(0)
 const fallbackFav = (h, hv = hue(h)) => `<span class="fav" style="background:hsl(${hv} 42% 40%)">${esc((h[0] || '+').toUpperCase())}</span>`;
 document.addEventListener('error', (e) => { const el = e.target; if (el.tagName === 'IMG' && el.classList.contains('fav')) el.outerHTML = fallbackFav(el.dataset.l, +el.dataset.h); }, true);
 
+const fmtBytes = (n) => (n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(n >= 1.0e8 ? 0 : 1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+const fmtEta = (s) => (s >= 3600 ? Math.floor(s / 3600) + ' h ' + Math.round((s % 3600) / 60) + ' min' : s >= 60 ? Math.round(s / 60) + ' min' : s + ' s');
+// the dock shows a download while one runs: percent and speed, one click opens the list
+function dlChip() {
+  const jobs = (S && S.dl) || []; if (!jobs.length) return '';
+  const run = jobs.filter((j) => j.state === 'downloading'), size = jobs.reduce((n, j) => n + j.size, 0), got = jobs.reduce((n, j) => n + j.received, 0), speed = run.reduce((n, j) => n + j.speed, 0);
+  const pct = size ? Math.min(100, Math.round(got / size * 100)) : 0;
+  return `<button class="chip dl" data-do="downloads" title="${jobs.length} download${jobs.length > 1 ? 's' : ''}: click to open the list">${ic('download')}<b>${run.length ? (size ? pct + '%' : '…') : 'Paused'}</b>${run.length && speed ? `<small>${fmtBytes(speed)}/s</small>` : ''}</button>`;
+}
 function render() {
   if (!S) return;
   if (typeof dragTab !== 'undefined' && dragTab !== null) { if (Date.now() - dragSince < 5000) { deferredRender = true; return; } dragTab = null; dropInfo = null; } // a drag that never ended must not freeze the tab list
@@ -141,6 +167,7 @@ function render() {
   const bud = S.budget, pct = bud.enabled && bud.cap ? Math.min(100, Math.round(bud.used / bud.cap * 100)) : 0;
   const exts = (S.extensions || []).filter((e) => e.popup).slice(0, 6).map((e) => `<button class="ibtn" title="${esc(e.name)}" data-extpop="${e.id}">${e.icon ? `<img src="${e.icon}" width="16" height="16" style="border-radius:4px">` : ic('box')}</button>`).join('');
   $('#tools').innerHTML = (exts ? `<div class="exts">${exts}</div>` : '')
+    + dlChip()
     + (S.updateReady ? `<button class="upd" data-do="update" title="Restart to install the update">Update</button>` : '')
     + (S.settings.adblock ? (() => { const st = (S.adblock || {}).state; return `<span class="chip ${st === 'failed' ? 'warn' : ''}" title="${st === 'failed' ? 'The ad blocker is not loaded. Open Settings > Search & privacy to retry.' : st === 'loading' ? 'The ad blocker is loading its filter lists' : 'Ads and trackers blocked'}">${ic('shield')}<b>${st === 'failed' ? '!' : st === 'loading' ? '…' : S.blockedCount}</b></span>`; })() : '')
     + (bud.enabled ? `<button class="ram ${bud.over || pct >= 90 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova of your ${bud.cap} MB budget"><span class="lab">RAM</span><b>${bud.used}</b><small>MB</small><i style="width:${pct}%"></i></button>` : '')
@@ -154,7 +181,7 @@ document.addEventListener('click', (e) => {
   const d = e.target.closest('[data-do]')?.dataset.do;
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
-    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
+    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: A('downloads'), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
     return m[d]?.();
   }
   if (e.target.closest('#urlbar')) return nova.cmd('action', { name: 'go' });

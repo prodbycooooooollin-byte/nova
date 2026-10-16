@@ -128,7 +128,7 @@ function run(mode) {
   const small = mode === 'update';
   app.whenReady().then(async () => {
     const win = new BrowserWindow({
-      width: small ? 520 : 940, height: small ? 230 : 600, frame: false, resizable: false, maximizable: false, backgroundColor: '#0b0b12', show: false,
+      width: small ? 520 : 860, height: small ? 230 : 560, frame: false, resizable: false, maximizable: false, backgroundColor: '#0b0b12', show: false,
       icon: path.join(__dirname, 'build', 'icon.ico'), title: mode === 'uninstall' ? 'Uninstall Nova' : 'Nova Setup',
       webPreferences: { preload: path.join(__dirname, 'setup-preload.js'), contextIsolation: true, sandbox: true },
     });

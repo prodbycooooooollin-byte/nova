@@ -13,7 +13,7 @@ function library(o, d) {
 
   async function list(name) {
     const kind = name.toLowerCase();
-    body.innerHTML = head(name) + `<div class="lsearch">${ic('search')}<input id="lq" placeholder="${name === 'Downloads' ? 'Search downloads' : 'Search ' + kind}" autocomplete="off" spellcheck="false"></div><div id="ll"></div>`;
+    body.innerHTML = head(name) + `<div class="lsearch">${ic('search')}<input id="lq" placeholder="${name === 'Downloads' ? 'Search downloads' : 'Search ' + kind}" autocomplete="off" spellcheck="false"></div>${name === 'Downloads' ? '<div id="dl-live"></div>' : ''}<div id="ll"></div>`;
     const draw = async () => {
       const q = $('#lq').value.trim(), items = await nova.cmd('library', { kind, q }) || [];
       const ll = $('#ll'); if (!ll) return;
@@ -28,8 +28,24 @@ function library(o, d) {
       ll.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => { await nova.cmd(name === 'Bookmarks' ? 'removeBookmark' : 'removeHistory', { url: b.dataset.del }); draw(); }));
       ll.querySelectorAll('[data-show]').forEach((b) => (b.onclick = () => nova.cmd('showDownload', { path: b.dataset.show })));
     };
+    // running downloads sit above the finished ones and update live from the state Nova pushes
+    let prevActive = -1;
+    const dlRow = (j) => {
+      const pct = j.size ? Math.min(100, Math.round(j.received / j.size * 100)) : 0, paused = j.state === 'paused';
+      const info = `${fmtBytes(j.received)}${j.size ? ' of ' + fmtBytes(j.size) : ''}${paused ? ' · paused' : j.speed ? ' · ' + fmtBytes(j.speed) + '/s' : ''}${!paused && j.eta ? ' · ' + fmtEta(j.eta) + ' left' : ''}${j.ranged && !paused ? ' · ' + j.conns + ' connections' : ''}`;
+      return `<div class="lrow dlrow">${ic('download')}<div class="lt"><b>${esc(j.name)}</b><div class="dlbar"><i style="width:${pct}%"></i></div><span>${info}</span></div><button class="ibtn sm" data-dl="${paused ? 'resume' : 'pause'}" data-id="${j.id}" title="${paused ? 'Resume' : 'Pause'}">${ic(paused ? 'play' : 'pause')}</button><button class="ibtn sm" data-dl="cancel" data-id="${j.id}" title="Cancel">${ic('x')}</button></div>`;
+    };
+    const drawLive = () => {
+      const el = $('#dl-live'); if (!el) return;
+      const jobs = S.dl || [];
+      el.innerHTML = jobs.map(dlRow).join('');
+      el.querySelectorAll('[data-dl]').forEach((b) => (b.onclick = () => nova.cmd({ pause: 'dlPause', resume: 'dlResume', cancel: 'dlCancel' }[b.dataset.dl], { id: +b.dataset.id })));
+      if (prevActive >= 0 && jobs.length < prevActive) draw(); // one finished: it now belongs to the list below
+      prevActive = jobs.length;
+    };
+    window.updateDownloadsLive = name === 'Downloads' ? drawLive : null;
     let t; $('#lq').addEventListener('input', () => { clearTimeout(t); t = setTimeout(draw, 120); });
-    await draw(); $('#lq').focus();
+    await draw(); drawLive(); $('#lq').focus();
   }
   function clear() {
     const pick = { history: true, cookies: false, cache: true, downloads: false }; let range = 'week';

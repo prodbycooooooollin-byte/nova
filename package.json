@@ -1,6 +1,6 @@
 {
     "name":  "nova",
-    "version":  "0.9.1",
+    "version":  "0.10.0",
     "description":  "Nova - a minimal, fully customizable Chromium browser with rethought tab management",
     "main":  "boot.js",
     "novaLoader":  1,
@@ -56,7 +56,11 @@
                                 "darkmode.js",
                                 "dark-preload.js",
                                 "assets/darkreader/*",
-                                "hub.json"
+                                "hub.json",
+                                "downloader.js",
+                                "wallpalette.js",
+                                "webtools.js",
+                                "webtools-preload.js"
                             ],
                   "asar":  true,
                   "win":  {

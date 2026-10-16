@@ -1,10 +1,12 @@
 // Nova - minimal Chromium browser. Main process: window, tabs, spaces, sleeping/archiving, adblock.
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage, net } = require('electron');
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage, net, systemPreferences } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const updater = require('./updater');
 const features = require('./features');
+const wallpalette = require('./wallpalette');
 const darkmode = require('./darkmode');
+const webtools = require('./webtools');
 const extbridge = require('./extbridge');
 const scriptletGuard = require('./scriptlet-guard');
 const extmgr = require('./extmgr');
@@ -29,7 +31,7 @@ const DEFAULT_KEYS = {
 // Smart sleep (Settings > Resource budget): freeze background tabs, wake them invisibly, learn per site how soon to sleep them
 const SMART = { freeze: true, freezeAfterSec: 30, softWake: true, earlySleepMin: 3, adaptive: true };
 const DEFAULTS = {
-  suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0 }, startPage: { sites: true, greeting: true },
+  suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0, follow: false }, startPage: { sites: true, greeting: true },
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
   searchEngine: 'https://duckduckgo.com/?q=%s',
   layout: 'left', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
@@ -38,8 +40,8 @@ const DEFAULTS = {
   sleepAfterMin: 10, archiveAfterHours: 24, maxTabs: 25, dedupeTabs: true,
   adblock: true, extensions: [], keys: {}, updateFeed: '', zoom: {},
   // Optional features. Everything beyond the essentials is off until the user turns it on.
-  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false,
-  features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false },
+  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8 }, cache: { limitMB: 500, auto: true }, layoutBlocks: { order: [], hidden: [] },
+  features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, autoPip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false, videoSpeed: false, sponsorBlock: false, ytDislike: false, cookieBanners: false },
   darkSites: [],
   bookmarkNames: true, // false: the bookmarks bar shows only the small icons
   newTabPage: 'home', // what a new tab shows: the start page ('home') or the address bar to type into ('bar')
@@ -50,7 +52,7 @@ const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
 const isHome = (u) => u === HOME || (u || '').startsWith(HOME_FILE);
 const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, fx: settings.effects ? 1 : 0, wall: settings.wallpaper.mode === 'none' ? '' : settings.wallpaper.preset });
 // Profiles: one switch that decides how much Nova does.
-const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'darkSite', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'savePdf', 'translate', 'privateTabs'];
+const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'darkSite', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate', 'privateTabs', 'videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners'];
 const featureSet = (on) => Object.fromEntries(FEATURE_KEYS.map((k) => [k, on]));
 const PROFILES = {
   ultra: { blockAutoplay: true, effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 800, cpuGuard: true, cpuPct: 20, ...SMART } },
@@ -67,11 +69,16 @@ let blocker = null;
 const userFile = (n) => path.join(app.getPath('userData'), n);
 const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(userFile(f), 'utf8')); } catch { return d; } };
 const writeJson = (f, v) => { try { fs.writeFileSync(userFile(f), JSON.stringify(v)); } catch (e) { console.error(e); } };
-try { if (readJson('settings.json', {}).lowIsolation) app.commandLine.appendSwitch('disable-site-isolation-trials'); } catch {} // opt-in: one process for a page and its frames, about 12% less memory, weaker isolation
+try {
+  const early = readJson('settings.json', {});
+  if (early.lowIsolation) app.commandLine.appendSwitch('disable-site-isolation-trials'); // opt-in: one process for a page and its frames, about 12% less memory, weaker isolation
+  const cacheMB = early.cache && early.cache.limitMB !== undefined ? +early.cache.limitMB : 500; // the page cache on disk: Chromium itself keeps it under this size
+  if (cacheMB > 0) app.commandLine.appendSwitch('disk-cache-size', String(Math.round(cacheMB * 1048576)));
+} catch {}
 
 function loadSettings() {
   const s = readJson('settings.json', {});
-  settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, wallpaper: { ...DEFAULTS.wallpaper, ...(s.wallpaper || {}) }, startPage: { ...DEFAULTS.startPage, ...(s.startPage || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
+  settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, downloads: { ...DEFAULTS.downloads, ...(s.downloads || {}) }, cache: { ...DEFAULTS.cache, ...(s.cache || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, wallpaper: { ...DEFAULTS.wallpaper, ...(s.wallpaper || {}) }, startPage: { ...DEFAULTS.startPage, ...(s.startPage || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
   if (!['', 'orbit', 'stars', 'grid'].includes(settings.wallpaper.preset)) settings.wallpaper.preset = 'orbit'; // the old colour-blob wallpapers are gone
   if (!s.budgetV2 && s.budget) { const old = s.budget.ramMB; settings.budget.ramMB = { 1024: 800, 2048: 1500, 4096: 3000 }[old] || Math.max(400, Math.round((old || 2048) * 0.75 / 50) * 50); } // limits now count real (private) memory, which is smaller than the old figure
   settings.budgetV2 = true;
@@ -160,7 +167,7 @@ function publicState(full = true) {
     tabs: [...tabs.values()].map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, frozen: !!t.frozen, sleepAt: t.sleepAt || 0, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, darkSite: settings.features.darkSite && darkmode.isOnUrl(t.url), darkKey: settings.features.darkSite ? darkmode.keyOf(t.url) : '', private: !!t.private, bookmarked: features.isBookmarked(t.url) })),
     extensions: (() => { try { return features.listExtensions(); } catch { return []; } })(), snoozed: (state.snoozed || []).length,
     spaces: state.spaces, activeSpace: state.activeSpace, activeTab: state.activeTab, split: state.split,
-    archive: state.archive.slice(0, 80), bar: barForState(full), settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
+    archive: state.archive.slice(0, 80), bar: barForState(full), dl: features.downloadsLive(), settings, hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
     adblock: adblockStatus, blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(), update: updater.status(),
   };
 }
@@ -240,6 +247,22 @@ function pushHome(wc) {
   const targets = wc ? [wc] : [...tabs.values()].filter((t) => t.view && isHome(t.url) && !t.view.webContents.isDestroyed()).map((t) => t.view.webContents);
   for (const w of targets) w.executeJavaScript(js).catch(() => {});
 }
+// Nova's whole colour set from the start-page picture: the hue that carries the image tints the surfaces and gives the accent.
+function wallColors() {
+  try {
+    const img = nativeImage.createFromPath(userFile('wallpaper.jpg')); if (img.isEmpty()) return false;
+    settings.theme = { ...settings.theme, ...wallpalette.paletteFromBitmap(img.resize({ width: 48 }).toBitmap()) };
+    for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(settings.theme.page);
+    saveSettings(); layout(); pushHome(); push(); return true;
+  } catch (e) { console.error('wallColors', e.message); return false; }
+}
+function windowsAccent() { // the colour picked in Windows settings, applied as Nova's accent only
+  try {
+    const c = systemPreferences.getAccentColor(); if (!/^[0-9a-f]{6,8}$/i.test(c || '')) return false;
+    settings.theme = { ...settings.theme, accent: '#' + c.slice(0, 6).toLowerCase() };
+    saveSettings(); pushHome(); push(); return true;
+  } catch { return false; }
+}
 async function pickWallpaper() {
   const r = await dialog.showOpenDialog(win, { title: 'Choose a wallpaper for the start page', properties: ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }] });
   if (r.canceled) return false;
@@ -247,7 +270,7 @@ async function pickWallpaper() {
     let img = nativeImage.createFromPath(r.filePaths[0]); if (img.isEmpty()) throw new Error('empty');
     const { width } = img.getSize(); if (width > 2560) img = img.resize({ width: 2560, quality: 'good' });
     fs.writeFileSync(userFile('wallpaper.jpg'), img.toJPEG(86)); wallData = null;
-    settings.wallpaper = { ...settings.wallpaper, mode: 'image' }; saveSettings(); pushHome(); push(); return true;
+    settings.wallpaper = { ...settings.wallpaper, mode: 'image' }; saveSettings(); pushHome(); push(); if (settings.wallpaper.follow) wallColors(); return true;
   } catch (e) { toast('Could not use that image.'); return false; }
 }
 const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; } };
@@ -295,14 +318,14 @@ function activate(id, fromFocus) {
   if (!t) return;
   const prev = activeTab();
   if (prev && prev !== t) state.prevTab = prev.id;
-  if (prev && prev !== t) { capture(prev); prev.lastActive = Date.now(); sleeper.left(prev); }
+  if (prev && prev !== t) { features.onLeave(prev); capture(prev); prev.lastActive = Date.now(); sleeper.left(prev); }
   if (t.spaceId !== state.activeSpace) state.activeSpace = t.spaceId;
   state.activeTab = id;
   if (prev !== t) sleeper.arrived(t);
   t.lastActive = Date.now();
   if (state.split && (state.split === id || tabs.get(state.split)?.spaceId !== t.spaceId)) state.split = null;
   wake(t);
-  if (prev !== t) extbridge.activated(t);
+  if (prev !== t) { extbridge.activated(t); features.onArrive(t); }
   if (t.frozen) sleeper.thaw(t);
   sync();
   if (!fromFocus && !overlayOpen) t.view.webContents.focus();
@@ -610,7 +633,7 @@ function applyProfile(name) {
   const p = PROFILES[name]; if (!p) return;
   const { features: f, budget: b, adblock, ...rest } = p;
   Object.assign(settings, rest, { profile: name, features: { ...f }, budget: { ...b } });
-  try { setAdblock(adblock); darkmode.sync(); } finally { saveSettings(); layout(); push(); }
+  try { setAdblock(adblock); darkmode.sync(); webtools.sync(); } finally { saveSettings(); layout(); push(); }
 }
 
 // ---------- extensions (Electron supports a subset of Chrome extension APIs) ----------
@@ -652,6 +675,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
     openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
     addBackgroundTab: (o) => { const t = newTabObj({ url: o.url, title: o.title, favicon: o.favicon, spaceId: state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace, pinned: o.pinned }); push(); return t; },
   });
+  webtools.init({ sessions: () => sessions, settings: () => settings });
   darkmode.init({ sessions: () => sessions, settings: () => settings, saveSettings, tabs, toast: (m) => toast(m), push: () => push(), domainOf: (u) => (tldParse ? tldParse(u, { allowPrivateDomains: true }).domain : null) });
   const permissions = (wc, perm, cb, details) => {
     if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock'].includes(perm)) return cb(true);
@@ -686,7 +710,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   initAdblock(sessions);
   budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => visibleTabs().map((t) => t.id), toast: (m) => toast(m), push: () => push() });
   sleeper.init({ tabs, settings: () => settings, visibleIds: () => visibleTabs().map((t) => t.id), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
-  app.on('before-quit', () => sleeper.flush());
+  app.on('before-quit', () => { sleeper.flush(); features.shutdown(); });
   updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. Restart to finish the update.`); push(); } else if (e.type === 'status') push(); });
   ui.webContents.once('did-finish-load', () => setTimeout(() => { try { global.__novaBoot && global.__novaBoot.good(); } catch {} }, 8000)); // started fine: the update bundle is trusted from now on
   const feed = () => settings.updateFeed || updater.defaultFeed;
@@ -745,7 +769,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         if (a.patch.theme) { settings.theme = { ...DEFAULTS.theme, ...a.patch.theme }; if (!a.patch.theme.page) settings.theme.page = a.patch.theme.surface || DEFAULTS.theme.page; for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(settings.theme.page); }
         if (a.patch.keys) settings.keys = { ...DEFAULT_KEYS, ...a.patch.keys };
         if ('adblock' in a.patch) setAdblock(a.patch.adblock);
-        if ('features' in a.patch) darkmode.sync();
+        if ('features' in a.patch) { darkmode.sync(); webtools.sync(); }
         if ('darkSites' in a.patch) darkmode.refreshAll();
         if ('lowIsolation' in a.patch) toast('Restart Nova to apply this change.');
         if (a.patch.budget && !settings.budget.freeze) for (const x of tabs.values()) if (x.frozen) sleeper.thaw(x);
@@ -759,7 +783,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'applyProfile': applyProfile(a.name); break;
       case 'runSetup': closeOverlay(); setTimeout(() => openOverlay('wizard'), 60); break;
       case 'newPrivate': return features.handle('newPrivate', a, t);
-      case 'resetSettings': settings = { ...DEFAULTS, theme: { ...DEFAULTS.theme }, keys: { ...DEFAULT_KEYS }, features: { ...DEFAULTS.features }, budget: { ...DEFAULTS.budget }, firstRun: false, setupVersion: 2 }; darkmode.sync(); saveSettings(); layout(); push(); break;
+      case 'resetSettings': settings = { ...DEFAULTS, theme: { ...DEFAULTS.theme }, keys: { ...DEFAULT_KEYS }, features: { ...DEFAULTS.features }, budget: { ...DEFAULTS.budget }, downloads: { ...DEFAULTS.downloads }, cache: { ...DEFAULTS.cache }, firstRun: false, setupVersion: 2 }; darkmode.sync(); webtools.sync(); saveSettings(); layout(); push(); break;
       case 'finishSetup': settings.firstRun = false; settings.setupVersion = 2; saveSettings(); closeOverlay(); push(); break;
       case 'loadExtension': {
         const r = await dialog.showOpenDialog(win, { title: 'Select an unpacked extension folder', properties: ['openDirectory'] });
@@ -771,6 +795,8 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'keysPause': keysPaused = !!a.on; break;
       case 'reorder': { const arr = [...tabs.entries()], i = arr.findIndex(([k]) => k === a.id); if (i < 0) break; const [item] = arr.splice(i, 1); const j = arr.findIndex(([k]) => k === a.target); arr.splice(j < 0 ? arr.length : a.after ? j + 1 : j, 0, item); tabs.clear(); arr.forEach(([k, v]) => tabs.set(k, v)); push(); } break;
       case 'pickWallpaper': return pickWallpaper();
+      case 'wallColors': return wallColors();
+      case 'windowsAccent': return windowsAccent();
       case 'dragStart': startDrag(); break;
       case 'dragEnd': endDrag(); break;
       case 'external': shell.openExternal(a.url); break;

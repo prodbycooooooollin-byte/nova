@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const extmgr = require('./extmgr');
+const { createDownloader } = require('./downloader');
 
 let C; // context from main.js
 let history = [], bookmarks = [], snapshots = [], downloads = [], icons = {};
@@ -113,15 +114,63 @@ function onAudio(t) { // "one sound at a time"
 }
 
 // ---------- downloads ----------
+// Big files go through Nova's accelerated downloader (downloader.js): several connections at once, pause and resume, survives a restart.
+// Chromium's own download starts first (so the file name and the URL are known), is held for a moment while the server is asked what it
+// supports, and is either handed over or simply let go on, so nothing is ever lost when a server cannot do ranges.
+let fast = null;
+const dlCfg = () => ({ fast: true, connections: 8, limitMBs: 0, minMB: 8, ...(C.settings().downloads || {}) });
+const dlOptions = () => { const c = dlCfg(); return { connections: Math.max(1, Math.min(32, +c.connections || 8)), minSplitMB: Math.max(1, +c.minMB || 8), limitBps: Math.max(0, +c.limitMBs || 0) * 1048576 }; };
+function fastDownloader() {
+  if (fast) return fast;
+  fast = createDownloader({
+    fetch: (u, i) => C.ses.fetch(u, { credentials: 'include', ...i }),
+    stateFile: file('downloads-active.json'),
+    options: dlOptions(),
+    onChange: (s) => {
+      if (['done', 'error', 'cancelled'].includes(s.state)) { // finished jobs move into the normal list
+        if (s.state === 'done') { downloads.unshift({ name: s.name, path: s.path, state: 'completed', t: Date.now(), accel: true }); C.toast(`Downloaded ${s.name}. Ctrl+K › “downloads” to open it.`); }
+        else if (s.state === 'error') { downloads.unshift({ name: s.name, path: s.path, state: 'interrupted', t: Date.now(), accel: true }); C.toast(`Download failed: ${s.name} (${s.error})`); }
+        downloads.length = Math.min(downloads.length, 30);
+        setTimeout(() => fast && fast.remove(s.id), 0);
+      }
+      C.push();
+    },
+  });
+  fast.restore();
+  return fast;
+}
+const downloadsLive = () => { if (!fast) return []; fast.setOptions(dlOptions()); return fast.list().filter((j) => ['downloading', 'paused', 'queued'].includes(j.state)); };
 function initDownloads(ses) {
-  ses.on('will-download', (_e, item) => {
+  ses.on('will-download', (_e, item, wc) => {
     const dir = app.getPath('downloads'); let name = item.getFilename(), p = path.join(dir, name), i = 1;
     const ext = path.extname(name), base = path.basename(name, ext);
     while (fs.existsSync(p)) p = path.join(dir, `${base} (${i++})${ext}`);
     item.setSavePath(p);
-    const d = { name: path.basename(p), path: p, state: 'progressing', t: Date.now() }; downloads.unshift(d); downloads.length = Math.min(downloads.length, 30);
-    C.toast(`Downloading ${d.name}…`);
-    item.on('done', (_ev, state) => { d.state = state; C.toast(state === 'completed' ? `Downloaded ${d.name}. Ctrl+K › “downloads” to open it.` : `Download ${state}: ${d.name}`); });
+    const d = { name: path.basename(p), path: p, state: 'progressing', t: Date.now() };
+    const url = item.getURL(), cfg = dlCfg();
+    const candidate = cfg.fast !== false && ses === C.ses && /^https?:/i.test(url);
+    const normal = () => { downloads.unshift(d); downloads.length = Math.min(downloads.length, 30); C.toast(`Downloading ${d.name}…`); };
+    item.on('done', (_ev, state) => {
+      if (d.handedOver) return;
+      d.state = state; C.toast(state === 'completed' ? `Downloaded ${d.name}. Ctrl+K › “downloads” to open it.` : `Download ${state}: ${d.name}`);
+    });
+    if (!candidate) return normal();
+    try { item.pause(); } catch { return normal(); }
+    (async () => {
+      try {
+        const f = fastDownloader(); f.setOptions(dlOptions());
+        let ref = ''; try { ref = wc && !wc.isDestroyed() ? wc.getURL() : ''; } catch { /* page gone */ }
+        const headers = /^https?:/i.test(ref) ? { Referer: ref } : {};
+        const info = await f.probe(url, headers);
+        if (info.ok && info.ranges && info.size >= dlOptions().minSplitMB * 1048576) {
+          d.handedOver = true; item.cancel();
+          const j = f.add({ url, headers, dir, name: item.getFilename(), probed: info });
+          C.toast(`Downloading ${j.name || item.getFilename()} with up to ${dlOptions().connections} connections…`); C.push(); return;
+        }
+      } catch (e) { console.error('fast download', e.message); }
+      try { item.resume(); } catch { /* the download was cancelled meanwhile */ }
+      normal();
+    })();
   });
 }
 
@@ -197,6 +246,7 @@ function init(ctx) {
   setInterval(snapshot, 5 * 60e3); setTimeout(snapshot, 60e3);
   setInterval(wakeSnoozed, 30e3);
   initDownloads(ctx.ses); if (ctx.privSes) initDownloads(ctx.privSes);
+  setTimeout(cacheGuard, 45e3); setInterval(cacheGuard, 30 * 60e3);
 }
 
 // IPC commands that return data or are purely feature-driven
@@ -227,6 +277,10 @@ async function handle(name, a, t) {
     case 'peek': openPeek(a.url); return;
     case 'peekOpen': { const u = peekUrl() || a.url; C.closeOverlay(); C.openUrl(u, { forceNew: true }); return; }
     case 'showDownload': shell.showItemInFolder(a.path); return;
+    case 'openDownloadsFolder': shell.openPath(app.getPath('downloads')); return;
+    case 'dlPause': fastDownloader().pause(a.id); C.push(); return;
+    case 'dlResume': fastDownloader().resume(a.id); C.push(); return;
+    case 'dlCancel': fastDownloader().cancel(a.id); C.push(); return;
     case 'installExt': return installExtension(a.id);
     case 'hub': return hub();
     case 'storeSearch': try { return await extmgr.search(a.q); } catch (e) { return { items: [], total: 0, error: e.message }; }
@@ -240,6 +294,8 @@ async function handle(name, a, t) {
     case 'removeBookmark': bookmarks = bookmarks.filter((b) => b.url !== a.url); saveSoon('bookmarks.json', () => bookmarks); C.push(); return;
     case 'removeHistory': history = history.filter((h) => h.url !== a.url); saveSoon('history.json', () => history); return;
     case 'clearData': return clearData(a.what || {}, a.range);
+    case 'cacheInfo': { let size = 0; try { size = await C.ses.getCacheSize(); } catch { /* not readable right now */ } return { size, limit: cacheCfg().limitMB * 1048576 }; }
+    case 'cacheClean': { await emptyCache(); let size = 0; try { size = await C.ses.getCacheSize(); } catch { /* ignore */ } return { size }; }
     case 'suggest': return suggest(a.q);
     case 'importPart': { // one category at a time so the interface can show live progress
       if (a.part === 'bookmarks') return { n: importBookmarksFrom(a.id) };
@@ -339,6 +395,27 @@ function library(kind, q = '') {
   if (kind === 'downloads') return downloads.slice(0, 100);
   return [];
 }
+// The page cache on disk. Chromium keeps it under the limit by itself (the disk-cache-size switch set at start); this is the safety net
+// that empties it if it ever grows well past the limit, checked half an hour at a time and once shortly after start.
+const cacheCfg = () => ({ limitMB: 500, auto: true, ...(C.settings().cache || {}) });
+async function emptyCache() { try { await C.ses.clearCache(); await C.ses.clearCodeCaches({ urls: [] }); } catch { /* cache busy */ } }
+async function cacheGuard() {
+  const c = cacheCfg(); if (!c.auto || !(c.limitMB > 0)) return;
+  try { if ((await C.ses.getCacheSize()) > c.limitMB * 1048576 * 1.25) await emptyCache(); } catch { /* ignore */ }
+}
+// Floating video: leaving a tab that is playing a video pops the video out, coming back puts it back.
+// The request is sent before the tab is hidden, as if you had clicked the button yourself.
+const autoPipped = new Set();
+function onLeave(t) {
+  if (!t || !t.view || !t.audible || !C.settings().features.autoPip) return;
+  const wc = t.view.webContents; if (wc.isDestroyed()) return;
+  wc.executeJavaScript("(()=>{if(document.pictureInPictureElement)return 'no';const v=[...document.querySelectorAll('video')].filter((v)=>!v.paused&&!v.ended&&v.readyState>2&&v.clientWidth>160&&!v.disablePictureInPicture).sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0];if(!v)return 'no';v.requestPictureInPicture().catch(()=>{});return 'ok'})()", true)
+    .then((r) => { if (r === 'ok') autoPipped.add(t.id); }).catch(() => { /* page gone */ });
+}
+function onArrive(t) {
+  if (!t || !autoPipped.delete(t.id) || !t.view) return;
+  const wc = t.view.webContents; if (!wc.isDestroyed()) wc.executeJavaScript('document.pictureInPictureElement&&document.exitPictureInPicture().catch(()=>{})', true).catch(() => { /* page gone */ });
+}
 async function clearData(what, range) {
   const since = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity }[range] ?? Infinity, cut = Date.now() - since, ses = C.ses;
   if (what.history) { C.forgetRevisits(); history = since === Infinity ? [] : history.filter((h) => h.t < cut); C.writeJson('history.json', history); if (since === Infinity) { icons = {}; C.writeJson('icons.json', icons); } }
@@ -352,4 +429,4 @@ async function suggest(q) {
   const tpl = C.settings().searchEngine, e = ENGINE_SUGGEST.find(([h]) => tpl.includes(h)); if (!e || !C.settings().suggestions || !q || q.length < 2) return [];
   try { const r = await C.ses.fetch(e[1](encodeURIComponent(q)), { signal: AbortSignal.timeout(1800) }); const j = await r.json(); return (Array.isArray(j[1]) ? j[1] : []).slice(0, 5).map(String); } catch { return []; }
 }
-module.exports = { init, hostVisits, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, barBookmarks, isBookmarked };
+module.exports = { init, onLeave, onArrive, downloadsLive, shutdown: () => { if (fast) fast.shutdown(); }, hostVisits, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, barBookmarks, isBookmarked };
