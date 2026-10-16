@@ -115,7 +115,7 @@ document.addEventListener('error', (e) => { const el = e.target; if (el.tagName 
 
 function render() {
   if (!S) return;
-  if (typeof dragTab !== 'undefined' && dragTab !== null) { deferredRender = true; return; }
+  if (typeof dragTab !== 'undefined' && dragTab !== null) { if (Date.now() - dragSince < 5000) { deferredRender = true; return; } dragTab = null; dropInfo = null; } // a drag that never ended must not freeze the tab list
   applySettings();
   const cur = S.tabs.find((t) => t.id === S.activeTab);
   $('#nav').innerHTML = `<img id="mark" src="mark.svg" alt="">` + ibtn('back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn('fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn('reload', 'Reload (Ctrl+R)', 'reload');

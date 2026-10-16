@@ -18,9 +18,11 @@ addEventListener('pointerup', stopDrag); addEventListener('pointercancel', stopD
 document.addEventListener('dblclick', (e) => { if (!overlay && e.target.closest('#chrome') && !e.target.closest(NODRAG)) nova.cmd('win', { op: 'max' }); });
 
 // ---------- drag tabs to reorder ----------
-let dragTab = null, dropInfo = null, deferredRender = false;
+let dragTab = null, dropInfo = null, deferredRender = false, dragSince = 0;
+// pressing a close button must never turn into a tab drag
+document.addEventListener('mousedown', (e) => { if (e.target.closest('[data-close],[data-mute]')) { const t = e.target.closest('.tab'); if (t) t.draggable = false; } }, true);
 const clearDrop = () => document.querySelectorAll('.drop-before,.drop-after').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
-document.addEventListener('dragstart', (e) => { const t = e.target.closest('.tab[data-tab]'); if (!t) return; dragTab = +t.dataset.tab; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(dragTab)); setTimeout(() => t.classList.add('dragging'), 0); });
+document.addEventListener('dragstart', (e) => { const t = e.target.closest('.tab[data-tab]'); if (!t) return; dragTab = +t.dataset.tab; dragSince = Date.now(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(dragTab)); setTimeout(() => t.classList.add('dragging'), 0); });
 document.addEventListener('dragover', (e) => {
   if (dragTab === null) return; const t = e.target.closest('.tab[data-tab]'); if (!t || +t.dataset.tab === dragTab) return;
   e.preventDefault(); const r = t.getBoundingClientRect(), after = S.settings.layout === 'top' ? e.clientX > r.left + r.width / 2 : e.clientY > r.top + r.height / 2;

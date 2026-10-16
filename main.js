@@ -152,7 +152,9 @@ let blockedCount = 0;
 
 // ---------- tabs ----------
 function newTabObj(o) {
-  const t = { id: nextId++, spaceId: o.spaceId || state.activeSpace, url: o.url || HOME, title: o.title || (!o.url || o.url === HOME ? 'New tab' : ''), favicon: o.favicon || '', pinned: !!o.pinned, private: !!o.private, lastActive: o.lastActive || Date.now(), view: null, attached: false, loading: false, audible: false, canBack: false, canForward: false, thumb: '' };
+  const id = o.id != null && !tabs.has(o.id) ? o.id : nextId++;
+  nextId = Math.max(nextId, id + 1);
+  const t = { id, spaceId: o.spaceId || state.activeSpace, url: o.url || HOME, title: o.title || (!o.url || o.url === HOME ? 'New tab' : ''), favicon: o.favicon || '', pinned: !!o.pinned, private: !!o.private, lastActive: o.lastActive || Date.now(), view: null, attached: false, loading: false, audible: false, canBack: false, canForward: false, thumb: '' };
   tabs.set(t.id, t);
   return t;
 }
@@ -570,7 +572,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
 
   // restore tabs lazily (all asleep except the active one)
   if (saved?.tabs?.length) {
-    for (const s of saved.tabs) { const t = newTabObj(s); t.id = s.id; nextId = Math.max(nextId, s.id + 1); tabs.delete(t.id); tabs.set(s.id, { ...t, id: s.id }); }
+    for (const s of saved.tabs) if (s && s.id != null && !tabs.has(s.id)) newTabObj(s); // saved states from older versions can list a tab twice
     const sp = [...tabs.values()].filter((t) => t.spaceId === state.activeSpace);
     const pick = tabs.get(saved.activeTab) || sp[0] || [...tabs.values()][0];
     ui.webContents.once('did-finish-load', () => activate(pick.id));
