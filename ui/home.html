@@ -10,26 +10,31 @@
 * { box-sizing:border-box; margin:0; }
 html,body { height:100%; background:var(--bg); color:var(--text); font:450 14px/1.4 'Inter',system-ui,sans-serif; letter-spacing:-.006em; overflow:hidden; -webkit-font-smoothing:antialiased; user-select:none; transition:background-color .35s,color .35s; }
 .wp, .wp2 { position:fixed; inset:0; transition:opacity .4s; }
-/* wallpaper presets, all built from the theme's accent colour */
-.wp[data-wall="aurora"] { background:radial-gradient(60% 50% at 18% 8%,color-mix(in srgb,var(--accent) 30%,transparent),transparent 70%),radial-gradient(45% 45% at 88% 22%,color-mix(in srgb,var(--accent) 45%,#2dd4bf 55%) 22%,transparent 70%),radial-gradient(70% 55% at 50% 112%,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%); }
-.wp[data-wall="nebula"] { background:radial-gradient(50% 60% at 25% 20%,color-mix(in srgb,var(--accent) 34%,transparent),transparent 70%),radial-gradient(55% 50% at 80% 75%,color-mix(in srgb,var(--accent) 40%,#ff5fa2 60%) 24%,transparent 70%); }
-.wp[data-wall="ember"] { background:radial-gradient(60% 55% at 80% 105%,color-mix(in srgb,var(--accent) 38%,transparent),transparent 70%),radial-gradient(40% 40% at 12% 12%,color-mix(in srgb,var(--accent) 18%,#ff3d6e 40%) 18%,transparent 70%); }
-.wp[data-wall="deep"] { background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 16%,transparent),transparent 55%),radial-gradient(70% 50% at 50% 100%,color-mix(in srgb,var(--accent) 28%,transparent),transparent 70%); }
-.wp[data-wall="bloom"] { background:radial-gradient(40% 45% at 20% 80%,color-mix(in srgb,var(--accent) 34%,transparent),transparent 70%),radial-gradient(45% 45% at 78% 18%,color-mix(in srgb,var(--accent) 42%,#ffd0a0 58%) 20%,transparent 70%); }
-.wp[data-wall="forest"] { background:radial-gradient(55% 55% at 15% 100%,color-mix(in srgb,var(--accent) 30%,transparent),transparent 70%),radial-gradient(50% 40% at 90% 0%,color-mix(in srgb,var(--accent) 40%,#2f8fff 60%) 14%,transparent 70%); }
-.wp[data-wall="grid"] { background-image:linear-gradient(color-mix(in srgb,var(--accent) 12%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--accent) 12%,transparent) 1px,transparent 1px),radial-gradient(60% 50% at 50% 0%,color-mix(in srgb,var(--accent) 20%,transparent),transparent 70%); background-size:44px 44px,44px 44px,100% 100%; mask-image:radial-gradient(90% 80% at 50% 30%,#000 30%,transparent 100%); }
-.wp[data-wall="paper"] { background:radial-gradient(70% 50% at 50% 0%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 70%); }
+/* backgrounds: no colour blobs, only a calm vignette; the motion comes from the orbit canvas */
+.wp[data-wall="orbit"], .wp[data-wall="stars"] { background:radial-gradient(70% 60% at 50% 44%,color-mix(in srgb,var(--accent) 6%,transparent),transparent 72%),radial-gradient(130% 110% at 50% 50%,transparent 52%,color-mix(in srgb,var(--chrome) 75%,transparent) 100%); }
+.wp[data-wall="grid"] { background-image:linear-gradient(color-mix(in srgb,var(--accent) 10%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,transparent) 1px,transparent 1px); background-size:44px 44px; mask-image:radial-gradient(90% 80% at 50% 40%,#000 25%,transparent 100%); }
 .wp2 { background-size:cover; background-position:center; opacity:0; filter:blur(var(--blurv)); transform:scale(1.03); } .wp2.on { opacity:1; } .shade { position:fixed; inset:0; background:var(--bg); opacity:0; pointer-events:none; } .shade.on { opacity:var(--dimv); }
-canvas { position:fixed; inset:0; width:100%; height:100%; opacity:.5; transition:opacity .4s; }
-.nostars canvas { opacity:0; } .plain .wp, .plain .wp2, .plain .shade, .plain canvas { display:none; }
+canvas { position:fixed; inset:0; width:100%; height:100%; pointer-events:none; }
+#sky { opacity:.55; transition:opacity .6s; } .nostars #sky { opacity:0; }
+#orrery { position:fixed; inset:0; pointer-events:none; opacity:0; transition:opacity 1.6s ease, transform 1.2s cubic-bezier(.2,.7,.2,1); contain:strict; } .orb-on #orrery { opacity:1; }
+#orings { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+#oglow { position:absolute; border-radius:50%; background:radial-gradient(circle,color-mix(in srgb,var(--accent) 22%,transparent),transparent 68%); }
+.ob { position:absolute; left:0; top:0; border-radius:50%; background:var(--c); color:var(--c); box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 14%,transparent); will-change:transform; }
+.ob::before { content:''; position:absolute; right:50%; top:50%; width:var(--tail,52px); height:max(1.4px,35%); transform:translateY(-50%); background:linear-gradient(90deg,transparent,var(--c)); opacity:.55; }
+#shoot { position:absolute; width:150px; height:1.4px; background:linear-gradient(90deg,transparent,var(--text)); opacity:0; }
+#shoot.go { animation:shoot .9s cubic-bezier(.3,.6,.4,1) forwards; } @keyframes shoot { from { opacity:0; transform:rotate(var(--a)) translateX(0); } 18% { opacity:.85; } to { opacity:0; transform:rotate(var(--a)) translateX(720px); } }
+
+.plain .wp, .plain .wp2, .plain .shade, .plain canvas { display:none; }
 main { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-bottom:7vh; }
 .top { display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:26px; animation:up .7s cubic-bezier(.2,.8,.2,1) both; }
 .mark { width:30px; height:30px; }
 #hi { color:var(--dim); font-size:14px; letter-spacing:.01em; } .nogreet #hi { display:none; }
 form { position:relative; width:min(620px,88vw); animation:up .7s cubic-bezier(.2,.8,.2,1) .08s both; }
-input { width:100%; height:56px; border-radius:16px; border:0; outline:0; padding:0 70px 0 54px; font:inherit; font-size:16px; color:var(--text); background:color-mix(in srgb,var(--text) 6%,var(--bg)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 10%,transparent); transition:box-shadow .2s,background .2s,color .35s; user-select:text; backdrop-filter:blur(8px); }
+input { width:100%; height:56px; border-radius:16px; border:0; outline:0; padding:0 70px 0 54px; font:inherit; font-size:16px; color:var(--text); background:color-mix(in srgb,var(--bg) 58%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 11%,transparent),0 10px 30px -12px rgba(0,0,0,.45); transition:box-shadow .2s,background .2s,color .35s; user-select:text; backdrop-filter:blur(16px) saturate(1.2); }
+.plain input { background:color-mix(in srgb,var(--text) 6%,var(--bg)); }
 input::placeholder { color:var(--dim); }
-input:focus { background:color-mix(in srgb,var(--text) 8%,var(--bg)); box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 75%,transparent),0 0 0 5px color-mix(in srgb,var(--accent) 16%,transparent); }
+input:focus { background:color-mix(in srgb,var(--bg) 46%,transparent); box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 75%,transparent),0 0 0 5px color-mix(in srgb,var(--accent) 16%,transparent); }
+.plain input:focus { background:color-mix(in srgb,var(--text) 8%,var(--bg)); }
 form svg { position:absolute; left:20px; top:19px; width:18px; height:18px; stroke:var(--dim); fill:none; stroke-width:1.75; stroke-linecap:round; }
 kbd { font:500 11px 'Inter'; color:var(--dim); background:color-mix(in srgb,var(--text) 8%,transparent); border-radius:6px; padding:3px 7px; letter-spacing:.02em; }
 form kbd { position:absolute; right:16px; top:18px; }
@@ -47,7 +52,7 @@ form kbd { position:absolute; right:16px; top:18px; }
 </head>
 <body>
 <div class="wp" id="wp"></div><div class="wp2" id="wp2"></div><div class="shade" id="shade"></div>
-<canvas id="sky"></canvas>
+<canvas id="sky"></canvas><div id="orrery" aria-hidden="true"><svg id="orings"></svg><div id="oglow"></div><div id="obodies"></div><div id="shoot"></div></div>
 <main>
   <div class="top"><img class="mark" src="mark.svg" alt=""><div id="hi"></div></div>
   <form id="f"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search or enter address" autocomplete="off" spellcheck="false" autofocus><kbd>Ctrl K</kbd></form>
@@ -76,27 +81,97 @@ const tips = '<div class="tips"><div><kbd>Ctrl</kbd><kbd>K</kbd>search anything<
 extra.innerHTML = tips;
 // the browser pushes your most visited sites (with their real icons) once this page has loaded
 window.novaSites = (sites) => {
-  if (!sites || !sites.length) { extra.innerHTML = tips; return; }
+  if (!sites || !sites.length) { extra.innerHTML = tips; requestAnimationFrame(() => running && buildOrrery()); return; }
   extra.innerHTML = `<div class="sites">${sites.slice(0, 8).map((s) => `<a class="site" href="${esc(s.url)}"><div class="ic" style="${s.icon ? '' : `background:linear-gradient(135deg,hsl(${hue(s.host)} 50% 46%),hsl(${(hue(s.host) + 30) % 360} 50% 36%))`}">${s.icon ? `<img src="${s.icon}" alt="">` : esc((s.host[0] || '?').toUpperCase())}</div><span class="n">${esc(s.host.replace(/\.[a-z]+$/, ''))}</span></a>`).join('')}</div>`;
 };
-// stars: drawn once, redrawn when the accent changes (no animation, so the page costs nothing)
-const c = document.getElementById('sky'), g = c.getContext('2d'), d = devicePixelRatio || 1;
-const paint = () => {
-  c.width = innerWidth * d; c.height = innerHeight * d; g.clearRect(0, 0, c.width, c.height);
-  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const accent = getComputedStyle(root).getPropertyValue('--accent'), light = getComputedStyle(root).getPropertyValue('--text').trim();
-  for (let i = 0; i < Math.round(innerWidth * innerHeight / 9000); i++) { const z = rnd() * .8 + .2; g.globalAlpha = z * .8; g.fillStyle = rnd() < .1 ? accent : light; g.beginPath(); g.arc(rnd() * c.width, rnd() * c.height, z * 1.1 * d, 0, 6.283); g.fill(); }
-};
-if (!root.classList.contains('plain')) { paint(); addEventListener('resize', paint); }
+
+// ---- stars: a still field, redrawn only when size or colours change ----
+const sky = document.getElementById('sky'), sg = sky.getContext('2d'), D = Math.min(devicePixelRatio || 1, 1.5);
+const cssv = (n) => getComputedStyle(root).getPropertyValue(n).trim();
+function paintStars() {
+  sky.width = innerWidth * D; sky.height = innerHeight * D; sg.setTransform(D, 0, 0, D, 0, 0); sg.clearRect(0, 0, innerWidth, innerHeight);
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const accent = cssv('--accent'), light = cssv('--text'), W = innerWidth, H = innerHeight;
+  for (let i = 0, n = Math.round(W * H / 8500); i < n; i++) { const z = rnd() * .75 + .25; sg.globalAlpha = z * .75; sg.fillStyle = rnd() < .08 ? accent : light; sg.beginPath(); sg.arc(rnd() * W, rnd() * H, z * 1.05, 0, 6.283); sg.fill(); }
+  sg.strokeStyle = light; sg.lineWidth = .8; // a few brighter stars with a small glint
+  for (let i = 0; i < 7; i++) { const x = rnd() * W, y = rnd() * H, l = 3 + rnd() * 4; sg.globalAlpha = .55; sg.beginPath(); sg.moveTo(x - l, y); sg.lineTo(x + l, y); sg.moveTo(x, y - l); sg.lineTo(x, y + l); sg.stroke(); }
+}
+
+// ---- orbit: a quiet orrery around the Nova mark. SVG rings plus CSS-animated bodies: the page costs next to no CPU ----
+const orrery = document.getElementById('orrery'), orings = document.getElementById('orings'), obodies = document.getElementById('obodies'), oglow = document.getElementById('oglow'), shoot = document.getElementById('shoot');
+const markEl = document.querySelector('.mark');
+const TILT = -17; // degrees
+const ORBITS = [ // r in design units, period in seconds, flatten, bodies {phase 0..1, size px, colour}
+  { r: 150, T: 70, f: .36, b: [{ p: .05, s: 4 }] },
+  { r: 250, T: 115, f: .36, b: [{ p: .38, s: 5, c: 'a' }] },
+  { r: 380, T: 180, f: .36, b: [{ p: .7, s: 6 }, { p: .2, s: 3 }] },
+  { r: 540, T: 270, f: .36, b: [{ p: .88, s: 4.5, c: 'w' }] },
+  { r: 740, T: 400, f: .36, b: [{ p: .5, s: 6.5 }] },
+  { r: 980, T: 560, f: .36, b: [{ p: .14, s: 4, c: 'a' }] },
+  { r: 470, T: 230, f: .2, tilt: 58, dash: true, b: [{ p: .3, s: 4.5, c: 'a' }] },
+];
+let running = false, shootTimer = 0, tickTimer = 0, live = [], lastInput = Date.now();
+const startTick = () => { if (!tickTimer && running && !document.hidden) tickTimer = setInterval(() => { if (Date.now() - lastInput > 60000) { stopTick(); return; } tick(); }, 167); };
+const stopTick = () => { clearInterval(tickTimer); tickTimer = 0; };
+function buildOrrery() {
+  const W = innerWidth, H = innerHeight, u = Math.min(W, H * 1.8) / 1000, m = markEl.getBoundingClientRect();
+  const cx = m.left + m.width / 2, cy = m.top + m.height / 2, accent = cssv('--accent'), light = cssv('--text'), now = performance.now() / 1000;
+  const rot = (x, y, deg) => { const r = deg * Math.PI / 180; return [cx + x * Math.cos(r) - y * Math.sin(r), cy + x * Math.sin(r) + y * Math.cos(r)]; };
+  let rings = '', bodies = ''; const spec = [];
+  for (const o of ORBITS) {
+    const a = o.r * u, b = a * o.f, tl = o.tilt ?? TILT, op = o.dash ? .14 : Math.max(.07, .2 - o.r / 6500);
+    rings += `<ellipse cx="${cx}" cy="${cy}" rx="${a}" ry="${b}" transform="rotate(${tl} ${cx} ${cy})" fill="none" stroke="${accent}" stroke-opacity="${op}" stroke-width="1"${o.dash ? ' stroke-dasharray="3 7"' : ''}/>`;
+    for (const bd of o.b) {
+      const col = bd.c === 'a' ? accent : bd.c === 'w' ? '#ffd9a3' : light, sz = bd.s;
+      bodies += `<i class="ob" style="--c:${col};--tail:${Math.round(40 + sz * 3)}px;width:${sz}px;height:${sz}px;margin:${-sz / 2}px 0 0 ${-sz / 2}px"></i>`; spec.push({ a, b, tl: tl * Math.PI / 180, T: o.T, p: bd.p });
+    }
+  }
+  orings.setAttribute('viewBox', `0 0 ${W} ${H}`); orings.innerHTML = rings; obodies.innerHTML = bodies;
+  live = spec.map((o, i) => ({ ...o, el: obodies.children[i], cx, cy })); tick();
+  const R = 230 * u; oglow.style.cssText = `left:${cx - R}px;top:${cy - R}px;width:${R * 2}px;height:${R * 2}px`;
+}
+function tick() { // ten updates a second: the bodies move a pixel or two per step, and the page stays idle in between
+  const t = performance.now() / 1000;
+  for (const o of live) {
+    const th = (o.p + t / o.T) * 6.2832, c = Math.cos(th), sn = Math.sin(th), ct = Math.cos(o.tl), st = Math.sin(o.tl);
+    const x = o.cx + o.a * c * ct - o.b * sn * st, y = o.cy + o.a * c * st + o.b * sn * ct;
+    const dx = -o.a * sn * ct - o.b * c * st, dy = -o.a * sn * st + o.b * c * ct;
+    o.el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) rotate(${Math.atan2(dy, dx).toFixed(3)}rad)`;
+  }
+}
+function scheduleShoot() {
+  clearTimeout(shootTimer);
+  shootTimer = setTimeout(() => {
+    if (running && !document.hidden) {
+      shoot.style.cssText = `left:${Math.random() * innerWidth * .6}px;top:${Math.random() * innerHeight * .3}px;--a:${(22 + Math.random() * 18).toFixed(0)}deg`; shoot.classList.remove('go'); void shoot.offsetWidth; shoot.classList.add('go');
+    }
+    scheduleShoot();
+  }, 18000 + Math.random() * 20000);
+}
+let mtimer = 0;
+addEventListener('keydown', () => { lastInput = Date.now(); startTick(); }, { passive: true });
+addEventListener('mousemove', (e) => { lastInput = Date.now(); startTick(); if (mtimer || !running) return; mtimer = setTimeout(() => { mtimer = 0; }, 120); orrery.style.transform = `translate3d(${(-(e.clientX / innerWidth - .5) * 16).toFixed(1)}px,${(-(e.clientY / innerHeight - .5) * 11).toFixed(1)}px,0)`; }, { passive: true });
+function syncOrbit() {
+  const want = !root.classList.contains('plain') && wp.dataset.wall === 'orbit' && !root.classList.contains('noimage');
+  if (want) { buildOrrery(); if (!running) { running = true; root.classList.add('orb-on'); scheduleShoot(); } lastInput = Date.now(); startTick(); }
+  else if (running) { running = false; clearTimeout(shootTimer); stopTick(); live = []; root.classList.remove('orb-on'); orings.innerHTML = ''; obodies.innerHTML = ''; }
+}
+const refresh = () => { if (!root.classList.contains('plain')) { paintStars(); } syncOrbit(); };
+document.addEventListener('visibilitychange', () => { stopTick(); if (!document.hidden && running) { lastInput = Date.now(); tick(); startTick(); } });
+let rz = 0; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(refresh, 120); });
+requestAnimationFrame(refresh); // after first layout, so the orbits find the mark
 // live theme updates from the browser: colours, wallpaper, switches
 window.novaTheme = (t) => {
   apply(t); wp.dataset.wall = t.wall || '';
+  if (t.fx !== undefined) root.classList.toggle('plain', !t.fx);
   rs.setProperty('--dimv', (t.dim_amount ?? 25) / 100); rs.setProperty('--blurv', (t.blur ?? 0) + 'px');
   const img = document.getElementById('wp2'), shade = document.getElementById('shade');
   if (t.image) { img.style.backgroundImage = `url(${t.image})`; img.classList.add('on'); shade.classList.add('on'); wp.style.opacity = 0; } else { img.classList.remove('on'); shade.classList.remove('on'); wp.style.opacity = 1; }
-  root.classList.toggle('nostars', t.stars === false || !!t.image); root.classList.toggle('nosites', t.sites === false); root.classList.toggle('nogreet', t.greeting === false);
-  if (!root.classList.contains('plain')) paint();
+  root.classList.toggle('noimage', !!t.image);
+  root.classList.toggle('nostars', t.stars === false || !!t.image || !['orbit', 'stars'].includes(t.wall)); root.classList.toggle('nosites', t.sites === false); root.classList.toggle('nogreet', t.greeting === false);
+  refresh();
 };
+if (!['orbit', 'stars'].includes(wp.dataset.wall)) root.classList.add('nostars');
 </script>
 </body>
 </html>

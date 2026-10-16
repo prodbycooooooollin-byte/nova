@@ -1,15 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2e2578"/><stop offset=".55" stop-color="#15103a"/><stop offset="1" stop-color="#08061a"/></linearGradient>
-    <radialGradient id="hl" cx=".28" cy=".18" r=".75"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></radialGradient>
-    <linearGradient id="star" x1=".15" y1="0" x2=".85" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#d9d2ff"/><stop offset="1" stop-color="#8f80ff"/></linearGradient>
-    <radialGradient id="halo" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#8b7dff" stop-opacity=".6"/><stop offset="1" stop-color="#8b7dff" stop-opacity="0"/></radialGradient>
-    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset=".5" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity=".12"/></linearGradient>
+    <linearGradient id="tile" x1=".12" y1="0" x2=".88" y2="1"><stop offset="0" stop-color="#b3a7ff"/><stop offset=".48" stop-color="#6f5eff"/><stop offset="1" stop-color="#3426cf"/></linearGradient>
+    <radialGradient id="gloss" cx=".28" cy=".06" r=".95"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="12" stdDeviation="13" flood-color="#150b6e" flood-opacity=".55"/></filter>
   </defs>
-  <rect width="512" height="512" rx="112" fill="url(#tile)"/>
-  <rect width="512" height="512" rx="112" fill="url(#hl)"/>
-  <circle cx="256" cy="256" r="236" fill="url(#halo)"/>
-  <path d="M256 54C272 190 322 240 458 256 322 272 272 322 256 458 240 322 190 272 54 256 190 240 240 190 256 54Z" fill="url(#star)"/>
-  <circle cx="256" cy="256" r="26" fill="#fff"/>
-  <rect x="3" y="3" width="506" height="506" rx="109" fill="none" stroke="url(#rim)" stroke-width="3"/>
+  <rect width="512" height="512" rx="116" fill="url(#tile)"/>
+  <rect width="512" height="512" rx="116" fill="url(#gloss)"/>
+  <ellipse cx="256" cy="256" rx="196" ry="66" transform="rotate(-24 256 256)" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="12"/>
+  <circle cx="412" cy="162" r="19" fill="#fff"/>
+  <path d="M256 74C273 206 308 239 438 256 308 273 273 306 256 438 239 306 204 273 74 256 204 239 239 206 256 74Z" fill="#fff" filter="url(#sh)"/>
+  <rect x="2" y="2" width="508" height="508" rx="114" fill="none" stroke="#fff" stroke-opacity=".25" stroke-width="4"/>
 </svg>

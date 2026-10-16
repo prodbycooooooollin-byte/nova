@@ -31,3 +31,7 @@ gh release create v0.7.0 dist/Nova-Setup-0.7.0.exe --generate-notes
 ```
 
 Installed copies of Nova check this repository's latest release on startup and update themselves.
+
+## Third-party
+
+Interface icons come from the IBM Carbon Design System (Apache License 2.0, https://github.com/carbon-design-system/carbon). The Inter typeface is used under the SIL Open Font License. The ad blocker is built on @ghostery/adblocker-electron.

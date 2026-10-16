@@ -161,13 +161,21 @@ function listExtensions() {
     return { id: e.id, name: e.name, path: e.path, version: e.version, icon: iconCache[e.id] || '', popup: act.default_popup || '' };
   });
 }
+const shimPath = () => { const p = path.join(__dirname, 'ext-shim.js'), u = p.replace('app.asar', 'app.asar.unpacked'); return fs.existsSync(u) ? u : p; };
 function openPopup(id) {
   const e = C.ses.extensions.getExtension(id), m = e?.manifest || {}, popup = (m.action || m.browser_action || {}).default_popup;
   if (!popup) return C.toast(`${e?.name || 'This extension'} has no popup.`);
-  const b = C.win().getBounds(), right = C.settings().layout === 'right';
-  const pw = new BrowserWindow({ width: 380, height: 580, x: right ? b.x + b.width - 400 : b.x + (C.settings().layout === 'top' ? b.width - 400 : 16), y: C.settings().layout === 'top' ? b.y + 90 : b.y + b.height - 600, frame: false, resizable: false, skipTaskbar: true, alwaysOnTop: true, show: false, backgroundColor: '#ffffff', webPreferences: { session: C.ses, sandbox: true } });
+  const b = C.win().getBounds(), right = C.settings().layout === 'right', top = C.settings().layout === 'top';
+  const pw = new BrowserWindow({ width: 380, height: 580, useContentSize: true, x: right ? b.x + b.width - 400 : b.x + (top ? b.width - 400 : 16), y: top ? b.y + 90 : b.y + b.height - 600, frame: false, resizable: false, skipTaskbar: true, alwaysOnTop: true, show: false, backgroundColor: '#ffffff', webPreferences: { session: C.ses, sandbox: true, preload: shimPath() } });
   pw.loadURL(`chrome-extension://${id}/${popup}`).catch(() => pw.close());
-  pw.once('ready-to-show', () => pw.show());
+  let shown = false; const show = () => { if (!shown && !pw.isDestroyed()) { shown = true; pw.show(); } };
+  pw.once('ready-to-show', () => { // like Chrome, fit the window to what the popup asks for (width 200-800, height 100-600)
+    setTimeout(async () => {
+      try { const [w, h] = await pw.webContents.executeJavaScript('[Math.ceil(Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0)), Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0))]'); if (!pw.isDestroyed() && w > 120 && h > 60) pw.setContentSize(Math.min(800, Math.max(300, w)), Math.min(600, Math.max(200, h))); } catch {}
+      show();
+    }, 350);
+  });
+  setTimeout(show, 2500); // never leave the user waiting on a popup that stays quiet
   pw.on('blur', () => { if (!pw.isDestroyed() && !pw.webContents.isDevToolsOpened()) pw.close(); });
 }
 

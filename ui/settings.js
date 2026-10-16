@@ -7,9 +7,9 @@ Object.assign(PATHS, {
   refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>', search2: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
 });
 const PROFILE_INFO = [
-  ['ultra', 'Ultra Performance', 'zap', 'The bare minimum. Search and tabs, nothing else.', ['No ad blocker, history or previews', 'No animations or effects', 'Memory limit 1 GB'], 5, 1],
-  ['nova', 'Nova', 'star', 'Recommended. Light, with the essentials.', ['Ad blocker built in', 'Subtle effects, history and previews', 'Memory limit 2 GB'], 4, 3],
-  ['complete', 'Complete', 'layers', 'Everything switched on, for people who want it all.', ['Ad blocker and every extra tool', 'Private tabs, screenshots, PDF and more', 'Memory limit 4 GB'], 2, 5],
+  ['ultra', 'Ultra Performance', 'p-ultra', 'The bare minimum. Search and tabs, nothing else.', ['No ad blocker, history or previews', 'No animations or effects', 'Memory limit 1 GB'], 5, 1],
+  ['nova', 'Nova', 'p-nova', 'Recommended. Light, with the essentials.', ['Ad blocker built in', 'Subtle effects, history and previews', 'Memory limit 2 GB'], 4, 3],
+  ['complete', 'Complete', 'p-complete', 'Everything switched on, for people who want it all.', ['Ad blocker and every extra tool', 'Private tabs, screenshots, PDF and more', 'Memory limit 4 GB'], 2, 5],
 ];
 const NAV_GROUPS = [
   ['General', [['Profile', 'user'], ['Appearance', 'palette']]],

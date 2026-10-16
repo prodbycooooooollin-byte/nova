@@ -22,7 +22,7 @@ const DEFAULT_KEYS = {
   space1: ['Alt+1'], space2: ['Alt+2'], space3: ['Alt+3'], space4: ['Alt+4'], space5: ['Alt+5'],
 };
 const DEFAULTS = {
-  suggestions: false, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'aurora', dim: 30, blur: 0 }, startPage: { sites: true, greeting: true },
+  suggestions: false, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0 }, startPage: { sites: true, greeting: true },
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
   searchEngine: 'https://duckduckgo.com/?q=%s',
   layout: 'left', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
@@ -61,6 +61,7 @@ const writeJson = (f, v) => { try { fs.writeFileSync(userFile(f), JSON.stringify
 function loadSettings() {
   const s = readJson('settings.json', {});
   settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, wallpaper: { ...DEFAULTS.wallpaper, ...(s.wallpaper || {}) }, startPage: { ...DEFAULTS.startPage, ...(s.startPage || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
+  if (!['', 'orbit', 'stars', 'grid'].includes(settings.wallpaper.preset)) settings.wallpaper.preset = 'orbit'; // the old colour-blob wallpapers are gone
 }
 const saveSettings = () => writeJson('settings.json', settings);
 
@@ -201,7 +202,7 @@ function wallImage() {
 }
 function homeTheme() {
   const w = settings.wallpaper, t = settings.theme;
-  return { bg: t.page, chrome: t.bg, accent: t.accent, text: t.text, dim: t.dim, wall: w.mode === 'none' ? '' : w.preset, dim_amount: w.dim, blur: w.blur, image: w.mode === 'image' ? wallImage() : '', stars: w.mode !== 'image', sites: settings.startPage.sites, greeting: settings.startPage.greeting };
+  return { bg: t.page, chrome: t.bg, accent: t.accent, text: t.text, dim: t.dim, wall: w.mode === 'none' ? '' : w.preset, dim_amount: w.dim, blur: w.blur, image: w.mode === 'image' ? wallImage() : '', stars: w.mode !== 'image', fx: !!settings.effects, sites: settings.startPage.sites, greeting: settings.startPage.greeting };
 }
 function pushHome(wc) {
   const js = `window.novaTheme && window.novaTheme(${JSON.stringify(homeTheme())})`;
@@ -290,6 +291,7 @@ function closeTab(id) {
   if (state.split === id) state.split = null;
   destroyTab(t);
   if (t.private && privSes && ![...tabs.values()].some((x) => x.private)) privSes.clearStorageData().catch(() => {}); // last private tab gone: forget everything
+  if (!tabs.size) { persist(); win.close(); return; } // the very last tab closes the window, like every other browser
   if (wasActive) {
     const rest = [...tabs.values()].filter((x) => x.spaceId === t.spaceId);
     const next = rest[Math.min(idx, rest.length - 1)] || null;
@@ -510,6 +512,13 @@ function applyProfile(name) {
 
 // ---------- extensions (Electron supports a subset of Chrome extension APIs) ----------
 async function loadExtensions(ses) {
+  try { ses.registerPreloadScript({ type: 'service-worker', filePath: (() => { const p = path.join(__dirname, 'ext-shim.js'), u = p.replace('app.asar', 'app.asar.unpacked'); return fs.existsSync(u) ? u : p; })() }); } catch (e) { console.error('ext shim', e.message); } // fills the chrome.* gaps that stall password managers
+  if (process.env.NOVA_DEBUG_SW) { // diagnostics for extension service workers: NOVA_DEBUG_SW=1 writes sw.log into the profile folder
+    const log = (t) => { try { fs.appendFileSync(userFile('sw.log'), t + '\n'); } catch {} };
+    ses.serviceWorkers.on('console-message', (_e, d) => log(`[console ${d.level}] ${d.message} (${d.sourceUrl}:${d.lineNumber})`));
+    ses.serviceWorkers.on('running-status-changed', (d) => log(`[status] version ${d.versionId} ${d.runningStatus}`));
+    ses.serviceWorkers.on('registration-completed', (d) => log(`[registered] ${d.scope}`));
+  }
   for (const p of settings.extensions) { try { await ses.extensions.loadExtension(p, { allowFileAccess: true }); } catch (e) { console.error('extension', p, e.message); } }
 }
 

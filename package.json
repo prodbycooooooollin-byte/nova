@@ -1,6 +1,6 @@
 {
     "name":  "nova",
-    "version":  "0.7.0",
+    "version":  "0.7.1",
     "description":  "Nova - a minimal, fully customizable Chromium browser with rethought tab management",
     "main":  "main.js",
     "scripts":  {
@@ -34,6 +34,7 @@
                                 "budget.js",
                                 "persona.js",
                                 "shim-preload.js",
+                                "ext-shim.js",
                                 "setup-preload.js",
                                 "ui/**/*",
                                 "build/icon.ico",
@@ -57,7 +58,10 @@
                                    "artifactName":  "Nova-Setup-${version}.exe"
                                },
                   "artifactName":  "Nova-Setup-${version}.exe",
-                  "npmRebuild":  false
+                  "npmRebuild":  false,
+                  "asarUnpack":  [
+                                     "ext-shim.js"
+                                 ]
               },
     "devDependencies":  {
                             "electron":  "^41.7.1",

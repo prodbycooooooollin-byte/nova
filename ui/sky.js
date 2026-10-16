@@ -16,6 +16,7 @@ function NovaSky(canvas, opts = {}) {
     ring = { x: o.x, y: o.y, r: 0, a: .8 }; flare = 1;
   }
   function frame(t) {
+    if (!canvas.isConnected) { cancelAnimationFrame(raf); removeEventListener('mousemove', move); removeEventListener('resize', size); return; } // overlay closed: stop quietly
     const dt = Math.min(.05, (t - last) / 1000 || .016); last = t;
     g.clearRect(0, 0, W, H);
     const ac = accent();

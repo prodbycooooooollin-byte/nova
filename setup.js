@@ -68,6 +68,14 @@ async function copyApp(src, dest, progress) {
     done += f.size; progress(done / total, f.rel);
   }
 }
+// Windows caches icons per shortcut; after an update the taskbar would keep showing the old one. Touch the pinned shortcut and flush the cache.
+async function refreshIcons(link) {
+  try {
+    const pinned = path.join(process.env.APPDATA || '', 'Microsoft', 'Internet Explorer', 'Quick Launch', 'User Pinned', 'TaskBar');
+    for (const f of fs.existsSync(pinned) ? fs.readdirSync(pinned) : []) if (/^nova.*\.lnk$/i.test(f)) { try { shell.writeShortcutLink(path.join(pinned, f), 'update', link); } catch {} }
+  } catch {}
+  await new Promise((res) => execFile('ie4uinit.exe', ['-show'], { windowsHide: true }, () => res()));
+}
 async function registerShell(dir, { desktop, startMenu, register }) {
   const exe = path.join(dir, 'Nova.exe');
   require('original-fs').writeFileSync(path.join(dir, 'nova-installed.flag'), pkg.version);
@@ -88,6 +96,7 @@ async function registerShell(dir, { desktop, startMenu, register }) {
     await regSet(S + '\\shell\\open\\command', '', `"${exe}"`);
     await regSet('HKCU\\Software\\RegisteredApplications', 'Nova', 'Software\\Clients\\StartMenuInternet\\Nova\\Capabilities');
   }
+  await refreshIcons(link);
 }
 async function removeShell() {
   for (const l of [desktopLink(), startLink()]) fs.rmSync(l, { force: true });

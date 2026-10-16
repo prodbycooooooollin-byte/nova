@@ -27,7 +27,7 @@ const PATHS = {
   bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>', trash: '<path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>', open: '<path d="M14 3h7v7M21 3l-9 9M10 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4"/>',
   split: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>', globe: '<circle cx="12" cy="12" r="9"/><path d="M12 3a14 14 0 0 0 0 18 14 14 0 0 0 0-18M3 12h18"/>',
 };
-const ic = (n) => `<svg viewBox="0 0 24 24">${PATHS[n]}</svg>`;
+const ic = (n) => ICONS[n] ? `<svg class="cb" viewBox="0 0 32 32">${ICONS[n]}</svg>` : `<svg viewBox="0 0 24 24">${PATHS[n] || ''}</svg>`;
 // bundled brand icon; falls back to a neutral globe tile, never a placeholder letter
 const brand = (file, cls = 'av') => `<img class="${cls} logo" src="icons/${file}.png" data-fb="${cls}" alt="">`;
 document.addEventListener('error', (e) => { const el = e.target; if (el.tagName === 'IMG' && el.dataset.fb) { const s = document.createElement('span'); s.className = el.dataset.fb + ' gl'; s.innerHTML = ic('globe'); el.replaceWith(s); } }, true);
@@ -55,9 +55,9 @@ const PRESETS = {
   'Catppuccin': { bg: '#181825', page: '#1e1e2e', surface: '#181825', surface2: '#313244', text: '#cdd6f4', dim: '#9399b2', accent: '#cba6f7', danger: '#ff6b7a' },
   'Gruvbox': { bg: '#1d2021', page: '#282828', surface: '#232323', surface2: '#3c3836', text: '#ebdbb2', dim: '#a89984', accent: '#fabd2f', danger: '#ff6b7a' },
 };
-const WALL_OF = {'Nova': 'aurora', 'Daylight': 'paper', 'Nebula': 'nebula', 'Supernova': 'ember', 'Aurora': 'aurora', 'Graphite': '', 'Midnight': 'deep', 'Rosé': 'bloom', 'Forest': 'forest', 'Ocean': 'deep', 'Sakura': 'bloom', 'Sand': 'paper', 'Mono': '', 'Cyber': 'grid', 'Tokyo Night': 'deep', 'Dracula': 'nebula', 'Nord': '', 'Catppuccin': 'bloom', 'Gruvbox': 'ember'};
+const WALL_OF = {'Nova': 'orbit', 'Daylight': 'orbit', 'Nebula': 'orbit', 'Supernova': 'orbit', 'Aurora': 'orbit', 'Graphite': 'stars', 'Midnight': 'orbit', 'Rosé': 'orbit', 'Forest': 'orbit', 'Ocean': 'orbit', 'Sakura': 'orbit', 'Sand': 'orbit', 'Mono': 'stars', 'Cyber': 'grid', 'Tokyo Night': 'orbit', 'Dracula': 'orbit', 'Nord': 'stars', 'Catppuccin': 'orbit', 'Gruvbox': 'orbit'};
 const WIZARD_THEMES = ['Nova', 'Daylight', 'Nebula', 'Aurora', 'Midnight', 'Rosé', 'Forest', 'Tokyo Night', 'Graphite'];
-const WALLS = [['theme', 'Follow theme'], ['none', 'None'], ['aurora', 'Aurora'], ['nebula', 'Nebula'], ['ember', 'Ember'], ['deep', 'Deep'], ['bloom', 'Bloom'], ['forest', 'Forest'], ['grid', 'Grid'], ['paper', 'Paper']];
+const WALLS = [['theme', 'Follow theme'], ['none', 'Plain'], ['orbit', 'Orbit'], ['stars', 'Stars'], ['grid', 'Grid']];
 const ACTIONS = {
   newTab: 'New tab', go: 'Address and search bar', closeTab: 'Close tab', reopenTab: 'Reopen closed tab', nextTab: 'Next tab', prevTab: 'Previous tab',
   overview: 'Tab overview', reload: 'Reload', back: 'Back', forward: 'Forward', toggleSidebar: 'Toggle sidebar', focusMode: 'Focus mode',
@@ -124,10 +124,10 @@ function render() {
   if (cur && cur.url !== HOME) {
     try { const u = new URL(cur.url); icon = u.protocol === 'https:' ? 'lock' : 'globe'; label = `<b>${esc(u.hostname.replace(/^www\./, ''))}</b><span>${esc((u.pathname + u.search).replace(/^\/$/, '').slice(0, 60))}</span>`; } catch { label = `<b>${esc(cur.url)}</b>`; }
   }
-  $('#urlbar').innerHTML = `${ic(icon)}<span id="url-text">${label}</span>${cur?.bookmarked ? ic('star').replace('<svg', '<svg style="fill:var(--accent);stroke:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
+  $('#urlbar').innerHTML = `${ic(icon)}<span id="url-text">${label}</span>${cur?.bookmarked ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
 
   const tabs = spaceTabs(), maxAge = (S.settings.archiveAfterHours || 24) * 3600e3;
-  $('#pins').innerHTML = tabs.filter((t) => t.pinned).map((t) => `<div class="pin ${t.id === S.activeTab ? 'active' : ''}" data-tab="${t.id}" title="${esc(t.title)}">${favHtml(t)}</div>`).join('');
+  $('#pins').innerHTML = tabs.filter((t) => t.pinned).map((t) => `<div class="pin ${t.id === S.activeTab ? 'active' : ''}" data-tab="${t.id}" title="${esc(t.title)}">${favHtml(t)}<button class="pinx" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`).join('');
   const plain = tabs.filter((t) => !t.pinned), total = S.tabs.length, max = S.settings.maxTabs;
   $('#tabhead').innerHTML = `<span class="lbl">Tabs</span><span class="count ${max && total >= max - 3 ? 'hot' : ''}" title="Open tabs / tab budget">${total}${max ? ' / ' + max : ''}</span><button class="ibtn sm" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}</button>`;
   $('#tabs').innerHTML = plain.map((t) => {
@@ -137,7 +137,8 @@ function render() {
   }).join('') || '<div class="emptytabs">No other tabs in this space</div>';
   $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
   const bud = S.budget, pct = bud.enabled && bud.cap ? Math.min(100, Math.round(bud.used / bud.cap * 100)) : 0;
-  $('#tools').innerHTML = (S.extensions || []).filter((e) => e.popup).slice(0, 4).map((e) => `<button class="ibtn" title="${esc(e.name)}" data-extpop="${e.id}">${e.icon ? `<img src="${e.icon}" width="16" height="16" style="border-radius:4px">` : ic('box')}</button>`).join('')
+  const exts = (S.extensions || []).filter((e) => e.popup).slice(0, 6).map((e) => `<button class="ibtn" title="${esc(e.name)}" data-extpop="${e.id}">${e.icon ? `<img src="${e.icon}" width="16" height="16" style="border-radius:4px">` : ic('box')}</button>`).join('');
+  $('#tools').innerHTML = (exts ? `<div class="exts">${exts}</div>` : '')
     + (S.updateReady ? `<button class="upd" data-do="update" title="Restart to install the update">Update</button>` : '')
     + (S.settings.adblock ? `<span class="chip" title="Ads and trackers blocked">${ic('shield')}<b>${S.blockedCount}</b></span>` : '')
     + (bud.enabled ? `<button class="ram ${bud.over || pct >= 90 ? 'hot' : ''}" data-do="budget" title="Memory used by Nova of your ${bud.cap} MB budget"><span class="lab">RAM</span><b>${bud.used}</b><small>MB</small><i style="width:${pct}%"></i></button>` : '')
