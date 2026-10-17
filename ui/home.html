@@ -85,6 +85,7 @@ document.getElementById('f').addEventListener('submit', (e) => {
   location.href = /^(https?|file):/i.test(t) ? t : (!/\s/.test(t) && (/^localhost/i.test(t) || /^[^\s/]+\.[a-z]{2,}([:/?#]|$)/i.test(t))) ? 'https://' + t : engine.replace('%s', encodeURIComponent(t));
 });
 const hue = (s) => { let n = 0; for (const c of s) n = (n * 31 + c.charCodeAt(0)) % 360; return n; };
+const brandOf = (h) => { const p = String(h || '').toLowerCase().replace(/^www\./, '').split('.'); if (p.length < 2) return p[0] || ''; let i = p.length - 2; if (i > 0 && p[p.length - 1].length === 2 && /^(co|com|org|net|gov|edu|ac)$/.test(p[i])) i--; return p[i]; };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const planets = document.getElementById('planets');
 let sitesData = [];
@@ -114,7 +115,7 @@ function placeSites() {
   const pts = sitesData.map((_, i) => { const [deg, ring] = SPOTS[i], a = ring ? g.a2 : g.a1, b = a * g.k, th = deg * Math.PI / 180, x = a * Math.cos(th), y = b * Math.sin(th); return [g.cx + x * Math.cos(ph) - y * Math.sin(ph), g.cy + x * Math.sin(ph) + y * Math.cos(ph)]; });
   const fits = running && pts.every(([x, y]) => x > 60 && x < g.W - 60 && y > 80 && y < g.H - 90);
   const list = fits ? sitesData : sitesData.slice(0, g.H < 760 ? 4 : 8); // a plain grid has less room than the rings: fewer sites in a short window
-  planets.innerHTML = list.map((s, i) => `<a class="pl" style="--i:${i}" href="${esc(s.url)}" title="${esc(s.host)}"><div class="ic" style="${s.icon ? '' : `background:linear-gradient(135deg,hsl(${hue(s.host)} 50% 46%),hsl(${(hue(s.host) + 30) % 360} 50% 36%))`}">${s.icon ? `<img src="${s.icon}" alt="">` : esc((s.host[0] || '?').toUpperCase())}</div><span class="n">${esc(s.host.replace(/^www\./, '').replace(/\.[a-z]+$/, ''))}</span></a>`).join('');
+  planets.innerHTML = list.map((s, i) => `<a class="pl" style="--i:${i}" href="${esc(s.url)}" title="${esc(s.host)}"><div class="ic" style="${s.icon ? '' : `background:linear-gradient(135deg,hsl(${hue(brandOf(s.host))} 50% 46%),hsl(${(hue(brandOf(s.host)) + 30) % 360} 50% 36%))`}">${s.icon ? `<img src="${s.icon}" alt="">` : esc((brandOf(s.host)[0] || '?').toUpperCase())}</div><span class="n">${esc(s.host.replace(/^www\./, '').replace(/\.[a-z]+$/, ''))}</span></a>`).join('');
   planets.classList.toggle('flat', !fits);
   if (fits) [...planets.children].forEach((el, i) => { el.style.left = pts[i][0].toFixed(1) + 'px'; el.style.top = pts[i][1].toFixed(1) + 'px'; });
 }

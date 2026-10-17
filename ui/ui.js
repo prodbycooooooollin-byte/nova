@@ -106,7 +106,7 @@ const ENGINES = { DuckDuckGo: 'https://duckduckgo.com/?q=%s', Google: 'https://w
 let S = null, overlay = null, customJsApplied = null;
 
 // ---------- the chrome as rows (tabs on top) or as one column (sidebar) ----------
-// Tabs on top: row one holds the tabs and the window buttons, row two the address bar exactly in the middle with back/forward and the bookmark star
+// Tabs on top: row one holds the tabs and the window buttons, row two the address bar in the middle with back/forward/reload and the bookmark star
 // on its left and the buttons on its right, row three the bookmarks. The same elements serve the sidebar layouts, so they move when the layout changes.
 function arrangeChrome(top) {
   const c = document.getElementById('chrome'); if (!c || c.dataset.top === (top ? '1' : '0')) return;
@@ -115,7 +115,7 @@ function arrangeChrome(top) {
   if (top) {
     const rt = mk('rowtabs'), rb = mk('rowbar'), rm = mk('rowbm'), bl = mk('barl'), br = mk('barr'), ub = mk('urlbox');
     rt.append(g('pins'), g('tabs'), g('winctl')); c.append(g('spaces')); // the tab row belongs to the tabs; the spaces are in the profile menu (the list itself is hidden here)
-    bl.append(g('nav')); ub.append(g('urlbar'), g('bmstar')); br.append(g('stats'), g('tools'));
+    bl.append(g('nav'), g('bmstar')); ub.append(g('urlbar')); br.append(g('stats'), g('tools'));
     rb.append(bl, ub, br); rm.append(g('bmbar'));
     c.append(rt, rb, rm);
   } else {
@@ -153,12 +153,15 @@ function favHtml(t) {
   if (t.loading) return STAR;
   if (t.url === HOME) return '<img class="fav" src="mark.svg" style="background:none" alt="">';
   const h = hostOf(t.url) || t.title || '?';
-  if (t.favicon) return `<img class="fav" src="${esc(t.favicon)}" data-l="${esc(h[0] || '?')}" data-h="${hue(h)}">`;
+  if (t.favicon) return `<img class="fav" src="${esc(t.favicon)}" data-s="${esc(h)}">`;
   return fallbackFav(h);
 }
 const hue = (s) => { let n = 0; for (const c of s) n = (n * 31 + c.charCodeAt(0)) % 360; return n; };
-const fallbackFav = (h, hv = hue(h)) => `<span class="fav" style="background:hsl(${hv} 42% 40%)">${esc((h[0] || '+').toUpperCase())}</span>`;
-document.addEventListener('error', (e) => { const el = e.target; if (el.tagName === 'IMG' && el.classList.contains('fav')) el.outerHTML = fallbackFav(el.dataset.l, +el.dataset.h); }, true);
+// the name of a site without its subdomains and ending: accounts.google.com and www.google.com are both "google", news.bbc.co.uk is "bbc"
+const brandOf = (h) => { const p = String(h || '').toLowerCase().replace(/^www\./, '').split('.'); if (p.length < 2) return p[0] || ''; let i = p.length - 2; if (i > 0 && p[p.length - 1].length === 2 && /^(co|com|org|net|gov|edu|ac)$/.test(p[i])) i--; return p[i]; };
+const fallbackFav = (h) => { const b = brandOf(h) || String(h || '?'); return `<span class="fav" style="background:hsl(${hue(b)} 42% 40%)">${esc((b[0] || '+').toUpperCase())}</span>`; };
+const siteFav = (url, icon) => (icon ? `<img class="fav" src="${esc(icon)}" data-s="${esc(hostOf(url))}" alt="">` : fallbackFav(hostOf(url)));
+document.addEventListener('error', (e) => { const el = e.target; if (el.tagName === 'IMG' && el.classList.contains('fav')) el.outerHTML = fallbackFav(el.dataset.s); }, true);
 
 const fmtBytes = (n) => (n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(n >= 1.0e8 ? 0 : 1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 const fmtEta = (s) => (s >= 3600 ? Math.floor(s / 3600) + ' h ' + Math.round((s % 3600) / 60) + ' min' : s >= 60 ? Math.round(s / 60) + ' min' : s + ' s');
@@ -182,6 +185,61 @@ function dlButton(top) {
   const fill = busy ? Math.max(0.1, pct) : 0;
   return `<button class="ibtn dlbtn ${busy ? 'busy' : ''} ${fresh ? 'fresh' : ''} ${size ? '' : 'ind'}" data-do="downloads" title="${title}"><svg class="dlf" viewBox="0 0 24 24"><defs><clipPath id="dlclip"><rect x="0" y="${(24 - 24 * fill).toFixed(2)}" width="24" height="24"/></clipPath></defs><path class="dlfill" d="${FOLDER}" clip-path="url(#dlclip)"/><path class="dlline" d="${FOLDER}"/><path class="dlarr" d="M12 9.5v6M9.2 12.8l2.8 2.8 2.8-2.8"/></svg></button>`;
 }
+// The tab list is updated tab by tab instead of being rebuilt: a new tab grows in, a closed one shrinks away and the open one fades in.
+// After a click on "+" or on a tab's x the tabs keep their place while the pointer stays on the tab row (like Chrome does): a new tab shares the room the row
+// had, so the plus stays under the pointer; a closed tab leaves its width behind, so the next x lands under the pointer. Leaving the row lets the tabs relax.
+const strip = { on: false, mode: '', avail: 0, w: 0, t: 0 };
+function freezeStrip(mode, tab) {
+  const row = document.getElementById('tabs'), nr = row && row.querySelector('.newrow'); if (!nr || !S || S.settings.layout !== 'top') return;
+  if (mode === 'add') { if (!strip.on || strip.mode !== 'add') strip.avail = nr.getBoundingClientRect().left - row.getBoundingClientRect().left - (parseFloat(getComputedStyle(row).paddingLeft) || 0) - 6; }
+  else strip.w = tab ? tab.getBoundingClientRect().width : 0;
+  strip.on = !!(mode === 'add' ? strip.avail > 0 : strip.w > 0); strip.mode = mode;
+  clearTimeout(strip.t); strip.t = setTimeout(releaseStrip, 30000); // safety net only: leaving the row is what normally ends it
+}
+function releaseStrip() { if (!strip.on) return; strip.on = false; clearTimeout(strip.t); if (S) render(); }
+document.addEventListener('mouseover', (e) => { if (strip.on && !e.target.closest('#rowtabs')) releaseStrip(); }, { passive: true });
+document.addEventListener('mouseout', (e) => { if (strip.on && !e.relatedTarget) releaseStrip(); }, { passive: true });
+function tabAnim(e, name, fn, ms) {
+  let done = false; const end = () => { if (done) return; done = true; fn(); };
+  e.addEventListener('animationend', (ev) => { if (ev.target === e && ev.animationName === name) end(); });
+  setTimeout(end, ms);
+}
+function leaveTab(e) {
+  if (!S.settings.effects) { e.remove(); return; }
+  e.classList.add('leaving'); e.classList.remove('active', 'enter');
+  tabAnim(e, 'tabOut', () => { if (e.parentNode) e.remove(); }, 450);
+}
+function morphTabs(el, html) {
+  const tpl = document.createElement('template');
+  if (!tpl.content || !el.insertBefore || !el.querySelector) { el.innerHTML = html; return; }
+  tpl.innerHTML = html;
+  const next = [...tpl.content.children], count = next.filter((n) => n.dataset && n.dataset.tab).length, gap = 6, fx = !!S.settings.effects;
+  let w = 0;
+  if (strip.on && count) { w = strip.mode === 'add' ? Math.floor((strip.avail - (next.some((n) => n.classList.contains('active')) ? 16 : 0) - (count - 1) * gap) / count) : Math.round(strip.w); w = Math.max(120, Math.min(210, w)); }
+  if (w) el.style.setProperty('--tabw', w + 'px'); else el.style.removeProperty('--tabw');
+  if (el.__html === html) return; el.__html = html;
+  const first = !el.children.length, live = [...el.children].filter((e) => !e.classList.contains('leaving')), byId = new Map(live.filter((e) => e.dataset.tab).map((e) => [e.dataset.tab, e]));
+  const wanted = new Set(next.map((n) => n.dataset.tab).filter(Boolean));
+  for (const [id, e] of [...byId]) if (!wanted.has(id)) { byId.delete(id); leaveTab(e); }
+  let ref = el.firstChild;
+  for (const n of next) {
+    const id = n.dataset.tab; let cur = id ? byId.get(id) : el.querySelector(':scope > .newrow');
+    if (cur) {
+      if (id) {
+        const keep = cur.classList.contains('enter') ? ' enter' : '';
+        if (cur.className !== n.className + keep) cur.className = n.className + keep;
+        const st = n.getAttribute('style') || ''; if ((cur.getAttribute('style') || '') !== st) cur.setAttribute('style', st);
+        if (cur.title !== n.title) cur.title = n.title;
+        if (cur.innerHTML !== n.innerHTML) cur.innerHTML = n.innerHTML;
+      }
+    } else {
+      cur = n;
+      if (!first && id && fx) { const e = cur; e.classList.add('enter'); tabAnim(e, 'tabIn', () => e.classList.remove('enter'), 450); }
+    }
+    while (ref && ref.classList && ref.classList.contains('leaving')) ref = ref.nextSibling;
+    if (cur === ref) ref = ref.nextSibling; else el.insertBefore(cur, ref);
+  }
+}
 function render() {
   if (!S) return;
   if (typeof dragTab !== 'undefined' && dragTab !== null) { if (Date.now() - dragSince < 5000) { deferredRender = true; return; } dragTab = null; dropInfo = null; } // a drag that never ended must not freeze the tab list
@@ -196,16 +254,16 @@ function render() {
   $('#urlbar').innerHTML = `${ic(top ? { lock: 't-shield', globe: 't-globe', search: 't-search' }[icon] : icon)}<span id="url-text">${label}</span>${top ? '' : cur?.bookmarked ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
   { const star = document.getElementById('bmstar'), page = !!(cur && /^https?:/i.test(cur.url || '')); star.innerHTML = ic(top ? 't-star' : cur?.bookmarked ? 'starf' : 'star'); star.classList.toggle('on', !!cur?.bookmarked); star.classList.toggle('off', !page); star.title = cur?.bookmarked ? 'Edit this bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)'; }
 
-  $('#bmbar').innerHTML = (S.bar || []).length ? S.bar.map((b) => `<button class="bmk" data-bm="${esc(b.url)}" title="${esc(b.title || b.url)}">${b.icon ? `<img src="${b.icon}" alt="">` : ic('globe')}<span>${esc(b.title || hostOf(b.url))}</span></button>`).join('') + `<button class="bmk more" data-do="bookmarks" title="All bookmarks (Ctrl+Shift+O)">${ic('fwd')}</button>` : '';
+  $('#bmbar').innerHTML = (S.bar || []).length ? S.bar.map((b) => `<button class="bmk" data-bm="${esc(b.url)}" title="${esc(b.title || b.url)}">${siteFav(b.url, b.icon)}<span>${esc(b.title || hostOf(b.url))}</span></button>`).join('') + `<button class="bmk more" data-do="bookmarks" title="All bookmarks (Ctrl+Shift+O)">${ic('fwd')}</button>` : '';
   const tabs = spaceTabs(), maxAge = (S.settings.archiveAfterHours || 24) * 3600e3;
   $('#pins').innerHTML = tabs.filter((t) => t.pinned).map((t) => `<div class="pin ${t.id === S.activeTab ? 'active' : ''}" data-tab="${t.id}" title="${esc(t.title)}">${favHtml(t)}<button class="pinx" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`).join('');
   const plain = tabs.filter((t) => !t.pinned), total = S.tabs.length, max = S.settings.maxTabs;
   $('#tabhead').innerHTML = `<span class="lbl">Tabs</span><span class="count ${max && total >= max - 3 ? 'hot' : ''}" title="Open tabs / tab budget">${total}${max ? ' / ' + max : ''}</span><button class="ibtn sm" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}</button>`;
-  $('#tabs').innerHTML = plain.map((t) => {
+  morphTabs($('#tabs'), plain.map((t) => {
     const idle = t.id === S.activeTab ? 0 : Math.min(1, (S.now - t.lastActive) / maxAge);
     return `<div draggable="true" class="tab ${t.id === S.activeTab ? 'active' : ''} ${t.asleep ? 'asleep' : ''} ${t.id === S.split ? 'split' : ''} ${t.private ? 'private' : ''}" data-tab="${t.id}" style="--idle:${(1 - idle * 0.45).toFixed(2)}" title="${esc(t.title)}${t.url === HOME ? '' : '\n' + esc(t.url)}">
       ${favHtml(t)}<span class="t">${esc(t.title || 'New tab')}</span>${t.asleep ? `<span class="zz" title="Asleep: reloads when opened">${ic('moon')}</span>` : ''}${t.audible || t.muted ? `<button class="aud" data-mute="${t.id}" title="${t.muted ? 'Unmute' : 'Mute'}">${ic(t.muted ? 'mute' : 'vol')}</button>` : ''}<button class="x" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`;
-  }).join('') + `<button class="newrow" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}<span>New tab</span></button>`;
+  }).join('') + `<button class="newrow" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}<span>New tab</span></button>`);
   $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
   const bud = S.budget, pct = bud.enabled && bud.cap ? Math.min(100, Math.round(bud.used / bud.cap * 100)) : 0;
   dlTrayDraw();
@@ -222,6 +280,7 @@ document.addEventListener('click', (e) => {
   if (menuOpen && e.target.closest('#menu')) return;
   hideMenu();
   const d = e.target.closest('[data-do]')?.dataset.do;
+  if (d === 'newTab' && e.target.closest('.newrow')) freezeStrip('add');
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
     const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: () => dlToggle(), hub: A('hub'), bookmark: A('bookmark'), extmenu: () => nova.cmd('overlay', { kind: 'extmenu' }), spacemenu: () => nova.cmd('overlay', { kind: 'spacemenu' }), profilemenu: () => nova.cmd('overlay', { kind: 'profilemenu' }), mainmenu: () => nova.cmd('overlay', { kind: 'mainmenu' }), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
@@ -231,7 +290,7 @@ document.addEventListener('click', (e) => {
   const bm = e.target.closest('[data-bm]'); if (bm) return nova.cmd('open', { text: bm.dataset.bm, newTab: e.ctrlKey || e.metaKey });
   const xp = e.target.closest('[data-extpop]'); if (xp) return nova.cmd('extPopup', { id: xp.dataset.extpop });
   const mu = e.target.closest('[data-mute]'); if (mu) return nova.cmd('mute', { id: +mu.dataset.mute });
-  const c = e.target.closest('[data-close]'); if (c) return nova.cmd('close', { id: +c.dataset.close });
+  const c = e.target.closest('[data-close]'); if (c) { const tb = c.closest('#tabs .tab'); if (tb) freezeStrip('close', tb); return nova.cmd('close', { id: +c.dataset.close }); }
   const t = e.target.closest('[data-tab]'); if (t && !overlay) return nova.cmd('activate', { id: +t.dataset.tab });
   const sp = e.target.closest('[data-space]'); if (sp) return nova.cmd('switchSpace', { id: +sp.dataset.space });
 });
@@ -401,8 +460,8 @@ function palette(o, d) {
     if (sugg.length) items.push({ sec: 'Suggestions' }, ...sugg.map((x) => ({ t: x, icon: ic('search'), act: (nt) => nova.cmd('open', { text: x, newTab: nt || mode === 'new' }) })));
     const open = S.tabs.map((t) => ({ t, sc: v ? score(v, t.title, t.url) : t.id === S.activeTab ? -1 : 1 / (1 + (S.now - t.lastActive)) })).filter((x) => x.sc >= 0).sort((a, b) => b.sc - a.sc).slice(0, v ? 8 : 6);
     if (open.length) items.push({ sec: v ? 'Open tabs' : 'Recent tabs' }, ...open.map(({ t }) => { const sp = S.spaces.find((s) => s.id === t.spaceId); return { t: t.title || 'New tab', s: (S.spaces.length > 1 ? sp.name + '  ·  ' : '') + (t.url === HOME ? '' : hostOf(t.url)), icon: `<span class="dot" style="background:${sp.color}"></span>`, act: () => nova.cmd('activate', { id: t.id }) }; }));
-    if (extra?.bookmarks?.length) items.push({ sec: 'Bookmarks' }, ...extra.bookmarks.map((b) => ({ t: b.title || b.url, s: hostOf(b.url), icon: b.icon ? `<img class="fav" src="${b.icon}" alt="">` : ic('star'), act: () => nova.cmd('open', { text: b.url, newTab: true }) })));
-    if (extra?.history?.length) items.push({ sec: 'History' }, ...extra.history.map((h) => ({ t: h.title || h.url, s: hostOf(h.url), icon: h.icon ? `<img class="fav" src="${h.icon}" alt="">` : ic('clock'), act: () => nova.cmd('open', { text: h.url, newTab: true }) })));
+    if (extra?.bookmarks?.length) items.push({ sec: 'Bookmarks' }, ...extra.bookmarks.map((b) => ({ t: b.title || b.url, s: hostOf(b.url), icon: siteFav(b.url, b.icon), act: () => nova.cmd('open', { text: b.url, newTab: true }) })));
+    if (extra?.history?.length) items.push({ sec: 'History' }, ...extra.history.map((h) => ({ t: h.title || h.url, s: hostOf(h.url), icon: siteFav(h.url, h.icon), act: () => nova.cmd('open', { text: h.url, newTab: true }) })));
     const arch = S.archive.map((a) => ({ a, sc: v ? score(v, a.title, a.url) : 1 })).filter((x) => x.sc >= 0).slice(0, v ? 5 : 3);
     if (arch.length) items.push({ sec: 'Stardust · recently closed' }, ...arch.map(({ a }) => ({ t: a.title || a.url, s: hostOf(a.url), icon: ic('archive'), act: () => nova.cmd('restore', { closedAt: a.closedAt }) })));
     if (extra?.downloads?.length) items.push({ sec: 'Downloads' }, ...extra.downloads.map((x) => ({ t: x.name, s: x.state === 'completed' ? 'Show in folder' : x.state, icon: ic('download'), act: () => nova.cmd('showDownload', { path: x.path }) })));

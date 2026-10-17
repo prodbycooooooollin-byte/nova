@@ -209,6 +209,28 @@ function eachWin(fn) {
   if (keep && !keep.closed) useWin(keep);
 }
 const layoutAll = () => eachWin(() => layout());
+// A download started: for about a second the interface view is as large as the window, transparent and on top, so the chip that flies to the folder button can
+// start where the pointer was. The page keeps the keyboard focus; the mouse cannot reach the page during that second.
+function dlFlyStart() {
+  try {
+    if (!settings.effects) return;
+    const c = screen.getCursorScreenPoint(), keep = curW;
+    const W = [...wins.values()].find((x) => !x.closed && !x.win.isDestroyed() && !x.win.isMinimized() && inside(c, x.win.getContentBounds(), 0));
+    if (!W) return;
+    useWin(W);
+    try {
+      if (sidebarHidden || focusMode || pageFullscreen || overlayOpen || !ui || ui.webContents.isDestroyed()) return;
+      const b = win.getContentBounds(), u = ui, pt = { x: Math.max(0, Math.min(b.width, c.x - b.x)), y: Math.max(0, Math.min(b.height, c.y - b.y)), full: true };
+      W.flying = true; uiLowered = null; layout();
+      clearTimeout(W.flyTimer);
+      W.flyTimer = setTimeout(() => { // the chip has landed: the interface view goes back to its own place
+        if (W.closed || W.win.isDestroyed()) return;
+        const k = curW; W.flying = false; useWin(W); uiLowered = null; layout(); if (k && k !== W) useWin(k);
+      }, 1050);
+      setTimeout(() => { try { if (!u.webContents.isDestroyed()) u.webContents.send('dlfly', pt); } catch { /* closing */ } }, 60); // the view needs a moment to take its new size
+    } finally { if (keep && keep !== W) useWin(keep); }
+  } catch { /* only a little animation */ }
+}
 // "Maximized" is Nova's own: the window fills the work area of its screen and remembers the size it had. Windows' own maximize could not be undone from code
 // here (unmaximize() changed nothing in the log, so a maximized window could never be pulled out of full size), and a normal window can always be moved and sized.
 const sendMax = (W, v) => { try { if (!W.ui.webContents.isDestroyed()) W.ui.webContents.send('maximized', v); } catch { /* closing */ } };
@@ -245,9 +267,10 @@ function layout() {
   else if (settings.layout === 'top') { uiRect = { x: 0, y: 0, width: w, height: top }; c = { x: gap, y: top, width: w - gap * 2, height: h - top - gap }; }
   else if (settings.layout === 'right') { uiRect = { x: w - side, y: 0, width: side, height: h }; c = { x: gap, y: gap, width: w - side - gap, height: h - gap * 2 }; }
   else { uiRect = { x: 0, y: 0, width: w, height: h }; c = { x: side, y: STRIP, width: w - side - gap, height: h - STRIP - gap }; }
-  ui.setBounds(overlayOpen ? { x: 0, y: 0, width: w, height: h } : uiRect);
-  ui.setVisible(overlayOpen || !hidden);
-  const low = !overlayOpen && !hidden && settings.layout !== 'top' && settings.layout !== 'right';
+  const fly = !!curW.flying; // a download chip is on its way: the (transparent) interface view is as large as the window and on top
+  ui.setBounds(overlayOpen || fly ? { x: 0, y: 0, width: w, height: h } : uiRect);
+  ui.setVisible(overlayOpen || fly || !hidden);
+  const low = !overlayOpen && !fly && !hidden && settings.layout !== 'top' && settings.layout !== 'right';
   if (low !== uiLowered) { uiLowered = low; if (low) win.contentView.addChildView(ui, 0); else win.contentView.addChildView(ui); }
   const vis = visibleTabs();
   const gapIn = vis.length > 1 ? 6 : 0;
@@ -351,7 +374,7 @@ function wake(t) {
   const pw = settings.budget.softWake ? sleeper.wakePayload(t) : null; // scroll, typed text and the last picture of the page, if Nova kept them
   const ses = sessionFor(t.pid, t.private); // the session of the tab's profile (its private one for private tabs)
   const view = new WebContentsView({ webPreferences: { ...(String(t.url).startsWith('chrome-extension:') ? { preload: extmgr.shimPath() } : pw ? { preload: path.join(__dirname, 'wake-preload.js') } : {}), session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: !!settings.features.darkSite, spellcheck: settings.profile !== 'ultra', autoplayPolicy: settings.blockAutoplay ? 'document-user-activation-required' : 'no-user-gesture-required' } });
-  t.view = view; t.pendingWake = pw; t.frozen = false;
+  t.view = view; t.pendingWake = pw; t.frozen = false; t.mediaAt = 0;
   view.setBackgroundColor((pw && pw.bg) || settings.theme.page);
   const wc = view.webContents;
   const on = (ev, fn) => wc.on(ev, (...a) => { if (t.view !== view) return; useWinOf(t); return fn(...a); }); // the window that shows this page is the current one while its event runs; a page that went to sleep is ignored
@@ -362,10 +385,10 @@ function wake(t) {
   on('did-start-loading', () => { t.loading = true; push(); });
   on('render-process-gone', (_e, d) => { if (d.reason === 'clean-exit' || d.reason === 'killed') return; const now = Date.now(); if (now - (t.lastCrash || 0) < 30000) return; t.lastCrash = now; setTimeout(() => { if (!wc.isDestroyed()) wc.reload(); }, 400); });
   on('did-stop-loading', () => { t.loading = false; upd(); if (t.id === state.activeTab) setTimeout(() => capture(t), 1500); });
-  on('did-navigate', () => { upd(); applyZoom(wc); if (!t.private) features.recordVisit(wc.getURL(), wc.getTitle(), t.pid, t.spaceId); });
+  on('did-navigate', () => { t.mediaAt = 0; upd(); applyZoom(wc); if (!t.private) features.recordVisit(wc.getURL(), wc.getTitle(), t.pid, t.spaceId); });
   on('did-navigate-in-page', upd);
-  on('audio-state-changed', (e) => { t.audible = e.audible; if (!e.audible) t.audibleAt = Date.now(); features.onAudio(t); push(); });
-  on('media-started-playing', () => { t.playing = true; });
+  on('audio-state-changed', (e) => { t.audible = e.audible; if (e.audible) t.mediaAt = Date.now(); else t.audibleAt = Date.now(); features.onAudio(t); push(); });
+  on('media-started-playing', () => { t.playing = true; t.mediaAt = Date.now(); });
   on('media-paused', () => { t.playing = false; });
   on('focus', () => { if (state.activeTab !== t.id && visibleTabs().includes(t)) activate(t.id, true); });
   on('zoom-changed', (_e, dir) => { if ((settings.keys[dir === 'in' ? 'zoomIn' : 'zoomOut'] || []).includes(dir === 'in' ? 'Ctrl+WheelUp' : 'Ctrl+WheelDown')) zoomStep(wc, dir === 'in' ? 1 : -1); }); // Ctrl + wheel, as in every browser
@@ -1112,7 +1135,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   features.init({
     app, get ses() { return curSes(); }, sessions: () => persistentSessions(), profile: () => curProfile(), tabs, userFile, readJson, writeJson, userAgent: UA,
     state: () => state, settings: () => settings, saveSettings, win: () => win, ui: () => ui,
-    toast: (m) => toast(m), push: () => push(), native: (wc, p) => nat(wc, p), dlStart: () => { try { const c = screen.getCursorScreenPoint(), b = win.getContentBounds(); if (ui && !ui.webContents.isDestroyed()) ui.webContents.send('dlfly', { x: c.x - b.x, y: c.y - b.y }); } catch { /* closing */ } }, openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(), overlayBusy: () => overlayOpen,
+    toast: (m) => toast(m), push: () => push(), native: (wc, p) => nat(wc, p), dlStart: () => dlFlyStart(), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(), overlayBusy: () => overlayOpen,
     newPrivateTab: () => { const t = newTabObj({ private: true }); activate(t.id); return t; },
     openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
     addBackgroundTab: (o) => { const t = newTabObj({ url: o.url, title: o.title, favicon: o.favicon, spaceId: state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace, pinned: o.pinned }); push(); return t; },

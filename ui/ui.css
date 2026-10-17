@@ -674,11 +674,9 @@ details.more { margin:14px 0 0; } details.more summary { padding:8px 2px; color:
 #app.layout-top #rowbar .ibtn { width:38px; height:38px; border-radius:10px; } #app.layout-top #rowbar .ibtn svg { width:22px; height:22px; stroke-width:1.55; }
 #app.layout-top #rowbar .ibtn:hover { background:color-mix(in srgb,var(--text) 9%,transparent); color:var(--text); }
 #urlbox { position:relative; display:flex; min-width:0; }
-#app.layout-top #urlbox #urlbar { flex:1; width:100%; max-width:none; grid-column:auto; height:40px; border-radius:13px; padding:0 52px 0 15px; gap:12px; background:color-mix(in srgb,var(--text) 4%,var(--toolbar)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 34%,transparent); }
+#app.layout-top #urlbox #urlbar { flex:1; width:100%; max-width:none; grid-column:auto; height:40px; border-radius:13px; padding:0 15px; gap:12px; background:color-mix(in srgb,var(--text) 4%,var(--toolbar)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 34%,transparent); }
 #app.layout-top #urlbox #urlbar:hover { background:color-mix(in srgb,var(--text) 6%,var(--toolbar)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 55%,transparent); }
 #app.layout-top #urlbox #urlbar svg { width:20px; height:20px; stroke-width:1.55; } #app.layout-top #urlbar #url-text { font-size:14px; }
-#app.layout-top #urlbox #bmstar { position:absolute; right:8px; top:50%; transform:translateY(-50%); width:32px; height:32px; margin:0; display:grid; } #app.layout-top #urlbox #bmstar:active { transform:translateY(-50%) scale(.94); }
-#app.layout-top #urlbox #bmstar.on { color:var(--accent); } #app.layout-top #urlbox #bmstar.on svg { fill:currentColor; }
 #app.layout-top #barr { gap:4px; } #app.layout-top #rowbar #tools { gap:2px; }
 #app.layout-top #barr #stats { margin:0 8px 0 0; }
 #app.layout-top #rowbm #bmbar { padding-top:0; } #app.layout-top #rowbm .bmk { font-size:12.5px; border-radius:8px; color:color-mix(in srgb,var(--text) 72%,var(--toolbar)); } #app.layout-top #rowbm .bmk:hover { background:color-mix(in srgb,var(--text) 8%,transparent); }
@@ -717,3 +715,23 @@ details.more { margin:14px 0 0; } details.more summary { padding:8px 2px; color:
 .lrow .lact { display:flex; gap:2px; flex:none; } .lrow .lact .ibtn { opacity:0; } .lrow:hover .lact .ibtn { opacity:1; } .hsd { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; vertical-align:1px; }
 
 #app.layout-top #rowtabs .tab.active > * { position:relative; z-index:1; }
+
+/* ===== tabs that move: they grow in, shrink away, and the open one fades in ===== */
+#app.layout-top #rowtabs .tab { flex:0 1 var(--tabw,210px); transition:flex-basis .24s cubic-bezier(.3,.7,.3,1),background .12s,transform .1s; }
+@keyframes tabIn { from { min-width:0; max-width:0; margin-right:-6px; opacity:0; transform:translateY(8px) scale(.94); } }
+@keyframes tabOut { to { min-width:0; max-width:0; margin-right:-6px; padding-left:0; padding-right:0; opacity:0; transform:scale(.88); } }
+@keyframes tabInV { from { opacity:0; transform:translateX(-14px); } }
+@keyframes tabOutV { to { opacity:0; transform:translateX(-14px); height:0; min-height:0; margin-top:0; margin-bottom:0; } }
+@keyframes tabAct { from { opacity:0; transform:translateY(4px); } }
+.tab.enter { animation:tabIn .26s cubic-bezier(.2,.8,.3,1) both; }
+.tab.leaving { overflow:hidden; pointer-events:none; animation:tabOut .2s cubic-bezier(.4,0,.6,1) forwards; }
+#app:not(.layout-top) .tab.enter { animation-name:tabInV; } #app:not(.layout-top) .tab.leaving { animation-name:tabOutV; }
+#app.layout-top #rowtabs .tab.active::before, #app.layout-top #rowtabs .tab.active::after { animation:tabAct .3s cubic-bezier(.2,.8,.3,1) both; }
+@media (prefers-reduced-motion:reduce) { .tab.enter, .tab.leaving, #app.layout-top #rowtabs .tab.active::before, #app.layout-top #rowtabs .tab.active::after { animation:none; } }
+
+/* the bookmark star sits left of the address bar, with back / forward / reload; the bar is a little narrower and follows them */
+#app.layout-top #rowbar #urlbox { justify-self:start; width:min(100%,720px); }
+#app.layout-top #barl #bmstar { display:grid; margin:0; } #app.layout-top #barl #bmstar.on { color:var(--accent); } #app.layout-top #barl #bmstar.on svg { fill:currentColor; }
+/* a site without an icon: letter tile (see siteFav in ui.js) */
+.bmk .fav { width:16px; height:16px; border-radius:5px; font-size:9.5px; }
+#app.layout-top.bm-icons .bmk:not(.more) span.fav, #app:not(.layout-top) .bmk span.fav { display:grid; }

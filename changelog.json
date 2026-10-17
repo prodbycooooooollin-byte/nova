@@ -1,5 +1,19 @@
 [
   {
+    "version": "26.10.20",
+    "date": "2026-10-17",
+    "headline": {
+      "title": "Live tabs wake up fine",
+      "text": "streams, chats and calls are no longer frozen in the background, so a Twitch tab left for a while works when you come back (it is still put to sleep and reloaded when idle)."
+    },
+    "notes": [
+      "The download chip starts where the pointer was and flies into the downloads folder.",
+      "Tabs move: a new tab grows in, a closed one shrinks away, the open one fades in. After a click on + or on a tab's x the tabs keep their place under the pointer until you leave the tab row.",
+      "The address bar is a little narrower and the bookmark star sits next to back, forward and reload.",
+      "A site without an icon gets a letter tile in a colour taken from its name, in the bookmarks bar, Ctrl+K, the library and the tabs."
+    ]
+  },
+  {
     "version": "26.10.19",
     "date": "2026-10-17",
     "headline": {

@@ -16,6 +16,12 @@ const OFTEN_MS = 30 * 60e3;   // a site you check every few minutes stays half a
 const HOLD_CAP_MS = 45 * 60e3;
 const MIN_GAP_S = 4;          // switching past a tab with Ctrl+Tab is not a visit
 
+// A frozen page keeps its sockets but cannot answer them, so a live stream or a chat is dead when the page thaws (a Twitch tab that had to be closed and opened again).
+// Chrome itself does not freeze such pages; the CDP freeze ignores that rule, so Nova applies it: a page that has played or made sound since it was loaded, and the
+// well-known live services, are never frozen. They are still discarded after the idle delay, which loads a clean page when the tab is opened again.
+const LIVE_HOSTS = /(^|\.)(twitch\.tv|kick\.com|discord\.com|whatsapp\.com|slack\.com|teams\.microsoft\.com|teams\.live\.com|meet\.google\.com|zoom\.us|telegram\.org)$/;
+const live = (t) => !!t.mediaAt || LIVE_HOSTS.test(hostOf(t.url));
+
 let C, rev = {}, saveTimer = null;
 
 // ---------- what the page tells us before it is discarded (runs inside the page; keep the field key in step with wake-preload.js) ----------
@@ -64,7 +70,7 @@ async function setState(t, state) {
   return C.native ? C.native(wc, run()) : run(); // the page is not closed while this debugger session is open
 }
 async function freeze(t) {
-  if (t.frozen || !t.view) return;
+  if (t.frozen || !t.view || live(t)) return;
   if (!(await setState(t, 'frozen'))) { t.freezeFailAt = Date.now(); return; }
   t.frozen = true;
   if (!t.view || C.visibleIds().includes(t.id)) await thaw(t); // the tab was opened while the command was in flight
@@ -158,7 +164,7 @@ async function step(t, idle, b) {
     const since = Math.max(t.lastActive || 0, t.warmAt || 0, t.audibleAt || 0);
     if (b.softWake && (t.snapAt || 0) < since) { if (t.frozen) await thaw(t); if (t.view && !C.visibleIds().includes(t.id)) await snapshot(t); }
     const need = (t.loading ? 120 : b.freezeAfterSec) * 1000;
-    if (b.freeze && t.view && !t.frozen && idle >= need && !C.visibleIds().includes(t.id) && Date.now() - (t.freezeFailAt || 0) > 60e3) await freeze(t);
+    if (b.freeze && t.view && !t.frozen && !live(t) && idle >= need && !C.visibleIds().includes(t.id) && Date.now() - (t.freezeFailAt || 0) > 60e3) await freeze(t);
   } catch (e) { console.error('smart sleep', e.message); } finally { busy.delete(t.id); }
 }
 function tick() {
@@ -172,7 +178,7 @@ function tick() {
     const since = Math.max(t.lastActive || 0, t.warmAt || 0, t.audibleAt || 0), idle = now - since;
     const settle = t.warmAt > t.lastActive ? 9000 : 4000; // a hover-woken page needs a moment to put itself back
     const wantSnap = b.softWake && (t.snapAt || 0) < since && idle >= settle;
-    const wantFreeze = b.freeze && !t.frozen && idle >= (t.loading ? 120 : b.freezeAfterSec) * 1000;
+    const wantFreeze = b.freeze && !t.frozen && !live(t) && idle >= (t.loading ? 120 : b.freezeAfterSec) * 1000;
     const d = delayMs(t), keep = b.softWake && t.dirty; // typed-in input Nova cannot restore: never discard it on a timer
     t.sleepAt = d > 0 && !keep ? since + d : 0;
     if (wantSnap) { step(t, idle, b); continue; } // the picture and the scroll position are taken before anything is frozen or discarded
@@ -191,4 +197,4 @@ function init(ctx) {
 }
 const flush = () => { clearTimeout(saveTimer); try { C.writeJson('revisit.json', rev); } catch {} };
 
-module.exports = { init, left, arrived, missed, clear, flush, freeze, thaw, snapshot, wakePayload, delayMs, learned, _rev: () => rev };
+module.exports = { init, live, left, arrived, missed, clear, flush, freeze, thaw, snapshot, wakePayload, delayMs, learned, _rev: () => rev };
