@@ -68,7 +68,7 @@ const PRESETS = {
 };
 const WALL_OF = {'Nova': 'orbit', 'Daylight': 'orbit', 'Nebula': 'orbit', 'Supernova': 'orbit', 'Aurora': 'orbit', 'Graphite': 'stars', 'Midnight': 'orbit', 'Rosé': 'orbit', 'Forest': 'orbit', 'Ocean': 'orbit', 'Sakura': 'orbit', 'Sand': 'orbit', 'Mono': 'stars', 'Cyber': 'grid', 'Tokyo Night': 'orbit', 'Dracula': 'orbit', 'Nord': 'stars', 'Catppuccin': 'orbit', 'Gruvbox': 'orbit'};
 const WIZARD_THEMES = ['Nova', 'Daylight', 'Nebula', 'Aurora', 'Midnight', 'Rosé', 'Forest', 'Tokyo Night', 'Graphite'];
-const WALLS = [['theme', 'Follow theme'], ['none', 'Plain'], ['orbit', 'Orbit'], ['stars', 'Stars'], ['grid', 'Grid']];
+const WALLS = [['none', 'Plain'], ['stars', 'Pixel stars'], ['glow', 'Glow'], ['dots', 'Dots']];
 const ACTIONS = {
   newTab: 'New tab', newWindow: 'New window', go: 'Address and search bar', closeTab: 'Close tab', reopenTab: 'Reopen closed tab', nextTab: 'Next tab', prevTab: 'Previous tab',
   overview: 'Tab overview', reload: 'Reload', back: 'Back', forward: 'Forward', toggleSidebar: 'Toggle sidebar', focusMode: 'Focus mode',
@@ -137,7 +137,7 @@ function applySettings() {
   { const ord = blockOrder(s); BLOCKS.forEach((b) => r.setProperty('--o-' + b[0], ord.indexOf(b[0]) + 1)); }
   arrangeChrome(s.layout === 'top');
   const lightBg = (() => { const h = (s.theme.bg || '#000000').replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; return (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255 >= 0.5; })();
-  $('#app').className = `layout-${s.layout}` + (S.spaces && S.spaces.length < 2 ? ' one-space' : '') + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '') + (lightBg ? ' light' : '');
+  $('#app').className = `layout-${s.layout}` + (S.spaces && S.spaces.length < 2 ? ' one-space' : '') + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '') + (s.bookmarksPos === 'above' ? ' bm-above' : '') + (s.topHide || []).map((h) => ' th-' + h).join('') + (lightBg ? ' light' : '');
   $('#user-css').textContent = s.customCss || '';
   dockOverlay();
   if (s.customJs !== customJsApplied) {
@@ -209,21 +209,24 @@ function leaveTab(e) {
   e.classList.add('leaving'); e.classList.remove('active', 'enter');
   tabAnim(e, 'tabOut', () => { if (e.parentNode) e.remove(); }, 450);
 }
+// a long row of tabs scrolls with the wheel and keeps the open tab in view
+document.addEventListener('wheel', (e) => { const row = e.target.closest && e.target.closest('#tabs'); if (!row || !S || S.settings.layout !== 'top' || row.scrollWidth <= row.clientWidth || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return; row.scrollLeft += e.deltaY; e.preventDefault(); }, { passive: false });
+const keyOf = (e) => e.dataset.tab || (e.dataset.group ? 'g' + e.dataset.group : ''); // the tabs and the chips of groups are kept by these keys
 function morphTabs(el, html) {
   const tpl = document.createElement('template');
   if (!tpl.content || !el.insertBefore || !el.querySelector) { el.innerHTML = html; return; }
   tpl.innerHTML = html;
-  const next = [...tpl.content.children], count = next.filter((n) => n.dataset && n.dataset.tab).length, gap = 6, fx = !!S.settings.effects;
+  const next = [...tpl.content.children], count = next.filter((n) => n.dataset && n.dataset.tab).length, gap = 4, fx = !!S.settings.effects;
   let w = 0;
-  if (strip.on && count) { w = strip.mode === 'add' ? Math.floor((strip.avail - (next.some((n) => n.classList.contains('active')) ? 16 : 0) - (count - 1) * gap) / count) : Math.round(strip.w); w = Math.max(120, Math.min(210, w)); }
-  if (w) el.style.setProperty('--tabw', w + 'px'); else el.style.removeProperty('--tabw');
+  if (strip.on && count) { w = strip.mode === 'add' ? (strip.avail - (next.some((n) => n.classList.contains('active')) ? 16 : 0) - (count - 1) * gap) / count : Math.round(strip.w); w = Math.max(40, Math.min(210, w)); }
+  if (w) el.style.setProperty('--tabw', w.toFixed(2) + 'px'); else el.style.removeProperty('--tabw');
   if (el.__html === html) return; el.__html = html;
-  const first = !el.children.length, live = [...el.children].filter((e) => !e.classList.contains('leaving')), byId = new Map(live.filter((e) => e.dataset.tab).map((e) => [e.dataset.tab, e]));
-  const wanted = new Set(next.map((n) => n.dataset.tab).filter(Boolean));
-  for (const [id, e] of [...byId]) if (!wanted.has(id)) { byId.delete(id); leaveTab(e); }
+  const first = !el.children.length, live = [...el.children].filter((e) => !e.classList.contains('leaving')), byId = new Map(live.filter((e) => keyOf(e)).map((e) => [keyOf(e), e]));
+  const wanted = new Set(next.map(keyOf).filter(Boolean));
+  for (const [id, e] of [...byId]) if (!wanted.has(id)) { byId.delete(id); if (e.classList.contains('tab')) leaveTab(e); else e.remove(); }
   let ref = el.firstChild;
   for (const n of next) {
-    const id = n.dataset.tab; let cur = id ? byId.get(id) : el.querySelector(':scope > .newrow');
+    const id = keyOf(n); let cur = id ? byId.get(id) : el.querySelector(':scope > .newrow');
     if (cur) {
       if (id) {
         const keep = cur.classList.contains('enter') ? ' enter' : '';
@@ -234,11 +237,22 @@ function morphTabs(el, html) {
       }
     } else {
       cur = n;
-      if (!first && id && fx) { const e = cur; e.classList.add('enter'); tabAnim(e, 'tabIn', () => e.classList.remove('enter'), 450); }
+      if (!first && id && fx && cur.classList.contains('tab')) { const e = cur; e.classList.add('enter'); tabAnim(e, 'tabIn', () => e.classList.remove('enter'), 450); }
     }
     while (ref && ref.classList && ref.classList.contains('leaving')) ref = ref.nextSibling;
     if (cur === ref) ref = ref.nextSibling; else el.insertBefore(cur, ref);
   }
+}
+// tab groups: a chip with the name before the tabs of a group; a folded group shows only the chip (and its open tab)
+const groupOf = (t) => { const g = t.group && (S.groups || []).find((x) => x.id === t.group); return g && g.spaceId === t.spaceId ? g : null; };
+const groupChip = (g, list) => `<div class="grp ${g.collapsed ? 'shut' : ''}" data-group="${g.id}" style="--gc:${g.color}" title="${esc(g.name || 'Group')}: click to ${g.collapsed ? 'unfold' : 'fold'}, right-click for more"><i></i><span>${esc(g.name || 'Group')}</span>${g.collapsed ? `<b>${list.filter((x) => groupOf(x) === g).length}</b>` : ''}</div>`;
+function groupMenu(id) {
+  const g = (S.groups || []).find((x) => x.id === id); if (!g) return [];
+  return [
+    { label: 'Name and colour', run: async () => { const r = await askDialog({ title: 'Edit group', input: true, value: g.name, ok: 'Save', colors: SPACE_COLORS, color: g.color }); if (r) nova.cmd('groupSet', { id, name: r.value, color: r.color }); } },
+    { label: g.collapsed ? 'Unfold the group' : 'Fold the group', run: () => nova.cmd('groupSet', { id, collapsed: !g.collapsed }) },
+    '-', { label: 'Ungroup the tabs', run: () => nova.cmd('groupUngroup', { id }) }, { label: 'Close the group', run: () => nova.cmd('groupClose', { id }) },
+  ];
 }
 function render() {
   if (!S) return;
@@ -259,11 +273,15 @@ function render() {
   $('#pins').innerHTML = tabs.filter((t) => t.pinned).map((t) => `<div class="pin ${t.id === S.activeTab ? 'active' : ''}" data-tab="${t.id}" title="${esc(t.title)}">${favHtml(t)}<button class="pinx" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`).join('');
   const plain = tabs.filter((t) => !t.pinned), total = S.tabs.length, max = S.settings.maxTabs;
   $('#tabhead').innerHTML = `<span class="lbl">Tabs</span><span class="count ${max && total >= max - 3 ? 'hot' : ''}" title="Open tabs / tab budget">${total}${max ? ' / ' + max : ''}</span><button class="ibtn sm" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}</button>`;
-  morphTabs($('#tabs'), plain.map((t) => {
+  let lastG = '';
+  morphTabs($('#tabs'), plain.flatMap((t) => {
+    const gg = groupOf(t), head = gg && gg.id !== lastG ? groupChip(gg, plain) : ''; lastG = gg ? gg.id : '';
+    if (gg && gg.collapsed && t.id !== S.activeTab) return [head];
     const idle = t.id === S.activeTab ? 0 : Math.min(1, (S.now - t.lastActive) / maxAge);
-    return `<div draggable="true" class="tab ${t.id === S.activeTab ? 'active' : ''} ${t.asleep ? 'asleep' : ''} ${t.id === S.split ? 'split' : ''} ${t.private ? 'private' : ''}" data-tab="${t.id}" style="--idle:${(1 - idle * 0.45).toFixed(2)}" title="${esc(t.title)}${t.url === HOME ? '' : '\n' + esc(t.url)}">
-      ${favHtml(t)}<span class="t">${esc(t.title || 'New tab')}</span>${t.asleep ? `<span class="zz" title="Asleep: reloads when opened">${ic('moon')}</span>` : ''}${t.audible || t.muted ? `<button class="aud" data-mute="${t.id}" title="${t.muted ? 'Unmute' : 'Mute'}">${ic(t.muted ? 'mute' : 'vol')}</button>` : ''}<button class="x" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`;
+    return [head, `<div draggable="true" class="tab ${t.id === S.activeTab ? 'active' : ''} ${t.asleep ? 'asleep' : ''} ${t.id === S.split ? 'split' : ''} ${t.private ? 'private' : ''} ${gg ? 'grouped' : ''}" data-tab="${t.id}" style="--idle:${(1 - idle * 0.45).toFixed(2)}${gg ? ';--gc:' + gg.color : ''}" title="${esc(t.title)}${t.url === HOME ? '' : '\n' + esc(t.url)}">
+      ${favHtml(t)}<span class="t">${esc(t.title || 'New tab')}</span>${t.asleep ? `<span class="zz" title="Asleep: reloads when opened">${ic('moon')}</span>` : ''}${t.audible || t.muted ? `<button class="aud" data-mute="${t.id}" title="${t.muted ? 'Unmute' : 'Mute'}">${ic(t.muted ? 'mute' : 'vol')}</button>` : ''}<button class="x" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`].filter(Boolean);
   }).join('') + `<button class="newrow" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}<span>New tab</span></button>`);
+  { const row = $('#tabs'), act = row.querySelector && row.querySelector('.tab.active'); if (act && row.__act !== S.activeTab) { row.__act = S.activeTab; if (act.scrollIntoView) act.scrollIntoView({ inline: 'nearest', block: 'nearest' }); } }
   $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
   const bud = S.budget, pct = bud.enabled && bud.cap ? Math.min(100, Math.round(bud.used / bud.cap * 100)) : 0;
   dlTrayDraw();
@@ -291,6 +309,7 @@ document.addEventListener('click', (e) => {
   const xp = e.target.closest('[data-extpop]'); if (xp) return nova.cmd('extPopup', { id: xp.dataset.extpop });
   const mu = e.target.closest('[data-mute]'); if (mu) return nova.cmd('mute', { id: +mu.dataset.mute });
   const c = e.target.closest('[data-close]'); if (c) { const tb = c.closest('#tabs .tab'); if (tb) freezeStrip('close', tb); return nova.cmd('close', { id: +c.dataset.close }); }
+  const gh = e.target.closest('[data-group]'); if (gh) { const g = (S.groups || []).find((x) => x.id === gh.dataset.group); return g && nova.cmd('groupSet', { id: g.id, collapsed: !g.collapsed }); }
   const t = e.target.closest('[data-tab]'); if (t && !overlay) return nova.cmd('activate', { id: +t.dataset.tab });
   const sp = e.target.closest('[data-space]'); if (sp) return nova.cmd('switchSpace', { id: +sp.dataset.space });
 });
@@ -300,9 +319,10 @@ document.addEventListener('contextmenu', (e) => {
   const t = e.target.closest('[data-tab]'), sp = e.target.closest('[data-space]'), bmk = e.target.closest('[data-bm]');
   const names = { label: S.settings.bookmarkNames === false ? 'Show bookmark names' : 'Icons only, hide names', run: () => nova.cmd('settings', { patch: { bookmarkNames: S.settings.bookmarkNames === false } }) };
   const barOpts = S.settings.layout === 'top' ? ['-', names] : []; // in the side layouts the bar is icons only anyway
-  if (bmk) { const url = bmk.dataset.bm; return showMenu(e, [{ label: 'Open', run: () => nova.cmd('open', { text: url }) }, { label: 'Open in new tab', run: () => nova.cmd('open', { text: url, newTab: true }) }, '-', { label: 'Remove bookmark', run: () => nova.cmd('removeBookmark', { url }) }, ...barOpts]); }
+  if (bmk) { const url = bmk.dataset.bm; return showMenu(e, [{ label: 'Open', run: () => nova.cmd('open', { text: url }) }, { label: 'Open in new tab', run: () => nova.cmd('open', { text: url, newTab: true }) }, '-', { label: 'Rename…', run: async () => { const cur = (S.bar || []).find((x) => x.url === url); const r = await askDialog({ title: 'Rename bookmark', input: true, value: (cur && cur.title) || hostOf(url), ok: 'Save' }); if (r) nova.cmd('renameBookmark', { url, title: r.value }); } }, { label: 'Remove bookmark', run: () => nova.cmd('removeBookmark', { url }) }, ...barOpts]); }
   if (e.target.closest('#bmbar')) return showMenu(e, [{ label: 'Hide bookmarks bar', run: () => nova.cmd('settings', { patch: { bookmarksBar: false } }) }, ...barOpts]);
-  if (t && !overlay) showMenu(e, tabMenu(+t.dataset.tab)); else if (sp) showMenu(e, spaceMenu(+sp.dataset.space));
+  const gh = e.target.closest('[data-group]');
+  if (gh && !overlay) showMenu(e, groupMenu(gh.dataset.group)); else if (t && !overlay) showMenu(e, tabMenu(+t.dataset.tab)); else if (sp) showMenu(e, spaceMenu(+sp.dataset.space));
 });
 function showMenu(e, items) {
   const m = $('#menu'); const oldW = innerWidth, x0 = e.clientX, y0 = e.clientY;
@@ -322,6 +342,7 @@ function tabMenu(id) {
   const t = S.tabs.find((x) => x.id === id), others = S.spaces.filter((s) => s.id !== t.spaceId);
   return [
     { label: t.pinned ? 'Unpin tab' : 'Pin tab', run: () => nova.cmd('pin', { id }) },
+    ...(t.pinned ? [] : ['-', { label: 'Add to a new group', run: () => nova.cmd('groupTab', { id, group: 'new' }) }, ...(S.groups || []).filter((g) => g.spaceId === t.spaceId && g.id !== t.group).slice(0, 6).map((g, i) => ({ label: 'Add to ' + (g.name ? '“' + g.name.slice(0, 18) + '”' : 'group ' + (i + 1)), run: () => nova.cmd('groupTab', { id, group: g.id }) })), ...(t.group ? [{ label: 'Remove from its group', run: () => nova.cmd('ungroupTab', { id }) }] : []), '-']),
     { label: id === S.split ? 'Close split view' : 'Open in split view', run: () => nova.cmd('split', { id }) },
     { label: 'Put to sleep', run: () => nova.cmd('sleep', { id }) },
     ...(S.tabs.length > 1 ? [{ label: 'Move to new window', run: () => nova.cmd('detachTab', { id, force: true }) }] : []),
@@ -430,6 +451,15 @@ function commands() {
     { t: 'New profile', s: 'Its own logins, cookies, history and passwords', run: () => setTimeout(newProfileFlow, 80) },
   ];
 }
+// the keywords of the address bar ("yt cats"), see keywordUrl in main.js
+let kwSeen = null, kwList = [];
+function keywordOf(text) {
+  const m = /^\s*(\S+)\s+([\s\S]*)$/.exec(String(text || '')); if (!m) return null;
+  const src = (S && S.settings.searchKeywords) || '';
+  if (kwSeen !== src) { kwSeen = src; const text = src; const list = String(text || '').split(/\r?\n/).map((l) => l.trim().match(/^(\S+)\s+(https?:\/\/\S*%s\S*)(?:\s+(.+))?$/i)).filter(Boolean).map((m) => ({ k: m[1].toLowerCase(), url: m[2], name: (m[3] || '').trim() || m[2].replace(/^https?:\/\/(www\.)?/i, '').split(/[/?#]/)[0] })); kwList = list; }
+  const e = kwList.find((x) => x.k === m[1].toLowerCase());
+  return e ? { name: e.name, k: e.k, q: m[2].trim() } : null;
+}
 const looksLikeUrl = (q) => /^(https?|file|about):/i.test(q) || (!/\s/.test(q) && (/^localhost/i.test(q) || /^[^\s/]+\.[a-z]{2,}([:/?#]|$)/i.test(q)));
 function palette(o, d) {
   const mode = d.mode || 'go';
@@ -456,7 +486,10 @@ function palette(o, d) {
       else items.push(...inside.map((r) => { const t = S.tabs.find((x) => x.id === r.id); return t ? { t: t.title || 'Tab', s: r.snippet, icon: favHtml(t), act: () => nova.cmd('activate', { id: t.id }) } : null; }).filter(Boolean));
       sel = first(); return;
     }
-    if (v) items.push({ kind: 'open', t: looksLikeUrl(v) ? `Open ${v}` : `Search “${v}”`, s: looksLikeUrl(v) ? '' : 'with your search engine', icon: ic(looksLikeUrl(v) ? 'globe' : 'search'), act: (nt) => nova.cmd('open', { text: v, newTab: nt || mode === 'new' }) });
+    const kw = keywordOf(q.value);
+    if (kw && !kw.q) items.push({ keep: 1, t: `Search ${kw.name}`, s: 'Type what to look for', icon: ic('search'), act: noop });
+    else if (kw) items.push({ kind: 'open', t: `Search ${kw.name} for “${kw.q}”`, s: `${kw.k} shortcut`, icon: ic('search'), act: (nt) => nova.cmd('open', { text: v, newTab: nt || mode === 'new' }) });
+    else if (v) items.push({ kind: 'open', t: looksLikeUrl(v) ? `Open ${v}` : `Search “${v}”`, s: looksLikeUrl(v) ? '' : 'with your search engine', icon: ic(looksLikeUrl(v) ? 'globe' : 'search'), act: (nt) => nova.cmd('open', { text: v, newTab: nt || mode === 'new' }) });
     if (sugg.length) items.push({ sec: 'Suggestions' }, ...sugg.map((x) => ({ t: x, icon: ic('search'), act: (nt) => nova.cmd('open', { text: x, newTab: nt || mode === 'new' }) })));
     const open = S.tabs.map((t) => ({ t, sc: v ? score(v, t.title, t.url) : t.id === S.activeTab ? -1 : 1 / (1 + (S.now - t.lastActive)) })).filter((x) => x.sc >= 0).sort((a, b) => b.sc - a.sc).slice(0, v ? 8 : 6);
     if (open.length) items.push({ sec: v ? 'Open tabs' : 'Recent tabs' }, ...open.map(({ t }) => { const sp = S.spaces.find((s) => s.id === t.spaceId); return { t: t.title || 'New tab', s: (S.spaces.length > 1 ? sp.name + '  ·  ' : '') + (t.url === HOME ? '' : hostOf(t.url)), icon: `<span class="dot" style="background:${sp.color}"></span>`, act: () => nova.cmd('activate', { id: t.id }) }; }));
@@ -477,7 +510,7 @@ function palette(o, d) {
     if (S.settings.features.tabSearch && v.startsWith('?')) { inside = null; build(); draw(); timer = setTimeout(async () => { const r = await nova.cmd('searchTabs', { text: v.slice(1) }); if (my === seq) { inside = r || []; build(); draw(); } }, 280); return; }
     build(); draw();
     nova.cmd('query', { text: v }).then((r) => { if (my === seq) { extra = r; build(); draw(); } });
-    if (S.settings.suggestions && v.length > 1 && !looksLikeUrl(v)) { clearTimeout(stimer); stimer = setTimeout(async () => { const r = await nova.cmd('suggest', { q: v }); if (my === seq) { sugg = r || []; build(); draw(); } }, 160); } else sugg = [];
+    if (S.settings.suggestions && v.length > 1 && !looksLikeUrl(v) && !keywordOf(q.value)) { clearTimeout(stimer); stimer = setTimeout(async () => { const r = await nova.cmd('suggest', { q: v }); if (my === seq) { sugg = r || []; build(); draw(); } }, 160); } else sugg = [];
   };
   q.addEventListener('input', refresh);
   q.addEventListener('keydown', (e) => {

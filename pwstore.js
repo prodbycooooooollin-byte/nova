@@ -20,8 +20,26 @@ function labelOf(origin) {
   try { const u = new URL(origin); return u.protocol === 'http:' ? 'http://' + u.host : u.host; } catch { return String(origin); }
 }
 
-function createStore({ safeStorage, fs, file, now = Date.now, newId = () => crypto.randomBytes(8).toString('hex') }) {
+// The site a login belongs to for "related site" suggestions: the registrable domain of an https origin, or '' when there is no safe answer.
+// `parse` is tldts' parse. Its PRIVATE section of the public suffix list is switched on, so hosts that strangers share (x.github.io, x.onrender.com,
+// x.lovable.app, x.vercel.app, x.base44.app ...) are each their own site instead of one site per provider; without that, one person's app would be
+// offered another person's logins. Only https on its default port has a site, and so has nothing that is an address (IP), a bare public suffix,
+// a one-label host (localhost, intranet) or a host with a trailing dot. No `parse` (no list available) means no site: nothing is ever guessed.
+function siteKeyOf(origin, parse) {
+  try {
+    if (typeof parse !== 'function') return '';
+    const u = new URL(String(origin));
+    if (u.protocol !== 'https:' || u.port || u.username || u.password || !u.hostname || u.hostname.endsWith('.')) return '';
+    const p = parse(u.hostname, { allowPrivateDomains: true });
+    return p && !p.isIp && typeof p.domain === 'string' && p.domain && p.publicSuffix && p.domain !== p.publicSuffix && u.hostname.endsWith(p.domain) ? p.domain : '';
+  } catch { return ''; }
+}
+
+// `siteKey` (origin -> site, see siteKeyOf) is handed in like the other dependencies; without it nothing is ever related.
+function createStore({ safeStorage, fs, file, now = Date.now, newId = () => crypto.randomBytes(8).toString('hex'), siteKey = () => '' }) {
   let data = null, readError = '';
+  const keys = new Map(); // origin of a saved login -> its site; a pure function of the origin, so it is never stale
+  const keyOf = (origin) => { let k = keys.get(origin); if (k === undefined) { if (keys.size > 10000) keys.clear(); k = siteKey(origin) || ''; keys.set(origin, k); } return k; };
 
   const available = () => { try { return !!safeStorage.isEncryptionAvailable(); } catch { return false; } };
   const seal = (password) => {
@@ -69,6 +87,18 @@ function createStore({ safeStorage, fs, file, now = Date.now, newId = () => cryp
     count: () => load().entries.length,
     matches: (origin) => load().entries.filter((e) => e.origin === origin).sort((a, b) => b.t - a.t).map(({ id, user, t }) => ({ id, user, t })),
     countFor: (origin) => load().entries.reduce((n, e) => n + (e.origin === origin ? 1 : 0), 0),
+    // Logins saved for OTHER origins of the same site as `origin` (www.tiktok.com <-> developers.tiktok.com), newest first, with the host they belong to.
+    // Never the origin itself; empty when the origin has no site. The caller decides when to ask (only when the origin has no login of its own).
+    related(origin) {
+      const k = siteKey(origin); if (!k) return [];
+      return load().entries.filter((e) => e.origin !== origin && keyOf(e.origin) === k).sort((a, b) => b.t - a.t).map(({ id, user, t, origin: o }) => ({ id, user, t, host: labelOf(o) }));
+    },
+    countRelated(origin) {
+      const k = siteKey(origin); if (!k) return 0;
+      return load().entries.reduce((n, e) => n + (e.origin !== origin && keyOf(e.origin) === k ? 1 : 0), 0);
+    },
+    // is this saved login one of another origin of the same site as `origin`? Asked again when the user picks it.
+    isRelated(id, origin) { const k = siteKey(origin), e = byId(id); return !!(k && e && e.origin !== origin && keyOf(e.origin) === k); },
     seal,
     // what to offer after a sign-in: nothing (same password already kept), an update of a kept login, or a new one
     check(origin, user, password) {
@@ -125,8 +155,8 @@ function createStore({ safeStorage, fs, file, now = Date.now, newId = () => cryp
       if (r.added) save();
       return r;
     },
-    unload() { data = null; readError = ''; },
+    unload() { data = null; readError = ''; keys.clear(); },
   };
 }
 
-module.exports = { createStore, originOf, labelOf, LIMITS };
+module.exports = { createStore, originOf, labelOf, siteKeyOf, LIMITS };

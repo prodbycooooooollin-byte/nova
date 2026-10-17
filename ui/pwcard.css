@@ -41,6 +41,9 @@ body.fx .card { animation:in .16s cubic-bezier(.2,.8,.2,1); } @keyframes in { fr
 .it .tile { width:28px; height:28px; border-radius:8px; } .it .tile svg { width:15px; height:15px; }
 .it .u { flex:1; min-width:0; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .it .u.none { color:var(--dim); font-weight:450; }
+.it .u.two { display:flex; flex-direction:column; line-height:1.25; }
+.it .u.two .n { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .it .u.two .n.none { color:var(--dim); font-weight:450; }
+.it .u.two .h { color:var(--dim); font-size:11px; font-weight:450; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .it .d { color:var(--dim); font-size:9px; letter-spacing:.18em; flex:none; }
 .foot { height:41px; border-top:1px solid var(--line); padding:5px 6px; flex:none; }
 .foot button { height:30px; width:100%; display:flex; align-items:center; gap:9px; padding:0 10px; color:var(--dim); border-radius:var(--r-sm); text-align:left; font-size:12.5px; }

@@ -4,14 +4,15 @@ const pwLabel = (origin) => { try { const u = new URL(origin); return u.protocol
 
 function pwPageHtml(s, h) {
   const { row, grp, sect, fsw } = h;
-  const on = !!s.features.passwords, c = { save: true, fill: true, ...(s.passwords || {}) };
+  const on = !!s.features.passwords, c = { save: true, fill: true, related: true, ...(s.passwords || {}) };
   const csw = (k, v) => `<label class="sw"><input type="checkbox" data-pwcfg="${k}" ${v ? 'checked' : ''}><i></i></label>`;
   return sect('Password saver', 'Kept on this device only, sealed with your Windows account.')
     + grp(
       row('Save and fill passwords', fsw('passwords', on), 'Off by default. Nova asks after you sign in and fills a login only when you pick it, on the exact same site. Never in private tabs, never inside embedded frames.', 'password'),
       ...(on ? [
         row('Offer to save', csw('save', c.save), 'Asks after a sign-in worked, never before.', 'save'),
-        row('Offer to fill', csw('fill', c.fill), 'Click into a sign-in field to see the logins saved for that site. An http page never gets what was saved on https.', 'user')] : []),
+        row('Offer to fill', csw('fill', c.fill), 'Click into a sign-in field to see the logins saved for that site. An http page never gets what was saved on https.', 'user'),
+        row('Also offer related sites', csw('related', c.related), 'When a site has no login of its own, the list also shows logins saved for other addresses of the same site, with their address, for example www.tiktok.com and developers.tiktok.com. https only, and you still pick. Addresses many people share (github.io, onrender.com, vercel.app, lovable.app) are never treated as one site.', 'link')] : []),
       row('Good to know', '', 'Programs running as you can still ask Windows to open the passwords, as with every browser. A password manager with its own master password stays the stronger choice.', 'info'))
     + sect('Saved passwords') + '<div id="pwbox"></div><div id="pwnever"></div>'
     + sect('Move passwords') + grp(
@@ -95,8 +96,8 @@ function pwPageBind(body, h) {
     clearTimeout(timers.get(r.dataset.id)); chip.textContent = '••••••••'; chip.classList.remove('open'); b.innerHTML = ic('eye'); b.title = 'Show password';
   }
 
-  body.querySelectorAll('[data-pwcfg]').forEach((el) => (el.onchange = () => h.patch({ passwords: { save: true, fill: true, ...(S.settings.passwords || {}), [el.dataset.pwcfg]: el.checked } })));
-  const feat = body.querySelector('[data-feat=passwords]'); if (feat) feat.addEventListener('change', () => h.again(160)); // the two options below appear and disappear with it
+  body.querySelectorAll('[data-pwcfg]').forEach((el) => (el.onchange = () => h.patch({ passwords: { save: true, fill: true, related: true, ...(S.settings.passwords || {}), [el.dataset.pwcfg]: el.checked } })));
+  const feat = body.querySelector('[data-feat=passwords]'); if (feat) feat.addEventListener('change', () => h.again(160)); // the options below appear and disappear with it
 
   q('#pwimp').onclick = async () => {
     const r = await cmd('import');

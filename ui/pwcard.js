@@ -18,7 +18,9 @@ function render(m) {
   theme(m);
   const root = $('#root');
   if (m.mode === 'pick') {
-    root.innerHTML = `<div class="card pick"><div class="list">${m.entries.map((e, i) => `<button class="it" data-i="${i}" title="Fill ${esc(e.user || 'this login')}"><span class="tile">${ic('user')}</span><span class="u ${e.user ? '' : 'none'}">${esc(e.user || 'No user name')}</span><span class="d">••••••••</span></button>`).join('')}</div><div class="foot"><button data-m="1">${ic('password')}Manage passwords</button></div></div>`;
+    // a login saved for another host of this site (tiktok.com on developers.tiktok.com) shows that host under the user name, so it is never a surprise where it comes from
+    const who = (e) => (e.host ? `<span class="u two"><span class="n ${e.user ? '' : 'none'}">${esc(e.user || 'No user name')}</span><span class="h">${esc(e.host)}</span></span>` : `<span class="u ${e.user ? '' : 'none'}">${esc(e.user || 'No user name')}</span>`);
+    root.innerHTML = `<div class="card pick"><div class="list">${m.entries.map((e, i) => `<button class="it" data-i="${i}" title="Fill ${esc(e.user || 'this login')}${e.host ? ' (saved for ' + esc(e.host) + ')' : ''}"><span class="tile">${ic('user')}</span>${who(e)}<span class="d">••••••••</span></button>`).join('')}</div><div class="foot"><button data-m="1">${ic('password')}Manage passwords</button></div></div>`;
     root.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => send('pick', +b.dataset.i)));
     $('[data-m]').onclick = () => send('manage');
     return;

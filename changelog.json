@@ -1,5 +1,23 @@
 [
   {
+    "version": "26.10.21",
+    "date": "2026-10-17",
+    "headline": {
+      "title": "Tab groups and a calmer top bar",
+      "text": "group tabs with a name and a colour, a centred address bar, smaller plainer tabs and a pixel-art start page."
+    },
+    "notes": [
+      "Tab groups: right-click a tab and add it to a new group, give the group a name and a colour, fold it down to its chip. A link opened from a grouped tab joins its group.",
+      "Address bar shortcuts: type yt cats to search YouTube (also w, gh, r, a, maps, g, tw). The list can be edited under Search & privacy.",
+      "The top bar is smaller and plainer: the address bar sits in the middle, the tabs have no boxes, the buttons are a little smaller. Under Settings > Layout the bookmarks can sit above the address bar and every button can be hidden.",
+      "A long row of tabs shrinks the tabs down to their icons instead of running under the plus.",
+      "The start page has new pixel backgrounds (stars, glow, dots) instead of the orbit: Ultra shows none, Nova draws them still, Complete lets a few stars blink.",
+      "Bookmarks: the ones in the bar get their icons first, and any bookmark can be renamed (right-click in the bar, or the pencil in the Library).",
+      "A maximized window no longer leaves a 1 pixel strip on the monitor beside it, and the sidebar's bottom icons are one tidy row again.",
+      "A site without a login of its own can be offered the logins of its other addresses (www.tiktok.com and developers.tiktok.com), over https only and never for shared hosts such as github.io, under its own switch."
+    ]
+  },
+  {
     "version": "26.10.20",
     "date": "2026-10-17",
     "headline": {

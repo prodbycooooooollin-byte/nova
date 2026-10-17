@@ -5,7 +5,10 @@
 // The rules this file enforces, in one place:
 //  - Only the top frame of an http(s) page is ever read from or written to, and the origin always comes from the browser (senderFrame.url),
 //    never from what the page says. Iframes get nothing.
-//  - A saved login is offered only on the exact same origin (scheme, host and port): an https login never fills an http page.
+//  - A saved login is offered only on the exact same origin (scheme, host and port): an https login never fills an http page. The one optional
+//    exception ("related sites", on by default, its own switch): when the page's origin has no login of its own, logins saved for other hosts of the
+//    same registrable domain are listed, each with its host (www.tiktok.com <-> developers.tiktok.com). That needs https on both sides, the default
+//    port, and the public suffix list WITH its private section (see siteKeyOf in pwstore.js), so x.github.io never sees y.github.io. Still only after a pick.
 //  - A login is filled only after the user clicked it in Nova's own card, which a page cannot see, move or click. Only visible fields are filled.
 //  - Private tabs never save. Secrets are never logged and never sent to the card; a submitted password is sealed at once, so no plaintext
 //    is kept while the offer waits for the next page.
@@ -13,9 +16,12 @@ const { app, ipcMain, safeStorage, WebContentsView, BrowserWindow, dialog, clipb
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { createStore, originOf, labelOf, LIMITS } = require('./pwstore');
+const { createStore, originOf, labelOf, siteKeyOf, LIMITS } = require('./pwstore');
 const csv = require('./pwcsv');
 const profiles = require('./profiles');
+// The public suffix list comes from tldts (the package the ad blocker already ships). Without it related sites are simply off.
+let tldParse = null; try { tldParse = require('tldts-experimental').parse; } catch { /* no list: no related sites */ }
+const siteKey = (origin) => siteKeyOf(origin, tldParse);
 
 let C; // context from main.js: sessions, isPrivate, profileOf, profile, profileName, settings, tabs, activeTab, overlayOpen, win, ui, userFile, toast, openOverlay
 const stores = new Map(); // profile id -> its store, opened on first use, dropped again when the feature is off and nothing needs it
@@ -30,7 +36,7 @@ const carryFor = (id, origin) => { const c = carried.get(id); if (!c) return nul
 
 const L = (m) => { try { if (C.log) C.log('pw: ' + m); } catch { /* the log is a help only */ } }; // host names and yes/no only, never a user name or a password
 const featureOn = () => !!(C.settings().features || {}).passwords;
-const cfg = () => ({ save: true, fill: true, ...(C.settings().passwords || {}) });
+const cfg = () => ({ save: true, fill: true, related: true, ...(C.settings().passwords || {}) });
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 // Passwords belong to a profile (passwords.json for the first one, passwords-<id>.json for the others): a login saved while working is not offered in the
 // private profile. The profile of a page is the one of its session, which the browser knows; a page cannot name another.
@@ -39,7 +45,7 @@ const pidOf = (wc) => (C.profileOf ? C.profileOf(wc) : profiles.MAIN);
 function getStore(pid) {
   pid = pid || curPid();
   let s = stores.get(pid);
-  if (!s) { s = createStore({ safeStorage, fs, file: C.userFile(profiles.fileOf('passwords.json', pid)) }); stores.set(pid, s); }
+  if (!s) { s = createStore({ safeStorage, fs, file: C.userFile(profiles.fileOf('passwords.json', pid)), siteKey }); stores.set(pid, s); }
   return s;
 }
 function dropProfile(pid) { // the profile was deleted: its passwords go with it
@@ -161,8 +167,8 @@ function showSave(tab, p) {
   const secure = p.origin.startsWith('https:');
   present({ mode: p.update ? 'update' : 'save', tab, wc: tab.view.webContents, offer: p, h: secure ? H_SAVE : H_SAVE_PLAIN, model: { mode: p.update ? 'update' : 'save', site: labelOf(p.origin), secure, user: p.user } });
 }
-function showPick(tab, t, list, rect, userOnly) {
-  present({ mode: 'pick', userOnly: !!userOnly, pid: pidOf(tab.view.webContents), tab, wc: tab.view.webContents, frame: t.frame, origin: t.origin, entries: list, sel: -1, rect, h: H_PICK + ROW * list.length, model: { mode: 'pick', entries: list.map((e) => ({ user: e.user })) } });
+function showPick(tab, t, list, rect, userOnly, related) { // related: the logins belong to other hosts of this site, so each row names its host
+  present({ mode: 'pick', userOnly: !!userOnly, related: !!related, pid: pidOf(tab.view.webContents), tab, wc: tab.view.webContents, frame: t.frame, origin: t.origin, entries: list, sel: -1, rect, h: H_PICK + ROW * list.length, model: { mode: 'pick', entries: list.map((e) => (related ? { user: e.user, host: e.host } : { user: e.user })) } });
 }
 
 function doSave() {
@@ -184,7 +190,7 @@ function pick(i) {
   try {
     if (originOf(cur.frame.url) !== cur.origin) return; // the page moved on
     const s = getStore(cur.pid);
-    if (s.originOfId(entry.id) !== cur.origin) return;
+    if (s.originOfId(entry.id) !== cur.origin && !(cur.related && cfg().fill && cfg().related && s.isRelated(entry.id, cur.origin))) return; // the exact origin, or (asked again now) a related one
     if (cur.userOnly) { cur.frame.send('nova:pw-fill', { user: entry.user, userOnly: true }); carried.set(cur.wc.id, { origin: cur.origin, user: entry.user, t: Date.now() }); return; } // the user name step: the password is not touched
     cur.frame.send('nova:pw-fill', { user: entry.user, pass: s.reveal(entry.id) });
   } catch (err) { C.toast('Nova could not fill that login.'); console.error('passwords fill', err.message); }
@@ -200,7 +206,7 @@ function install() {
       if (t) {
         const s = getStore(pidOf(e.sender)), c = cfg(), ok = s.available();
         const cy = carryFor(e.sender.id, t.origin);
-        r = { on: true, save: ok && c.save && !isPrivate(e.sender) && !s.isNever(t.origin), fill: ok && c.fill && s.countFor(t.origin) > 0, pending: pending.has(e.sender.id), carried: ok && c.save && cy ? cy.user : '' };
+        r = { on: true, save: ok && c.save && !isPrivate(e.sender) && !s.isNever(t.origin), fill: ok && c.fill && (s.countFor(t.origin) > 0 || (c.related && s.countRelated(t.origin) > 0)), pending: pending.has(e.sender.id), carried: ok && c.save && cy ? cy.user : '' };
       }
     } catch (err) { console.error('passwords ask', err.message); }
     e.returnValue = r; // always answered: the page waits for it
@@ -251,20 +257,22 @@ function install() {
       if (shownTab(tab)) showSave(tab, p);
     } catch (err) { console.error('passwords landed', err.message); }
   });
-  // the user clicked into a login field: list the logins saved for exactly this origin
+  // the user clicked into a login field: list the logins saved for exactly this origin; only when there are none, those of related hosts of the same site
   ipcMain.on('nova:pw-focus', (e, rc) => {
     try {
       const t = featureOn() && cfg().fill && rc && topOf(e);
       if (!t) return;
       const tab = tabOf(e.sender);
       if (!shownTab(tab)) return;
-      let list = getStore(pidOf(e.sender)).matches(t.origin);
+      const s = getStore(pidOf(e.sender));
+      let list = s.matches(t.origin), rel = false;
+      if (!list.length && cfg().related) { list = s.related(t.origin); rel = list.length > 0; }
       const cy = !rc.userOnly && carryFor(e.sender.id, t.origin);
       if (cy) { const only = list.filter((x) => x.user.toLowerCase() === cy.user.toLowerCase()); if (only.length) list = only; } // the password step lists the user name that was just given
       list = list.slice(0, 5);
       if (!list.length) return;
       const n = (v) => (Number.isFinite(+v) ? +v : 0);
-      showPick(tab, t, list, { x: n(rc.x), y: n(rc.y), w: n(rc.w), h: n(rc.h) }, !!rc.userOnly);
+      showPick(tab, t, list, { x: n(rc.x), y: n(rc.y), w: n(rc.w), h: n(rc.h) }, !!rc.userOnly, rel);
     } catch (err) { console.error('passwords focus', err.message); }
   });
   ipcMain.on('nova:pw-dismiss', (e) => { if (card && card.cur && card.cur.mode === 'pick' && card.cur.wc === e.sender) hide(); });

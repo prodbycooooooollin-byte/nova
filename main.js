@@ -37,9 +37,11 @@ const DEFAULT_KEYS = {
 // Smart sleep (Settings > Resource budget): freeze background tabs, wake them invisibly, learn per site how soon to sleep them
 const SMART = { freeze: true, freezeAfterSec: 30, softWake: true, earlySleepMin: 3, adaptive: true };
 const DEFAULTS = {
-  suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'theme', preset: 'orbit', dim: 30, blur: 0, follow: false }, startPage: { sites: true, greeting: true, stats: true },
+  suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'preset', preset: 'stars', dim: 30, blur: 0, follow: false }, startPage: { sites: true, greeting: true, stats: true },
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
   searchEngine: 'https://duckduckgo.com/?q=%s',
+  searchKeywords: 'yt https://www.youtube.com/results?search_query=%s YouTube\nw https://en.wikipedia.org/w/index.php?search=%s Wikipedia\ngh https://github.com/search?q=%s GitHub\nr https://www.reddit.com/search/?q=%s Reddit\na https://www.amazon.com/s?k=%s Amazon\nmaps https://www.google.com/maps/search/%s Google Maps\ng https://www.google.com/search?q=%s Google\ntw https://www.twitch.tv/search?term=%s Twitch', // address bar: a keyword, a space and what to look for (yt cats): keyword, address with %s, name
+  bookmarksPos: 'below', topHide: [], // tabs-on-top bar: where the bookmarks row sits (below / above the address bar) and which buttons are hidden
   layout: 'top', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
   theme: { bg: '#0b0b12', page: '#161621', surface: '#13131c', surface2: '#1c1c28', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
   customCss: '', customJs: '', pageCss: '',
@@ -60,10 +62,11 @@ const AUMID = 'app.nova.browser.v2'; // the taskbar groups windows and picks the
 const HOME = 'nova://home';
 const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
 const isHome = (u) => u === HOME || (u || '').startsWith(HOME_FILE);
-const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, fx: settings.effects ? 1 : 0, wall: settings.wallpaper.mode === 'none' ? '' : settings.wallpaper.preset });
+const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, kw: settings.searchKeywords || '', prof: settings.profile, fx: settings.effects ? 1 : 0, wall: settings.wallpaper.mode === 'none' ? '' : settings.wallpaper.preset });
 // Profiles: one switch that decides how much Nova does.
 const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'darkSite', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate', 'privateTabs', 'videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners', 'passwords'];
 const featureSet = (on) => Object.fromEntries(FEATURE_KEYS.map((k) => [k, on]));
+const GROUP_COLORS = ['#8b7dff', '#4db8ff', '#4ddc9a', '#ffb04d', '#ff7a90', '#c084fc', '#2dd4bf', '#ff6b6b'];
 const PROFILES = {
   ultra: { blockAutoplay: true, effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 800, cpuGuard: true, cpuPct: 20, ...SMART } },
   nova: { blockAutoplay: true, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(false), budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART } },
@@ -107,7 +110,9 @@ function applyScheme() { try { nativeTheme.themeSource = ['light', 'dark'].inclu
 function loadSettings() {
   const s = readJson('settings.json', {});
   settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, downloads: { ...DEFAULTS.downloads, ...(s.downloads || {}) }, cache: { ...DEFAULTS.cache, ...(s.cache || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, wallpaper: { ...DEFAULTS.wallpaper, ...(s.wallpaper || {}) }, startPage: { ...DEFAULTS.startPage, ...(s.startPage || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
-  if (!['', 'orbit', 'stars', 'grid'].includes(settings.wallpaper.preset)) settings.wallpaper.preset = 'orbit'; // the old colour-blob wallpapers are gone
+  settings.wallpaper.preset = { orbit: 'stars', grid: 'dots' }[settings.wallpaper.preset] || settings.wallpaper.preset; // the orbit and follow-theme backgrounds are gone, the grid became dots
+  if (!['', 'stars', 'glow', 'dots'].includes(settings.wallpaper.preset)) settings.wallpaper.preset = 'stars';
+  if (settings.wallpaper.mode === 'theme') settings.wallpaper.mode = 'preset';
   if (!s.budgetV2 && s.budget) { const old = s.budget.ramMB; settings.budget.ramMB = { 1024: 800, 2048: 1500, 4096: 3000 }[old] || Math.max(400, Math.round((old || 2048) * 0.75 / 50) * 50); } // limits now count real (private) memory, which is smaller than the old figure
   settings.budgetV2 = true;
   if (!s.layoutV2) settings.layout = 'top'; // the default is now tabs on top, address bar in the middle; switch back in Settings > Layout
@@ -158,13 +163,21 @@ function repairShortcuts() {
 }
 
 // ---------- helpers ----------
+// "yt cats": the first word is a keyword of the list in settings.searchKeywords and the rest is what to look for there
+let kwSeen = null, kwList = [];
+function keywordUrl(t) {
+  const m = /^(\S+)\s+(.+)$/s.exec(t); if (!m) return '';
+  if (kwSeen !== settings.searchKeywords) { kwSeen = settings.searchKeywords; const text = kwSeen; const list = String(text || '').split(/\r?\n/).map((l) => l.trim().match(/^(\S+)\s+(https?:\/\/\S*%s\S*)(?:\s+(.+))?$/i)).filter(Boolean).map((m) => ({ k: m[1].toLowerCase(), url: m[2], name: (m[3] || '').trim() || m[2].replace(/^https?:\/\/(www\.)?/i, '').split(/[/?#]/)[0] })); kwList = list; }
+  const e = kwList.find((x) => x.k === m[1].toLowerCase());
+  return e ? e.url.replace('%s', encodeURIComponent(m[2].trim())) : '';
+}
 function normalizeInput(text) {
   const t = text.trim();
   if (/^nova:\/\/home/i.test(t)) return HOME;
   if (!t) return HOME;
   if (/^(https?|file|about|chrome|chrome-extension|devtools):/i.test(t)) return t;
   if (!/\s/.test(t) && (/^localhost(:\d+)?(\/|$)/i.test(t) || /^(\d{1,3}\.){3}\d{1,3}(:\d+)?(\/|$)/.test(t) || /^[^\s/]+\.[a-z]{2,}(:\d+)?([/?#]|$)/i.test(t))) return 'https://' + t;
-  return settings.searchEngine.replace('%s', encodeURIComponent(t));
+  return keywordUrl(t) || settings.searchEngine.replace('%s', encodeURIComponent(t));
 }
 const activeSpace = () => state.spaces.find((s) => s.id === state.activeSpace) || state.spaces[0];
 const activeTab = () => tabs.get(state.activeTab);
@@ -238,7 +251,9 @@ function fillWindow(W) {
   const w = W.win; if (W.fill || w.isDestroyed() || w.isFullScreen()) return;
   const normal = w.getBounds(), rect = screen.getDisplayMatching(normal).workArea;
   W.fill = { normal, rect };
-  w.setBounds(rect); sendMax(W, true);
+  // measured on this PC (GetWindowRect and DWMWA_EXTENDED_FRAME_BOUNDS of a frameless window): Windows draws a 1 px border outside the page area on the left, right and bottom, so a window given the work area spilled onto the monitors beside it.
+  // The page area is one pixel narrower on each side and one pixel higher, so the visible frame is exactly the work area; the top row hides above the screen.
+  w.setBounds({ x: rect.x + 1, y: rect.y - 1, width: rect.width - 2, height: rect.height }); sendMax(W, true);
 }
 function unfillWindow(W) {
   if (!W.fill) return;
@@ -251,6 +266,13 @@ const allVisibleIds = () => { const ids = []; for (const W of wins.values()) { i
 function bindState(st) { for (const k of ['activeTab', 'activeSpace', 'split', 'prevTab']) Object.defineProperty(st, k, { enumerable: true, configurable: true, get: () => (curW ? curW[k] : null), set: (v) => { if (curW) curW[k] = v; } }); }
 
 // ---------- layout ----------
+// Windows draws a 1 px border around the window: in the colour of the tab strip (or of the sidebar) it disappears into the interface
+function borderColor() {
+  const bg = /^#[0-9a-f]{6}$/i.test(settings.theme.bg) ? settings.theme.bg : '#0b0b12';
+  if (settings.layout !== 'top') return bg;
+  const n = parseInt(bg.slice(1), 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255], p = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 > 0.5 ? 0.09 : 0.44; // as --strip in ui.css
+  return '#' + c.map((v) => Math.round(v * (1 - p)).toString(16).padStart(2, '0')).join('');
+}
 const barHeight = () => (settings.layout === 'top' && settings.bookmarksBar && features.bookmarks(curProfile()).length ? 32 : 0);
 let lastBar = 0;
 let uiLowered = null; // tabs on the left: the interface view spans the whole window but sits BEHIND the pages, so the window buttons in its top strip show above them
@@ -260,7 +282,7 @@ function layout() {
   const [w, h] = win.getContentSize();
   const gap = settings.gap;
   const side = settings.compact ? 56 : settings.sidebarWidth;
-  const top = 98 + barHeight(); // top layout: tab strip (42) + toolbar (56) + the bookmarks row (32) when there are bookmarks
+  const top = 88 + barHeight(); // top layout: tab strip (36) + toolbar (52) + the bookmarks row (32) when there are bookmarks
   const hidden = sidebarHidden || focusMode || pageFullscreen;
   let uiRect = { x: 0, y: 0, width: 0, height: 0 }, c;
   if (hidden) c = { x: 0, y: 0, width: w, height: h };
@@ -280,6 +302,7 @@ function layout() {
     try { const r = hidden ? 0 : settings.radius; if (t.radius !== r) { t.view.setBorderRadius(r); t.radius = r; } } catch { /* view is going away */ } // only when the value really changes
   });
   win.setBackgroundColor(settings.theme.bg);
+  { const ac = borderColor(); if (curW.accent !== ac) { curW.accent = ac; try { win.setAccentColor(ac); } catch { /* older Windows: no border colour */ } } }
   features.relayoutPeek();
   passwords.relayout();
 }
@@ -333,9 +356,9 @@ function extForState(full) {
 function publicState(full = true) {
   const pid = curProfile();
   return {
-    tabs: [...tabs.values()].filter((t) => t.wid === curW.id && t.pid === pid).map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, frozen: !!t.frozen, sleepAt: t.sleepAt || 0, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, darkSite: settings.features.darkSite && darkmode.isOnUrl(t.url), darkKey: settings.features.darkSite ? darkmode.keyOf(t.url) : '', private: !!t.private, bookmarked: features.isBookmarked(t.url, t.pid) })),
+    tabs: [...tabs.values()].filter((t) => t.wid === curW.id && t.pid === pid).map((t) => ({ id: t.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, asleep: !t.view, frozen: !!t.frozen, sleepAt: t.sleepAt || 0, loading: t.loading, audible: t.audible, lastActive: t.lastActive, canBack: t.canBack, canForward: t.canForward, muted: !!t.muted, dark: !!t.dark, darkSite: settings.features.darkSite && darkmode.isOnUrl(t.url), darkKey: settings.features.darkSite ? darkmode.keyOf(t.url) : '', private: !!t.private, group: t.group || '', bookmarked: features.isBookmarked(t.url, t.pid) })),
     extensions: extForState(full), snoozed: (state.snoozed || []).filter((x) => inProfile(x.spaceId, pid)).length,
-    spaces: profSpaces(pid), profile: pid, activeSpace: state.activeSpace, activeTab: state.activeTab, split: state.split,
+    spaces: profSpaces(pid), groups: state.groups.filter((g) => inProfile(g.spaceId, pid)), profile: pid, activeSpace: state.activeSpace, activeTab: state.activeTab, split: state.split,
     windows: [...wins.values()].filter((W) => W !== curW && !W.closed).map((W) => ({ id: W.id, title: (tabs.get(W.activeTab) || {}).title || 'Nova window' })),
     archive: partOf('archive', pid + ':' + state.archive.length + ':' + (state.archive[0] ? state.archive[0].closedAt : 0), () => state.archive.filter((x) => inProfile(x.spaceId, pid)).slice(0, 80), full), bar: barForState(full), dl: features.downloadsLive(), dlInfo: features.dlInfo(), settings: partOf('settings', JSON.stringify(settings), () => settings, full), hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
     adblock: adblockStatus, blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(), update: updater.status(),
@@ -349,9 +372,10 @@ function persistSoon() {
 let quitting = false; // Nova is ending: the tabs of every window were saved once, before the first window closed
 function persist(final) {
   if (quitting && !final) return;
+  { const used = new Set([...tabs.values()].map((t) => t.group)); state.groups = state.groups.filter((g) => used.has(g.id)); } // a group without tabs is gone
   const body = JSON.stringify({
-    spaces: state.spaces, activeSpace: state.activeSpace, activeTab: state.activeTab, archive: state.archive.slice(0, 300), snoozed: state.snoozed || [],
-    tabs: [...tabs.values()].filter((t) => !t.private).map((t) => ({ id: t.id, spaceId: t.spaceId, profile: t.pid, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, lastActive: t.lastActive })),
+    spaces: state.spaces, activeSpace: state.activeSpace, activeTab: state.activeTab, archive: state.archive.slice(0, 300), snoozed: state.snoozed || [], groups: state.groups,
+    tabs: [...tabs.values()].filter((t) => !t.private).map((t) => ({ id: t.id, spaceId: t.spaceId, profile: t.pid, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, group: t.group, lastActive: t.lastActive })),
   });
   if (body === lastPersisted) return;
   lastPersisted = body;
@@ -366,6 +390,7 @@ function newTabObj(o) {
   nextId = Math.max(nextId, id + 1);
   const spaceId = state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace;
   const t = { id, wid: o.wid || (curW ? curW.id : 0), spaceId, pid: spaceProfile(spaceId), url: o.url || HOME, title: o.title || (!o.url || o.url === HOME ? 'New tab' : ''), favicon: o.favicon || '', pinned: !!o.pinned, private: !!o.private, lastActive: o.lastActive || Date.now(), view: null, attached: false, loading: false, audible: false, canBack: false, canForward: false, thumb: '' };
+  if (o.group && state.groups.some((g) => g.id === o.group)) t.group = o.group;
   tabs.set(t.id, t);
   return t;
 }
@@ -428,7 +453,7 @@ function wallImage() {
 }
 function homeTheme() {
   const w = settings.wallpaper, t = settings.theme;
-  return { bg: t.page, chrome: t.bg, accent: t.accent, text: t.text, dim: t.dim, wall: w.mode === 'none' ? '' : w.preset, dim_amount: w.dim, blur: w.blur, image: w.mode === 'image' ? wallImage() : '', stars: w.mode !== 'image', fx: !!settings.effects, sites: settings.startPage.sites, greeting: settings.startPage.greeting, stats: settings.startPage.stats !== false };
+  return { bg: t.page, chrome: t.bg, accent: t.accent, text: t.text, dim: t.dim, wall: w.mode === 'none' ? '' : w.preset, dim_amount: w.dim, blur: w.blur, image: w.mode === 'image' ? wallImage() : '', stars: w.mode !== 'image', fx: !!settings.effects, prof: settings.profile, sites: settings.startPage.sites, greeting: settings.startPage.greeting, stats: settings.startPage.stats !== false };
 }
 function pushHome(wc) {
   const js = `window.novaTheme && window.novaTheme(${JSON.stringify(homeTheme())})`;
@@ -531,6 +556,7 @@ function activate(id, fromFocus) {
   if (prev && prev !== t) { features.onLeave(prev); capture(prev); prev.lastActive = Date.now(); sleeper.left(prev); }
   if (t.spaceId !== state.activeSpace) state.activeSpace = t.spaceId;
   state.activeTab = id;
+  { const g = t.group && state.groups.find((x) => x.id === t.group); if (g && g.collapsed) g.collapsed = false; } // opening a tab of a folded group unfolds it
   if (prev !== t) sleeper.arrived(t);
   t.lastActive = Date.now();
   if (state.split && (state.split === id || tabs.get(state.split)?.spaceId !== t.spaceId)) state.split = null;
@@ -549,7 +575,7 @@ function openUrl(url, o = {}) {
     if (same) { if (!o.background) activate(same.id); return same; }
   }
   const t = newTabObj({ url, spaceId, private: o.private });
-  if (o.afterId) { /* order is by map insertion; move after reference */ reorderAfter(t.id, o.afterId); }
+  if (o.afterId) { /* order is by map insertion; move after reference */ reorderAfter(t.id, o.afterId); const op = tabs.get(o.afterId); if (op && op.group && op.spaceId === t.spaceId) t.group = op.group; } // a link opened from a grouped tab joins its group
   enforceLimit(t.id);
   if (o.background) { push(); return t; }
   activate(t.id);
@@ -1068,7 +1094,7 @@ function applyProfile(name) {
   const p = PROFILES[name]; if (!p) return;
   const { features: f, budget: b, adblock, ...rest } = p;
   Object.assign(settings, rest, { profile: name, features: { ...f }, budget: { ...b } });
-  try { setAdblock(adblock); darkmode.sync(); webtools.sync(); passwords.sync(); } finally { saveSettings(); layoutAll(); push(); }
+  try { setAdblock(adblock); darkmode.sync(); webtools.sync(); passwords.sync(); } finally { saveSettings(); layoutAll(); push(); pushHome(); }
 }
 
 // ---------- extensions (Electron supports a subset of Chrome extension APIs) ----------
@@ -1124,7 +1150,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   { const fr = readJson('first-run.json', null); try { fs.rmSync(userFile('first-run.json'), { force: true }); } catch {}
     if (fr && PROFILES[fr.profile]) { const { features: f, budget: b, ...rest } = PROFILES[fr.profile]; Object.assign(settings, rest, { profile: fr.profile, features: { ...f }, budget: { ...b } }); saveSettings(); } }
   const saved = readJson('state.json', null);
-  state = { spaces: saved?.spaces?.length ? saved.spaces : [{ id: 1, name: 'Main', color: '#7c8cff', profile: settings.profiles[0].id }], archive: saved?.archive || [], snoozed: saved?.snoozed || [] };
+  state = { spaces: saved?.spaces?.length ? saved.spaces : [{ id: 1, name: 'Main', color: '#7c8cff', profile: settings.profiles[0].id }], archive: saved?.archive || [], snoozed: saved?.snoozed || [], groups: Array.isArray(saved?.groups) ? saved.groups : [] };
   if (profiles.repairSpaces(state.spaces, settings.profiles)) saveSettings(); // spaces of older versions have no profile; a profile that settings.json lost is brought back, never merged into another
   if (settings.purge.length) { settings.purge = profiles.purge(app.getPath('userData'), settings.purge); saveSettings(); } // the partition folders of profiles deleted last time
   bindState(state); // activeTab, activeSpace, split and prevTab live in each window's record
@@ -1211,6 +1237,17 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'sleep': if (t && t.id !== state.activeTab) { sleep(t); push(); } break;
       case 'prewake': prewake(a.id); break;
       case 'restore': closeOverlay(); { const i = state.archive.findIndex((x) => x.closedAt === a.closedAt); if (i >= 0) { const [x] = state.archive.splice(i, 1); openUrl(x.url, { spaceId: x.spaceId, forceNew: true }); } } break;
+      case 'groupTab': if (t) { // a tab joins a group ('new' makes one) and moves next to the other tabs of it
+        let g = state.groups.find((x) => x.id === a.group);
+        if (!g) { g = { id: 'g' + Date.now().toString(36), spaceId: t.spaceId, name: '', color: GROUP_COLORS[state.groups.length % GROUP_COLORS.length], collapsed: false }; state.groups.push(g); }
+        t.group = g.id; const mates = [...tabs.values()].filter((x) => x !== t && x.group === g.id);
+        if (mates.length) reorderAfter(t.id, mates[mates.length - 1].id);
+        persistSoon(); push();
+      } break;
+      case 'ungroupTab': if (t && t.group) { t.group = undefined; persistSoon(); push(); } break;
+      case 'groupSet': { const g = state.groups.find((x) => x.id === a.id); if (g) { if (typeof a.name === 'string') g.name = a.name.trim().slice(0, 40); if (/^#[0-9a-f]{6}$/i.test(a.color || '')) g.color = a.color; if (typeof a.collapsed === 'boolean') g.collapsed = a.collapsed; persistSoon(); push(); } } break;
+      case 'groupUngroup': for (const x of tabs.values()) if (x.group === a.id) x.group = undefined; state.groups = state.groups.filter((g) => g.id !== a.id); persistSoon(); push(); break;
+      case 'groupClose': for (const x of [...tabs.values()]) if (x.group === a.id) closeTab(x.id); state.groups = state.groups.filter((g) => g.id !== a.id); persistSoon(); push(); break;
       case 'moveToSpace': if (t && inProfile(a.spaceId, t.pid)) { t.spaceId = a.spaceId; if (t.id === state.activeTab) switchSpace(a.spaceId); push(); } break;
       case 'split': if (t && t.id !== state.activeTab) { state.split = t.id; wake(t); closeOverlay(); sync(); push(); } else { state.split = null; sync(); push(); } break;
       case 'closeOverlay': closeOverlay(); break;

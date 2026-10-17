@@ -384,6 +384,7 @@ async function handle(name, a, t) {
     case 'detectBrowsers': return [...new Set(scanBrowsers().profiles.map((p) => p.browser))];
     case 'scanBrowsers': return scanBrowsers();
     case 'library': return library(a.kind, a.q, +a.space || 0);
+    case 'renameBookmark': { const d = D(), b = d.bookmarks.find((x) => x.url === a.url), name = String(a.title || '').trim().slice(0, 200); if (b && name) { b.title = name; saveBookmarks(d); C.push(); } return; } // any bookmark, not only the page that is open
     case 'removeBookmark': { const d = D(); d.bookmarks = d.bookmarks.filter((b) => b.url !== a.url); saveBookmarks(d); C.push(); return; }
     case 'removeHistory': { const d = D(), sp = +a.space || 0; d.history = d.history.filter((h) => !(h.url === a.url && (!sp || !h.sp || h.sp === sp))); saveHistory(d); return; }
     case 'removeHistorySite': { // everything from one website (www. does not matter), in one space or in all of them
@@ -479,7 +480,11 @@ function pumpIcons() {
   }
 }
 const withIcon = (x) => ({ ...x, icon: icons[hostOf(x.url)] || '' });
-const barBookmarks = (pid) => { const { bookmarks } = D(pid); return queueIcons(bookmarks.slice(0, 80)) || [...bookmarks].reverse().slice(0, 60).map((b) => ({ url: b.url, title: b.title, icon: icons[hostOf(b.url)] || '' })); }; // oldest first, like a bar you fill from the left
+const barBookmarks = (pid) => { // oldest first, like a bar you fill from the left
+  const { bookmarks } = D(pid), shown = [...bookmarks].reverse().slice(0, 60);
+  queueIcons(shown); queueIcons(bookmarks.slice(0, 300)); // the ones in the bar ask for their icon first (the queue used to take the newest 80, and the bar shows the oldest 60: with a long list of imported bookmarks none of the shown ones ever got one)
+  return shown.map((b) => ({ url: b.url, title: b.title, icon: icons[hostOf(b.url)] || '' }));
+};
 
 function hostVisits(host) { let n = 0; D(); for (const d of pdata.values()) for (const h of d.history) if (hostOf(h.url) === host) n += h.n; return n; } // page loads of a site in the profiles in use, for smart sleep's first guess
 function topSites(n = 8, pid) { // bookmarks first, then the most visited hosts
@@ -493,7 +498,7 @@ function topSites(n = 8, pid) { // bookmarks first, then the most visited hosts
 function library(kind, q = '', space = 0) {
   const { history, bookmarks } = D();
   const f = (list) => (q ? list.filter((x) => score(q, x.title, x.url) >= 0) : list);
-  if (kind === 'bookmarks') return f(bookmarks).slice(0, 500).map(withIcon);
+  if (kind === 'bookmarks') { const list = f(bookmarks).slice(0, 500); queueIcons(list.slice(0, 120)); return list.map(withIcon); }
   if (kind === 'history') return f(space ? history.filter((h) => !h.sp || h.sp === space) : history).slice(0, 600).map(withIcon);
   if (kind === 'downloads') return downloads.slice(0, 100).map((x) => ({ ...x, exists: fs.existsSync(x.path) }));
   return [];

@@ -10,19 +10,14 @@
 * { box-sizing:border-box; margin:0; }
 html,body { height:100%; background:var(--bg); color:var(--text); font:450 14px/1.4 'Inter',system-ui,sans-serif; letter-spacing:-.006em; overflow:hidden; -webkit-font-smoothing:antialiased; user-select:none; transition:background-color .35s,color .35s; }
 .wp, .wp2 { position:fixed; inset:0; transition:opacity .4s; }
-/* backgrounds: no colour blobs, only a calm vignette; the motion comes from the orbit canvas */
-.wp[data-wall="orbit"], .wp[data-wall="stars"] { background:radial-gradient(70% 60% at 50% 44%,color-mix(in srgb,var(--accent) 6%,transparent),transparent 72%),radial-gradient(130% 110% at 50% 50%,transparent 52%,color-mix(in srgb,var(--chrome) 75%,transparent) 100%); }
-.wp[data-wall="grid"] { background-image:linear-gradient(color-mix(in srgb,var(--accent) 10%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,transparent) 1px,transparent 1px); background-size:44px 44px; mask-image:radial-gradient(90% 80% at 50% 40%,#000 25%,transparent 100%); }
+/* backgrounds: pixel art painted once at a third of the size and scaled up without smoothing; a calm vignette keeps the middle quiet */
+.wp[data-wall="stars"], .wp[data-wall="glow"], .wp[data-wall="dots"] { background:radial-gradient(130% 110% at 50% 50%,transparent 52%,color-mix(in srgb,var(--chrome) 70%,transparent) 100%); }
 .wp2 { background-size:cover; background-position:center; opacity:0; filter:blur(var(--blurv)); transform:scale(1.03); } .wp2.on { opacity:1; } .shade { position:fixed; inset:0; background:var(--bg); opacity:0; pointer-events:none; } .shade.on { opacity:var(--dimv); }
 canvas { position:fixed; inset:0; width:100%; height:100%; pointer-events:none; }
-#sky { opacity:.55; transition:opacity .6s; } .nostars #sky { opacity:0; }
-#orrery { position:fixed; inset:0; pointer-events:none; opacity:0; transition:opacity 1.6s ease, transform 1.2s cubic-bezier(.2,.7,.2,1); contain:strict; } .orb-on #orrery { opacity:1; }
-#orings { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
-#oglow { position:absolute; border-radius:50%; background:radial-gradient(circle,color-mix(in srgb,var(--accent) 22%,transparent),transparent 68%); }
-.ob { position:absolute; left:0; top:0; border-radius:50%; background:var(--c); color:var(--c); box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 14%,transparent); will-change:transform; }
-.ob::before { content:''; position:absolute; right:50%; top:50%; width:var(--tail,52px); height:max(1.4px,35%); transform:translateY(-50%); background:linear-gradient(90deg,transparent,var(--c)); opacity:.55; }
-#shoot { position:absolute; width:150px; height:1.4px; background:linear-gradient(90deg,transparent,var(--text)); opacity:0; }
-#shoot.go { animation:shoot .9s cubic-bezier(.3,.6,.4,1) forwards; } @keyframes shoot { from { opacity:0; transform:rotate(var(--a)) translateX(0); } 18% { opacity:.85; } to { opacity:0; transform:rotate(var(--a)) translateX(720px); } }
+#sky { image-rendering:pixelated; opacity:.95; transition:opacity .6s; } .nostars #sky, .nostars .tw { opacity:0; display:none; }
+.tw { position:fixed; width:3px; height:3px; margin:-1px 0 0 -1px; color:var(--text); background:currentColor; box-shadow:3px 0,-3px 0,0 3px,0 -3px; pointer-events:none; animation:tw var(--d,5s) steps(1) infinite; animation-delay:var(--l,0s); } @keyframes tw { 0% { opacity:1; } 70% { opacity:.25; } 78% { opacity:1; } }
+#shoot { position:fixed; width:54px; height:3px; background:linear-gradient(90deg,transparent,var(--text)); opacity:0; pointer-events:none; }
+#shoot.go { animation:shoot 1s steps(16) forwards; } @keyframes shoot { from { opacity:0; transform:rotate(var(--a)) translateX(0); } 18% { opacity:.9; } to { opacity:0; transform:rotate(var(--a)) translateX(560px); } }
 
 .plain .wp, .plain .wp2, .plain .shade, .plain canvas { display:none; }
 main { position:relative; height:100%; }
@@ -57,7 +52,7 @@ form kbd { position:absolute; right:20px; top:24px; }
 </head>
 <body>
 <div class="wp" id="wp"></div><div class="wp2" id="wp2"></div><div class="shade" id="shade"></div>
-<canvas id="sky"></canvas><div id="orrery" aria-hidden="true"><svg id="orings"></svg><div id="oglow"></div><div id="obodies"></div><div id="shoot"></div></div>
+<canvas id="sky"></canvas><div id="shoot" aria-hidden="true"></div>
 <main>
   <div class="core">
     <div class="top"><img class="mark" src="logo.svg" alt=""><div id="hi"></div><div id="date"></div></div>
@@ -76,13 +71,14 @@ apply(Object.fromEntries(['bg', 'chrome', 'accent', 'text', 'dim'].map((k) => [k
 if (P.get('fx') === '0') root.classList.add('plain');
 wp.dataset.wall = P.get('wall') || '';
 const engine = P.get('engine') || 'https://duckduckgo.com/?q=%s';
+const keywords = String(P.get('kw') || '').split(/\r?\n/).map((l) => l.trim().match(/^(\S+)\s+(https?:\/\/\S*%s\S*)/i)).filter(Boolean); // the address bar's keywords (yt cats)
 const h = new Date().getHours();
 document.getElementById('hi').textContent = h < 5 ? 'Still up?' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 document.getElementById('date').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
 document.getElementById('f').addEventListener('submit', (e) => {
   e.preventDefault();
   const t = document.getElementById('q').value.trim(); if (!t) return;
-  location.href = /^(https?|file):/i.test(t) ? t : (!/\s/.test(t) && (/^localhost/i.test(t) || /^[^\s/]+\.[a-z]{2,}([:/?#]|$)/i.test(t))) ? 'https://' + t : engine.replace('%s', encodeURIComponent(t));
+  location.href = /^(https?|file):/i.test(t) ? t : (!/\s/.test(t) && (/^localhost/i.test(t) || /^[^\s/]+\.[a-z]{2,}([:/?#]|$)/i.test(t))) ? 'https://' + t : (() => { const m = /^(\S+)\s+(.+)$/.exec(t), e = m && keywords.find((x) => x[1].toLowerCase() === m[1].toLowerCase()); return (e ? e[2] : engine).replace('%s', encodeURIComponent(e ? m[2].trim() : t)); })();
 });
 const hue = (s) => { let n = 0; for (const c of s) n = (n * 31 + c.charCodeAt(0)) % 360; return n; };
 const brandOf = (h) => { const p = String(h || '').toLowerCase().replace(/^www\./, '').split('.'); if (p.length < 2) return p[0] || ''; let i = p.length - 2; if (i > 0 && p[p.length - 1].length === 2 && /^(co|com|org|net|gov|edu|ac)$/.test(p[i])) i--; return p[i]; };
@@ -100,112 +96,65 @@ window.novaStats = (s) => {
   if (s.asleep) chips.push(`<span class="stat"><b>${s.asleep}</b> tab${s.asleep > 1 ? 's' : ''} asleep</span>`);
   el.innerHTML = chips.join('');
 };
-// where the two site rings run: around the middle of the page, outside the search box
-function geometry() {
-  const W = innerWidth, H = innerHeight, core = document.querySelector('.core').getBoundingClientRect(), half = core.width / 2;
-  const a1 = half + 92, a2 = a1 + 110;
-  return { W, H, cx: core.left + core.width / 2, cy: core.top + core.height / 2, a1, a2, k: .44, tilt: -8 };
-}
-// eight sites sit on the rings like planets: four on the inner ring beside the search box, four on the outer ring above and below it.
-// If the window is too small for that, or the background is not the orbit one, they become a plain grid under the search box.
-const SPOTS = [[-32, 0], [212, 0], [32, 0], [148, 0], [-66, 1], [246, 1], [66, 1], [114, 1]];
+// the most visited sites sit as a plain grid under the search box: four in a short window, eight in a tall one
 function placeSites() {
   if (!sitesData.length) { planets.innerHTML = ''; return; }
-  const g = geometry(), ph = g.tilt * Math.PI / 180;
-  const pts = sitesData.map((_, i) => { const [deg, ring] = SPOTS[i], a = ring ? g.a2 : g.a1, b = a * g.k, th = deg * Math.PI / 180, x = a * Math.cos(th), y = b * Math.sin(th); return [g.cx + x * Math.cos(ph) - y * Math.sin(ph), g.cy + x * Math.sin(ph) + y * Math.cos(ph)]; });
-  const fits = running && pts.every(([x, y]) => x > 60 && x < g.W - 60 && y > 80 && y < g.H - 90);
-  const list = fits ? sitesData : sitesData.slice(0, g.H < 760 ? 4 : 8); // a plain grid has less room than the rings: fewer sites in a short window
+  const list = sitesData.slice(0, innerHeight < 760 ? 4 : 8);
   planets.innerHTML = list.map((s, i) => `<a class="pl" style="--i:${i}" href="${esc(s.url)}" title="${esc(s.host)}"><div class="ic" style="${s.icon ? '' : `background:linear-gradient(135deg,hsl(${hue(brandOf(s.host))} 50% 46%),hsl(${(hue(brandOf(s.host)) + 30) % 360} 50% 36%))`}">${s.icon ? `<img src="${s.icon}" alt="">` : esc((brandOf(s.host)[0] || '?').toUpperCase())}</div><span class="n">${esc(s.host.replace(/^www\./, '').replace(/\.[a-z]+$/, ''))}</span></a>`).join('');
-  planets.classList.toggle('flat', !fits);
-  if (fits) [...planets.children].forEach((el, i) => { el.style.left = pts[i][0].toFixed(1) + 'px'; el.style.top = pts[i][1].toFixed(1) + 'px'; });
+  planets.classList.add('flat');
 }
 
-// ---- stars: a still field, redrawn only when size or colours change ----
-const sky = document.getElementById('sky'), sg = sky.getContext('2d'), D = Math.min(devicePixelRatio || 1, 1.5);
+// ---- backgrounds: pixel art, drawn once when the size or the colours change. Nothing moves, except in the Complete profile: a few stars blink and one shoots by now and then ----
+const sky = document.getElementById('sky'), sg = sky.getContext('2d'), shoot = document.getElementById('shoot'), PX = 3;
 const cssv = (n) => getComputedStyle(root).getPropertyValue(n).trim();
-function paintStars() {
-  sky.width = innerWidth * D; sky.height = innerHeight * D; sg.setTransform(D, 0, 0, D, 0, 0); sg.clearRect(0, 0, innerWidth, innerHeight);
-  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const accent = cssv('--accent'), light = cssv('--text'), W = innerWidth, H = innerHeight;
-  for (let i = 0, n = Math.round(W * H / 8500); i < n; i++) { const z = rnd() * .75 + .25; sg.globalAlpha = z * .75; sg.fillStyle = rnd() < .08 ? accent : light; sg.beginPath(); sg.arc(rnd() * W, rnd() * H, z * 1.05, 0, 6.283); sg.fill(); }
-  sg.strokeStyle = light; sg.lineWidth = .8; // a few brighter stars with a small glint
-  for (let i = 0; i < 7; i++) { const x = rnd() * W, y = rnd() * H, l = 3 + rnd() * 4; sg.globalAlpha = .55; sg.beginPath(); sg.moveTo(x - l, y); sg.lineTo(x + l, y); sg.moveTo(x, y - l); sg.lineTo(x, y + l); sg.stroke(); }
-}
-
-// ---- orbit: a quiet orrery around the Nova mark. SVG rings plus CSS-animated bodies: the page costs next to no CPU ----
-const orrery = document.getElementById('orrery'), orings = document.getElementById('orings'), obodies = document.getElementById('obodies'), oglow = document.getElementById('oglow'), shoot = document.getElementById('shoot');
-let running = false, shootTimer = 0, tickTimer = 0, live = [], lastInput = Date.now();
-const startTick = () => { if (!tickTimer && running && !document.hidden) tickTimer = setInterval(() => { if (Date.now() - lastInput > 60000) { stopTick(); return; } tick(); }, 167); };
-const stopTick = () => { clearInterval(tickTimer); tickTimer = 0; };
-function buildOrrery() {
-  const g = geometry(), { W, H, cx, cy } = g, accent = cssv('--accent'), light = cssv('--text');
-  const far = Math.max(W, H);
-  // rings: the two that carry the sites, one close around the search box, two far out, and one dashed ring tilted the other way
-  const ORBITS = [
-    { a: g.a1 * .72, T: 60, op: .1, b: [] },
-    { a: g.a1, T: 90, op: .3, b: [{ p: .05, s: 4.5 }] },
-    { a: g.a2, T: 140, op: .22, b: [{ p: .52, s: 5, c: 'a' }] },
-    { a: g.a2 * 1.4, T: 230, op: .13, b: [{ p: .8, s: 6 }, { p: .3, s: 3 }] },
-    { a: g.a2 * 1.9, T: 340, op: .09, b: [{ p: .15, s: 4.5, c: 'w' }] },
-    { a: Math.min(far * .62, g.a2 * 1.55), T: 260, op: .14, tilt: 62, k: .2, dash: true, b: [{ p: .3, s: 4.5, c: 'a' }] },
-  ];
-  let rings = '', bodies = ''; const spec = [];
-  for (const o of ORBITS) {
-    const a = o.a, b = a * (o.k || g.k), tl = o.tilt ?? g.tilt;
-    rings += `<ellipse cx="${cx}" cy="${cy}" rx="${a}" ry="${b}" transform="rotate(${tl} ${cx} ${cy})" fill="none" stroke="${accent}" stroke-opacity="${o.op}" stroke-width="1"${o.dash ? ' stroke-dasharray="3 7"' : ''}/>`;
-    for (const bd of o.b) {
-      const col = bd.c === 'a' ? accent : bd.c === 'w' ? '#ffd9a3' : light, sz = bd.s;
-      bodies += `<i class="ob" style="--c:${col};--tail:${Math.round(40 + sz * 3)}px;width:${sz}px;height:${sz}px;margin:${-sz / 2}px 0 0 ${-sz / 2}px"></i>`; spec.push({ a, b, tl: tl * Math.PI / 180, T: o.T, p: bd.p });
-    }
-  }
-  orings.setAttribute('viewBox', `0 0 ${W} ${H}`); orings.innerHTML = rings; obodies.innerHTML = bodies;
-  live = spec.map((o, i) => ({ ...o, el: obodies.children[i], cx, cy })); tick();
-  const R = g.a1 * .9; oglow.style.cssText = `left:${cx - R}px;top:${cy - R}px;width:${R * 2}px;height:${R * 2}px`;
-}
-function tick() { // ten updates a second: the bodies move a pixel or two per step, and the page stays idle in between
-  const t = performance.now() / 1000;
-  for (const o of live) {
-    const th = (o.p + t / o.T) * 6.2832, c = Math.cos(th), sn = Math.sin(th), ct = Math.cos(o.tl), st = Math.sin(o.tl);
-    const x = o.cx + o.a * c * ct - o.b * sn * st, y = o.cy + o.a * c * st + o.b * sn * ct;
-    const dx = -o.a * sn * ct - o.b * c * st, dy = -o.a * sn * st + o.b * c * ct;
-    o.el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) rotate(${Math.atan2(dy, dx).toFixed(3)}rad)`;
-  }
-}
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const WALLS = ['stars', 'glow', 'dots'];
+let prof = P.get('prof') || 'nova', shootTimer = 0;
+const complete = () => prof === 'complete' && !root.classList.contains('plain');
 function scheduleShoot() {
   clearTimeout(shootTimer);
   shootTimer = setTimeout(() => {
-    if (running && !document.hidden) {
-      shoot.style.cssText = `left:${Math.random() * innerWidth * .6}px;top:${Math.random() * innerHeight * .3}px;--a:${(22 + Math.random() * 18).toFixed(0)}deg`; shoot.classList.remove('go'); void shoot.offsetWidth; shoot.classList.add('go');
-    }
+    if (complete() && !document.hidden) { shoot.style.cssText = `left:${Math.round(Math.random() * innerWidth * .6)}px;top:${Math.round(Math.random() * innerHeight * .3)}px;--a:${(22 + Math.random() * 18).toFixed(0)}deg`; shoot.classList.remove('go'); void shoot.offsetWidth; shoot.classList.add('go'); }
     scheduleShoot();
-  }, 18000 + Math.random() * 20000);
+  }, 16000 + Math.random() * 16000);
 }
-let mtimer = 0;
-addEventListener('keydown', () => { lastInput = Date.now(); startTick(); }, { passive: true });
-addEventListener('mousemove', (e) => { lastInput = Date.now(); startTick(); if (mtimer || !running) return; mtimer = setTimeout(() => { mtimer = 0; }, 120); orrery.style.transform = `translate3d(${(-(e.clientX / innerWidth - .5) * 16).toFixed(1)}px,${(-(e.clientY / innerHeight - .5) * 11).toFixed(1)}px,0)`; }, { passive: true });
-function syncOrbit() {
-  const want = !root.classList.contains('plain') && wp.dataset.wall === 'orbit' && !root.classList.contains('noimage');
-  if (want) { buildOrrery(); if (!running) { running = true; root.classList.add('orb-on'); scheduleShoot(); } lastInput = Date.now(); startTick(); }
-  else if (running) { running = false; clearTimeout(shootTimer); stopTick(); live = []; root.classList.remove('orb-on'); orings.innerHTML = ''; obodies.innerHTML = ''; }
+function paintWall() {
+  const kind = wp.dataset.wall, W = Math.ceil(innerWidth / PX), H = Math.ceil(innerHeight / PX);
+  document.querySelectorAll('.tw').forEach((e) => e.remove()); clearTimeout(shootTimer);
+  sky.width = W; sky.height = H; sg.clearRect(0, 0, W, H);
+  if (root.classList.contains('plain') || !WALLS.includes(kind) || root.classList.contains('noimage')) return;
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const accent = cssv('--accent'), light = cssv('--text');
+  if (kind === 'stars') {
+    for (let i = 0, n = Math.round(W * H / 400); i < n; i++) { const a = rnd(); sg.globalAlpha = a < .6 ? .28 : a < .9 ? .5 : .8; sg.fillStyle = rnd() < .08 ? accent : light; sg.fillRect(Math.floor(rnd() * W), Math.floor(rnd() * H), 1, 1); }
+    const big = Math.max(6, Math.round(W * H / 24000)); // the brighter stars are small pixel crosses
+    for (let i = 0; i < big; i++) { const x = 3 + Math.floor(rnd() * (W - 6)), y = 3 + Math.floor(rnd() * (H - 6)); sg.fillStyle = light; sg.globalAlpha = .9; sg.fillRect(x, y, 1, 1); sg.globalAlpha = .4; sg.fillRect(x - 1, y, 1, 1); sg.fillRect(x + 1, y, 1, 1); sg.fillRect(x, y - 1, 1, 1); sg.fillRect(x, y + 1, 1, 1); }
+    if (complete()) { for (let i = 0; i < 22; i++) { const e = document.createElement('i'); e.className = 'tw'; e.style.cssText = `left:${Math.floor(rnd() * W) * PX}px;top:${Math.floor(rnd() * H) * PX}px;--d:${(3 + rnd() * 5).toFixed(1)}s;--l:-${(rnd() * 8).toFixed(1)}s`; document.body.appendChild(e); } }
+  } else if (kind === 'glow') { // an accent glow dithered with a 4 x 4 matrix: two colours only, like an old screen
+    sg.fillStyle = accent; sg.globalAlpha = .36; const cx = W / 2, cy = H * .46, R = Math.min(W * .5, H * .8);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const f = Math.max(0, 1 - Math.hypot((x - cx) / 1.5, y - cy) / R); if (f * f * f > (BAYER[(y & 3) * 4 + (x & 3)] + .5) / 16) sg.fillRect(x, y, 1, 1); }
+  } else { // dots: one pixel every eight, fading out towards the edges
+    sg.fillStyle = accent;
+    for (let y = 4; y < H; y += 8) for (let x = 4; x < W; x += 8) { const a = .55 - Math.hypot((x - W / 2) / W, (y - H * .42) / H) * .85; if (a > .04) { sg.globalAlpha = a; sg.fillRect(x, y, 1, 1); } }
+  }
+  if (complete()) scheduleShoot();
 }
-const refresh = () => { if (!root.classList.contains('plain')) { paintStars(); } syncOrbit(); placeSites(); };
-document.addEventListener('visibilitychange', () => { stopTick(); if (!document.hidden && running) { lastInput = Date.now(); tick(); startTick(); } });
+const refresh = () => { paintWall(); placeSites(); };
 let rz = 0; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(refresh, 120); });
-requestAnimationFrame(refresh); // after first layout, so the orbits find the mark
-document.querySelector('.top').addEventListener('animationend', () => { if (running) buildOrrery(); }, { once: true }); // the mark slides in; the orbits follow its final place
+requestAnimationFrame(refresh); // after first layout
 new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(refresh, 120); }).observe(document.querySelector('main'));
 // live theme updates from the browser: colours, wallpaper, switches
 window.novaTheme = (t) => {
-  apply(t); wp.dataset.wall = t.wall || '';
+  apply(t); wp.dataset.wall = t.wall || ''; if (t.prof) prof = t.prof;
   if (t.fx !== undefined) root.classList.toggle('plain', !t.fx);
   rs.setProperty('--dimv', (t.dim_amount ?? 25) / 100); rs.setProperty('--blurv', (t.blur ?? 0) + 'px');
   const img = document.getElementById('wp2'), shade = document.getElementById('shade');
   if (t.image) { img.style.backgroundImage = `url(${t.image})`; img.classList.add('on'); shade.classList.add('on'); wp.style.opacity = 0; } else { img.classList.remove('on'); shade.classList.remove('on'); wp.style.opacity = 1; }
   root.classList.toggle('noimage', !!t.image);
-  root.classList.toggle('nostars', t.stars === false || !!t.image || !['orbit', 'stars'].includes(t.wall)); root.classList.toggle('nosites', t.sites === false); root.classList.toggle('nogreet', t.greeting === false); root.classList.toggle('nostats', t.stats === false);
+  root.classList.toggle('nostars', t.stars === false || !!t.image || !WALLS.includes(t.wall)); root.classList.toggle('nosites', t.sites === false); root.classList.toggle('nogreet', t.greeting === false); root.classList.toggle('nostats', t.stats === false);
   refresh();
 };
-if (!['orbit', 'stars'].includes(wp.dataset.wall)) root.classList.add('nostars');
+if (!WALLS.includes(wp.dataset.wall)) root.classList.add('nostars');
 </script>
 </body>
 </html>

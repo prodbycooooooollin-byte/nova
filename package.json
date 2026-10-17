@@ -1,6 +1,6 @@
 {
     "name":  "nova",
-    "version":  "26.10.20",
+    "version":  "26.10.21",
     "description":  "Nova - a minimal, fully customizable Chromium browser with rethought tab management",
     "main":  "boot.js",
     "novaLoader":  1,
@@ -13,7 +13,8 @@
     "dependencies":  {
                          "@fontsource-variable/inter":  "^5.3.0",
                          "@ghostery/adblocker-electron":  "^2.20.1",
-                         "adm-zip":  "^0.6.1"
+                         "adm-zip":  "^0.6.1",
+                         "tldts-experimental":  "^7.4.18"
                      },
     "productName":  "Nova",
     "novaUpdateFeed":  "prodbycooooooollin-byte/nova",

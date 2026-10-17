@@ -472,9 +472,9 @@ details.more { margin:14px 0 0; } details.more summary { padding:8px 2px; color:
 .walls { display:grid; grid-template-columns:repeat(auto-fill,minmax(112px,1fr)); gap:10px; margin-bottom:12px; }
 .wall { display:flex; flex-direction:column; gap:7px; padding:7px; border-radius:var(--r-md); background:var(--surface); box-shadow:inset 0 0 0 1px var(--line); text-align:left; font-size:12px; font-weight:550; transition:transform .18s var(--ease),box-shadow .18s; } .wall:hover { transform:translateY(-2px); box-shadow:inset 0 0 0 1px var(--line2); } .wall.on { box-shadow:inset 0 0 0 2px var(--accent); } .wall span { padding:0 3px 1px; }
 .wpv { aspect-ratio:16/10; border-radius:9px; background-color:var(--page); box-shadow:inset 0 0 0 1px var(--line); display:grid; place-items:center; color:var(--dim); position:relative; overflow:hidden; } .wpv.img { background:repeating-conic-gradient(var(--press) 0 25%,transparent 0 50%) 0 0/14px 14px; }
-.wpv[data-wall="orbit"] { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 100'%3E%3Cg fill='none' stroke='%238b7dff' stroke-opacity='.55' stroke-width='1'%3E%3Cellipse cx='80' cy='50' rx='26' ry='9' transform='rotate(-17 80 50)'/%3E%3Cellipse cx='80' cy='50' rx='46' ry='16' transform='rotate(-17 80 50)'/%3E%3Cellipse cx='80' cy='50' rx='68' ry='24' transform='rotate(-17 80 50)'/%3E%3C/g%3E%3Cg fill='%23fff'%3E%3Ccircle cx='80' cy='50' r='2.4'/%3E%3Ccircle cx='121' cy='36' r='2'/%3E%3Ccircle cx='46' cy='60' r='1.6'/%3E%3C/g%3E%3C/svg%3E"); background-size:cover; }
-.wpv[data-wall="stars"] { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 100'%3E%3Cg fill='%23fff'%3E%3Ccircle cx='14' cy='18' r='1'/%3E%3Ccircle cx='44' cy='70' r='.8'/%3E%3Ccircle cx='70' cy='28' r='1.2'/%3E%3Ccircle cx='96' cy='80' r='.9'/%3E%3Ccircle cx='120' cy='22' r='1'/%3E%3Ccircle cx='146' cy='62' r='1.3'/%3E%3Ccircle cx='28' cy='48' r='.7'/%3E%3Ccircle cx='132' cy='90' r='.8'/%3E%3Ccircle cx='84' cy='56' r='.7'/%3E%3C/g%3E%3C/svg%3E"); background-size:cover; }
-.wpv[data-wall="grid"] { background-image:linear-gradient(color-mix(in srgb,var(--accent) 30%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--accent) 30%,transparent) 1px,transparent 1px); background-size:14px 14px; }
+.wpv[data-wall="stars"] { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 100' shape-rendering='crispEdges'%3E%3Cg fill='%23fff'%3E%3Crect x='14' y='18' width='2' height='2'/%3E%3Crect x='44' y='70' width='2' height='2'/%3E%3Crect x='70' y='28' width='3' height='3'/%3E%3Crect x='96' y='80' width='2' height='2'/%3E%3Crect x='120' y='22' width='2' height='2'/%3E%3Crect x='146' y='62' width='3' height='3'/%3E%3Crect x='28' y='48' width='2' height='2'/%3E%3Crect x='104' y='48' width='2' height='2'/%3E%3Crect x='58' y='88' width='2' height='2'/%3E%3Crect x='132' y='90' width='2' height='2'/%3E%3C/g%3E%3Cg fill='%23fff' fill-opacity='.55'%3E%3Crect x='77' y='56' width='2' height='2'/%3E%3Crect x='73' y='56' width='2' height='2'/%3E%3Crect x='81' y='56' width='2' height='2'/%3E%3Crect x='77' y='52' width='2' height='2'/%3E%3Crect x='77' y='60' width='2' height='2'/%3E%3C/g%3E%3C/svg%3E"); background-size:cover; }
+.wpv[data-wall="glow"] { background-image:radial-gradient(60% 70% at 50% 46%,color-mix(in srgb,var(--accent) 55%,transparent),transparent 78%); } .wpv[data-wall="glow"]::after { content:''; position:absolute; inset:0; background:repeating-conic-gradient(var(--page) 0 25%,transparent 0 50%) 0 0/4px 4px; opacity:.5; }
+.wpv[data-wall="dots"] { background-image:radial-gradient(circle,color-mix(in srgb,var(--accent) 75%,transparent) 1.1px,transparent 1.5px); background-size:10px 10px; }
 .themes { max-height:none; }
 
 /* tab drag and library */
@@ -717,16 +717,16 @@ details.more { margin:14px 0 0; } details.more summary { padding:8px 2px; color:
 #app.layout-top #rowtabs .tab.active > * { position:relative; z-index:1; }
 
 /* ===== tabs that move: they grow in, shrink away, and the open one fades in ===== */
-#app.layout-top #rowtabs .tab { flex:0 1 var(--tabw,210px); transition:flex-basis .24s cubic-bezier(.3,.7,.3,1),background .12s,transform .1s; }
-@keyframes tabIn { from { min-width:0; max-width:0; margin-right:-6px; opacity:0; transform:translateY(8px) scale(.94); } }
-@keyframes tabOut { to { min-width:0; max-width:0; margin-right:-6px; padding-left:0; padding-right:0; opacity:0; transform:scale(.88); } }
+#app.layout-top #rowtabs .tab { flex:0 1 var(--tabw,210px); transition:flex-basis .22s cubic-bezier(.3,.7,.3,1),margin .2s cubic-bezier(.3,.7,.3,1),background .12s,transform .1s; }
+@keyframes tabIn { from { min-width:0; max-width:0; margin-right:-6px; opacity:0; } 60% { opacity:1; } }
+@keyframes tabOut { 40% { opacity:0; } to { min-width:0; max-width:0; margin-right:-6px; padding-left:0; padding-right:0; opacity:0; } }
 @keyframes tabInV { from { opacity:0; transform:translateX(-14px); } }
 @keyframes tabOutV { to { opacity:0; transform:translateX(-14px); height:0; min-height:0; margin-top:0; margin-bottom:0; } }
-@keyframes tabAct { from { opacity:0; transform:translateY(4px); } }
-.tab.enter { animation:tabIn .26s cubic-bezier(.2,.8,.3,1) both; }
+@keyframes tabAct { from { opacity:0; } }
+.tab.enter { animation:tabIn .24s cubic-bezier(.2,.8,.3,1) both; }
 .tab.leaving { overflow:hidden; pointer-events:none; animation:tabOut .2s cubic-bezier(.4,0,.6,1) forwards; }
 #app:not(.layout-top) .tab.enter { animation-name:tabInV; } #app:not(.layout-top) .tab.leaving { animation-name:tabOutV; }
-#app.layout-top #rowtabs .tab.active::before, #app.layout-top #rowtabs .tab.active::after { animation:tabAct .3s cubic-bezier(.2,.8,.3,1) both; }
+#app.layout-top #rowtabs .tab.active::before, #app.layout-top #rowtabs .tab.active::after { animation:tabAct .16s ease-out both; }
 @media (prefers-reduced-motion:reduce) { .tab.enter, .tab.leaving, #app.layout-top #rowtabs .tab.active::before, #app.layout-top #rowtabs .tab.active::after { animation:none; } }
 
 /* the bookmark star sits left of the address bar, with back / forward / reload; the bar is a little narrower and follows them */
@@ -735,3 +735,63 @@ details.more { margin:14px 0 0; } details.more summary { padding:8px 2px; color:
 /* a site without an icon: letter tile (see siteFav in ui.js) */
 .bmk .fav { width:16px; height:16px; border-radius:5px; font-size:9.5px; }
 #app.layout-top.bm-icons .bmk:not(.more) span.fav, #app:not(.layout-top) .bmk span.fav { display:grid; }
+
+.row .kwarea { width:min(440px,52%); min-height:150px; font:12px/1.6 'Cascadia Code',Consolas,monospace; resize:vertical; border-radius:var(--r-md); padding:10px 12px; white-space:pre; overflow:auto; }
+
+/* ===== the address bar sits in the middle of the window (up to 840 px, less when the sides need the room); buttons a little smaller ===== */
+#app.layout-top #rowbar { grid-template-columns:minmax(0,1fr) minmax(240px,min(840px,calc(100vw - 620px))) minmax(0,1fr); }
+@media (max-width:1120px) { #app.layout-top #rowbar { grid-template-columns:minmax(0,1fr) minmax(240px,min(840px,calc(100vw - 440px))) minmax(0,1fr); } }
+#app.layout-top #rowbar #urlbox { justify-self:stretch; width:auto; }
+#app.layout-top #barl { justify-self:start; } #app.layout-top #barr { justify-self:end; }
+#app.layout-top #rowbar .ibtn { width:33px; height:33px; border-radius:9px; } #app.layout-top #rowbar .ibtn svg { width:20px; height:20px; }
+#app.layout-top .profbtn .pfdot { width:20px; height:20px; font-size:10.5px; }
+/* top bar choices (Settings > Layout) */
+#app.layout-top #chrome > #rowtabs { order:0; } #app.layout-top #chrome > #rowbar { order:2; } #app.layout-top #chrome > #rowbm { order:3; }
+#app.layout-top.bm-above #chrome > #rowbm { order:1; } #app.layout-top.bm-above #rowbm { background:linear-gradient(180deg,var(--toolbar-top),var(--toolbar)); } #app.layout-top.bm-above #rowbar { background:var(--toolbar); }
+#app.th-star #bmstar, #app.th-overview #tools [data-do=overview], #app.th-ext #tools .extbtn, #app.th-dl #tools .dlbtn, #app.th-profile #tools .profbtn, #app.th-stats #stats { display:none !important; }
+/* the sidebar's bottom row: four icons in one compact row (it was a tall column) */
+#app:not(.layout-top):not(.compact) #tools { flex-direction:row; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:2px; padding:4px 6px; } #app:not(.layout-top):not(.compact) #tools .grow { display:none; } #app:not(.layout-top):not(.compact) #tools .ibtn { width:36px; height:32px; }
+
+/* ===== tab groups: a chip with the name, a colour on the tabs ===== */
+.grp { display:flex; align-items:center; gap:6px; height:24px; padding:0 9px 0 8px; border-radius:8px; flex:none; font-size:12px; font-weight:600; color:var(--text); background:color-mix(in srgb,var(--gc) 26%,var(--strip,var(--bg))); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gc) 45%,transparent); cursor:default; user-select:none; transition:background .12s; }
+.grp:hover { background:color-mix(in srgb,var(--gc) 38%,var(--strip,var(--bg))); } .grp i { width:8px; height:8px; border-radius:50%; background:var(--gc); flex:none; } .grp b { font-weight:600; font-size:11px; opacity:.7; } .grp span { max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#app.layout-top #rowtabs .grp { align-self:center; margin-bottom:5px; }
+#app.layout-top #rowtabs .tab.grouped:not(.active) { box-shadow:inset 0 2px 0 var(--gc); } #app.layout-top #rowtabs .tab.active.grouped { --accent:var(--gc); }
+#app:not(.layout-top) .grp { margin:6px 2px 2px; align-self:flex-start; } #app:not(.layout-top) .tab.grouped { box-shadow:inset 3px 0 0 var(--gc); } #app:not(.layout-top) .tab.active.grouped { box-shadow:inset 3px 0 0 var(--gc),inset 0 0 0 1px var(--line2); }
+#app.compact:not(.layout-top) .grp span, #app.compact:not(.layout-top) .grp b { display:none; } #app.compact:not(.layout-top) .grp { padding:0 8px; }
+
+/* ===== many tabs: they get narrower (down to the icon) instead of running under the plus; the open tab keeps its width ===== */
+#app.layout-top #rowtabs #tabs { gap:4px; } #app.layout-top #rowtabs .tab { min-width:34px; container-type:inline-size; }
+#app.layout-top #rowtabs .tab.active { min-width:120px; flex-shrink:0; }
+@container (max-width:118px) { #app.layout-top #rowtabs .tab .t, #app.layout-top #rowtabs .tab .zz, #app.layout-top #rowtabs .tab .aud { display:none; } #app.layout-top #rowtabs .tab:not(.active) .x { position:absolute; right:7px; } }
+@container (max-width:80px) { #app.layout-top #rowtabs .tab:not(.active) .x { display:none; position:absolute; inset:0; margin:auto; width:24px; height:24px; background:color-mix(in srgb,var(--toolbar) 42%,var(--strip)); } #app.layout-top #rowtabs .tab:not(.active):hover .x { display:grid; } }
+/* the plus stays at the end of the row; if the row is longer than the window it scrolls and the plus covers the tabs behind it with a solid colour, never over a close button you can still see */
+#app.layout-top #rowtabs .newrow { position:sticky; right:0; z-index:3; background:var(--strip); box-shadow:-10px 0 8px var(--strip); } #app.layout-top #rowtabs .newrow:hover { background:color-mix(in srgb,var(--text) 9%,var(--strip)); }
+
+.lren { width:100%; height:26px; border-radius:7px; padding:0 8px; font:inherit; font-weight:560; user-select:text; }
+
+/* ===== tabs v6: smaller and plainer, like the tabs of Brave: the tabs that are not open have no box at all (a faint pill when the pointer is on them, a hairline between two of them), the open one is one piece with the toolbar and has a hairline instead of the coloured outline ===== */
+#app.layout-top #chrome { height:88px; } #app.layout-top.has-bar #chrome { height:120px; }
+#app.layout-top #rowtabs { height:36px; padding:4px 0 0 0; }
+#app.layout-top #rowbar { height:52px; padding:8px 14px; }
+#app.layout-top #rowbm { height:32px; padding:0 18px 2px; }
+#app.layout-top #rowtabs #tabs { height:32px; padding:0 12px; gap:4px; }
+#app.layout-top #rowtabs .tab { height:26px; align-self:center; padding:0 3px 0 10px; gap:8px; border-radius:8px; background:transparent; box-shadow:none; max-width:200px; }
+#app.layout-top #rowtabs .tab:hover { background:color-mix(in srgb,var(--text) 8%,transparent); }
+#app.layout-top #rowtabs .tab .t { font-size:12.5px; color:color-mix(in srgb,var(--text) 72%,var(--strip)); } #app.layout-top #rowtabs .tab:hover .t { color:var(--text); }
+#app.layout-top #rowtabs .tab .fav { width:16px; height:16px; border-radius:4px; font-size:9px; }
+#app.layout-top #rowtabs .tab .x { width:20px; height:20px; border-radius:6px; opacity:.6; } #app.layout-top #rowtabs .tab .x svg { width:12px; height:12px; stroke-width:1.8; }
+#app.layout-top #rowtabs .tab:not(.active):not(:hover):has(+ .tab:not(.active):not(:hover))::after { content:''; position:absolute; right:-3px; top:6px; bottom:6px; width:1px; background:color-mix(in srgb,var(--text) 15%,transparent); }
+#app.layout-top #rowtabs .tab.active { height:32px; align-self:flex-end; margin:0 8px; }
+#app.layout-top #rowtabs .tab.active .t { color:var(--text); font-weight:550; }
+#app.layout-top #rowtabs .tab.active::before, #app.layout-top #rowtabs .tab.active::after { height:32px; }
+#app.layout-top #rowtabs .tab.active::after { background:var(--toolbar-top); mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='32' viewBox='0 0 24 32'%3E%3Cpath d='M0 32Q8 32 8 24L8 8.5Q8 .5 16 .5L24 .5L24 32Z'/%3E%3C/svg%3E") left top/24px 32px no-repeat,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='32' viewBox='0 0 1 32' preserveAspectRatio='none'%3E%3Crect y='.5' width='1' height='31.5'/%3E%3C/svg%3E") 24px 0/calc(100% - 48px) 32px no-repeat,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='32' viewBox='0 0 24 32'%3E%3Cpath d='M24 32Q16 32 16 24L16 8.5Q16 .5 8 .5L0 .5L0 32Z'/%3E%3C/svg%3E") right top/24px 32px no-repeat; }
+#app.layout-top #rowtabs .tab.active::before { background:linear-gradient(180deg,color-mix(in srgb,var(--text) 17%,transparent) 0%,color-mix(in srgb,var(--text) 11%,transparent) 60%,color-mix(in srgb,var(--text) 4%,transparent) 100%); mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='32' viewBox='0 0 24 32'%3E%3Cpath d='M0 31.5Q8 31.5 8 24L8 8.5Q8 .5 16 .5L24 .5' fill='none' stroke='%23000' stroke-width='1'/%3E%3C/svg%3E") left top/24px 32px no-repeat,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='32' viewBox='0 0 1 32' preserveAspectRatio='none'%3E%3Crect width='1' height='1'/%3E%3C/svg%3E") 24px 0/calc(100% - 48px) 32px no-repeat,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='32' viewBox='0 0 24 32'%3E%3Cpath d='M24 31.5Q16 31.5 16 24L16 8.5Q16 .5 8 .5L0 .5' fill='none' stroke='%23000' stroke-width='1'/%3E%3C/svg%3E") right top/24px 32px no-repeat; }
+#app.layout-top #rowtabs .tab.grouped:not(.active) { box-shadow:inset 0 -2px 0 var(--gc); }
+#app.layout-top #rowtabs .tab.active.grouped::before { background:linear-gradient(180deg,var(--gc) 0%,color-mix(in srgb,var(--gc) 40%,transparent) 70%,transparent 100%); }
+#app.layout-top #rowtabs .pin { width:30px; height:26px; align-self:center; border-radius:8px; background:transparent; box-shadow:none; } #app.layout-top #rowtabs .pin:hover { background:color-mix(in srgb,var(--text) 8%,transparent); }
+#app.layout-top #rowtabs .pin.active { height:32px; align-self:flex-end; border-radius:8px 8px 0 0; background:var(--toolbar-top); box-shadow:inset 0 1px 0 color-mix(in srgb,var(--text) 17%,transparent),inset 1px 0 0 color-mix(in srgb,var(--text) 11%,transparent),inset -1px 0 0 color-mix(in srgb,var(--text) 11%,transparent); }
+#app.layout-top #rowtabs .newrow { width:26px; height:26px; margin:0 0 0 2px; align-self:center; } #app.layout-top #rowtabs .newrow svg { width:17px; height:17px; }
+#app.layout-top #rowtabs #winctl { margin-top:-4px; }
+#app.layout-top #rowbar .ibtn { width:32px; height:32px; } #app.layout-top #rowbar .ibtn svg { width:19px; height:19px; }
+#app.layout-top #urlbox #urlbar { height:36px; border-radius:11px; }

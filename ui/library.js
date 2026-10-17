@@ -60,9 +60,15 @@ function library(o, d) {
       ll.innerHTML = items.map((x) => {
         if (name === 'Downloads') return dlDoneRow(x);
         const g = name === 'History' ? ago(x.t) : ''; const gh = g && g !== last ? `<div class="lgrp">${g}</div>` : ''; last = g || last;
-        return `${gh}<div class="lrow" data-url="${esc(x.url)}">${icon(x)}<div class="lt"><b>${esc(x.title || x.url)}</b><span>${esc(hostOf(x.url))}${name === 'History' ? ' · ' + time(x.t) : ''}</span></div><button class="ibtn sm" data-del="${esc(x.url)}" title="Remove">${ic('x')}</button></div>`;
+        return `${gh}<div class="lrow" data-url="${esc(x.url)}">${icon(x)}<div class="lt"><b>${esc(x.title || x.url)}</b><span>${esc(hostOf(x.url))}${name === 'History' ? ' · ' + time(x.t) : ''}</span></div>${name === 'Bookmarks' ? `<button class="ibtn sm" data-edit="${esc(x.url)}" title="Rename">${ic('t-edit')}</button>` : ''}<button class="ibtn sm" data-del="${esc(x.url)}" title="Remove">${ic('x')}</button></div>`;
       }).join('');
-      ll.querySelectorAll('[data-url]').forEach((r) => (r.onclick = (e) => { if (e.target.closest('[data-del]')) return; nova.cmd('open', { text: r.dataset.url, newTab: true }); }));
+      ll.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { // rename in place: the title turns into a field
+        const row = b.closest('.lrow'), t = row.querySelector('.lt b'), old = t.textContent, inp = Object.assign(document.createElement('input'), { value: old, className: 'lren', spellcheck: false });
+        t.replaceWith(inp); inp.focus(); inp.select(); let done = false;
+        const save = async (ok) => { if (done) return; done = true; if (ok && inp.value.trim() && inp.value.trim() !== old) await nova.cmd('renameBookmark', { url: b.dataset.edit, title: inp.value }); draw(); };
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(true); else if (e.key === 'Escape') save(false); e.stopPropagation(); }); inp.addEventListener('blur', () => save(true)); inp.addEventListener('click', (e) => e.stopPropagation());
+      }));
+      ll.querySelectorAll('[data-url]').forEach((r) => (r.onclick = (e) => { if (e.target.closest('[data-del],[data-edit],.lren')) return; nova.cmd('open', { text: r.dataset.url, newTab: true }); }));
       ll.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => { await nova.cmd(name === 'Bookmarks' ? 'removeBookmark' : 'removeHistory', { url: b.dataset.del }); draw(); }));
       if (name === 'Downloads') bindDlRows(ll, () => draw());
     };
