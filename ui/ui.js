@@ -111,15 +111,16 @@ function arrangeChrome(top) {
   c.dataset.top = top ? '1' : '0';
   const g = (id) => document.getElementById(id), mk = (id) => g(id) || Object.assign(document.createElement('div'), { id });
   if (top) {
-    const rt = mk('rowtabs'), rb = mk('rowbar'), rm = mk('rowbm'), bl = mk('barl'), br = mk('barr');
-    rt.append(g('pins'), g('tabs'), g('winctl')); c.append(g('spaces')); // the tab row belongs to the tabs; the spaces sit in a menu (hidden here)
-    bl.append(g('nav'), g('bmstar')); br.append(g('stats'), g('tools'));
-    rb.append(bl, g('urlbar'), br); rm.append(g('bmbar'));
+    const rt = mk('rowtabs'), rb = mk('rowbar'), rm = mk('rowbm'), bl = mk('barl'), br = mk('barr'), ub = mk('urlbox'), ld = mk('lead');
+    ld.dataset.do = 'spacemenu'; ld.setAttribute('role', 'button');
+    rt.append(ld, g('pins'), g('tabs'), g('winctl')); c.append(g('spaces')); // the tab row: the lead button (Nova and the space you are in), then the tabs; the spaces list sits in a menu (hidden here)
+    bl.append(g('nav')); ub.append(g('urlbar'), g('bmstar')); br.append(g('stats'), g('tools'));
+    rb.append(bl, ub, br); rm.append(g('bmbar'));
     c.append(rt, rb, rm);
   } else {
     const head = g('head'); head.append(g('nav'), g('winctl'));
     c.append(head, g('urlbar'), g('bmstar'), g('bmbar'), g('pins'), g('tabhead'), g('tabs'), g('spaces'), g('dltray'), g('stats'), g('tools'));
-    for (const id of ['rowtabs', 'rowbar', 'rowbm', 'barl', 'barr']) { const e = g(id); if (e) e.remove(); }
+    for (const id of ['rowtabs', 'rowbar', 'rowbm', 'barl', 'barr', 'urlbox', 'lead']) { const e = g(id); if (e) e.remove(); }
   }
 }
 
@@ -134,7 +135,8 @@ function applySettings() {
   r.setProperty('--fs', s.fontSize + 'px'); r.setProperty('--font', `${s.font || "'Inter'"}, 'Inter', system-ui, sans-serif`);
   { const ord = blockOrder(s); BLOCKS.forEach((b) => r.setProperty('--o-' + b[0], ord.indexOf(b[0]) + 1)); }
   arrangeChrome(s.layout === 'top');
-  $('#app').className = `layout-${s.layout}` + (S.spaces && S.spaces.length < 2 ? ' one-space' : '') + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '');
+  const lightBg = (() => { const h = (s.theme.bg || '#000000').replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; return (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255 >= 0.5; })();
+  $('#app').className = `layout-${s.layout}` + (S.spaces && S.spaces.length < 2 ? ' one-space' : '') + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '') + (lightBg ? ' light' : '');
   $('#user-css').textContent = s.customCss || '';
   dockOverlay();
   if (s.customJs !== customJsApplied) {
@@ -159,31 +161,34 @@ document.addEventListener('error', (e) => { const el = e.target; if (el.tagName 
 
 const fmtBytes = (n) => (n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(n >= 1.0e8 ? 0 : 1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 const fmtEta = (s) => (s >= 3600 ? Math.floor(s / 3600) + ' h ' + Math.round((s % 3600) / 60) + ' min' : s >= 60 ? Math.round(s / 60) + ' min' : s + ' s');
-const extMenuButton = () => `<button class="ibtn extbtn" data-do="extmenu" title="Extensions">${ic('box')}</button>`;
+const extMenuButton = (top) => `<button class="ibtn extbtn" data-do="extmenu" title="Extensions">${ic(top ? 't-puzzle' : 'box')}</button>`;
+const profileButton = () => `<button class="ibtn profbtn" data-do="profilemenu" title="Profile and privacy">${ic('t-user')}</button>`;
+const menuButton = () => `<button class="ibtn menubtn" data-do="mainmenu" title="Menu">${ic('t-menu')}</button>`;
 const spaceButton = () => { const sp = (S.spaces || []).find((x) => x.id === S.activeSpace); return S.spaces && S.spaces.length > 1 && sp ? `<button class="spacebtn" data-do="spacemenu" title="Spaces: ${esc(sp.name)}"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>` : ''; };
 const hubButton = () => `<button class="ibtn hubbtn" data-do="hub" title="Extension hub: add extensions in one click">${ic('box')}</button>`;
 // the download button next to reload: a ring that fills while files come down, a check for a minute after the last one
-function dlButton() {
+function dlButton(top) {
   const jobs = (S && S.dl) || [], info = (S && S.dlInfo) || {};
-  if (!jobs.length && !info.seen) return '';
+  if (!top && !jobs.length && !info.seen) return ''; // the tabs-on-top bar always has its folder
   const run = jobs.filter((j) => j.state === 'downloading' || j.state === 'queued'), size = jobs.reduce((n, j) => n + j.size, 0), got = jobs.reduce((n, j) => n + j.received, 0), speed = run.reduce((n, j) => n + j.speed, 0);
   const pct = size ? Math.min(1, got / size) : 0, busy = jobs.length > 0, fresh = !busy && Date.now() - (info.doneAt || 0) < 60000;
   const title = busy ? `${jobs.length} download${jobs.length > 1 ? 's' : ''}${speed ? ' · ' + fmtBytes(speed) + '/s' : ''}: click for details` : 'Downloads';
-  return `<button class="ibtn dlbtn ${busy ? 'busy' : ''} ${fresh ? 'fresh' : ''}" data-do="downloads" title="${title}"><svg class="dring" viewBox="0 0 32 32"><circle class="track" cx="16" cy="16" r="14"/>${busy ? `<circle class="val" cx="16" cy="16" r="14" stroke-dasharray="${(pct * 87.96).toFixed(1)} 100"/>` : ''}</svg>${ic(fresh ? 'check' : 'download')}</button>`;
+  return `<button class="ibtn dlbtn ${busy ? 'busy' : ''} ${fresh ? 'fresh' : ''}" data-do="downloads" title="${title}"><svg class="dring" viewBox="0 0 32 32"><circle class="track" cx="16" cy="16" r="14"/>${busy ? `<circle class="val" cx="16" cy="16" r="14" stroke-dasharray="${(pct * 87.96).toFixed(1)} 100"/>` : ''}</svg>${top ? ic(fresh ? 't-check' : 't-folder') : ic(fresh ? 'check' : 'download')}</button>`;
 }
 function render() {
   if (!S) return;
   if (typeof dragTab !== 'undefined' && dragTab !== null) { if (Date.now() - dragSince < 5000) { deferredRender = true; return; } dragTab = null; dropInfo = null; } // a drag that never ended must not freeze the tab list
   applySettings();
   const cur = S.tabs.find((t) => t.id === S.activeTab), top = S.settings.layout === 'top';
-  $('#nav').innerHTML = `<img id="mark" src="mark.svg" alt="">` + ibtn('back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn('fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn('reload', 'Reload (Ctrl+R)', 'reload') + (top ? '' : dlButton());
+  $('#nav').innerHTML = (top ? '' : `<img id="mark" src="mark.svg" alt="">`) + ibtn(top ? 't-back' : 'back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn(top ? 't-fwd' : 'fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn(top ? 't-reload' : 'reload', 'Reload (Ctrl+R)', 'reload') + (top ? '' : dlButton());
+  { const ld = document.getElementById('lead'); if (ld) { const sp = (S.spaces || []).find((x) => x.id === S.activeSpace) || (S.spaces || [])[0] || { name: 'Main', color: 'var(--accent)' }; ld.title = `Spaces: ${sp.name}`; ld.innerHTML = `<img src="mark.svg" alt=""><span><i style="background:${sp.color}"></i><b>${esc(sp.name)}</b></span>`; } }
   $('#winctl').innerHTML = ibtn('min', 'Minimize', 'min') + ibtn('max', 'Maximize', 'max') + ibtn('x', 'Close', 'wclose', 'close');
   let label = '<span>Search or enter address</span>', icon = 'search';
   if (cur && cur.url !== HOME) {
     try { const u = new URL(cur.url); icon = u.protocol === 'https:' ? 'lock' : 'globe'; label = `<b>${esc(u.hostname.replace(/^www\./, ''))}</b><span>${esc((u.pathname + u.search).replace(/^\/$/, '').slice(0, 60))}</span>`; } catch { label = `<b>${esc(cur.url)}</b>`; }
   }
-  $('#urlbar').innerHTML = `${ic(icon)}<span id="url-text">${label}</span>${cur?.bookmarked && !top ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
-  { const star = document.getElementById('bmstar'), page = !!(cur && /^https?:/i.test(cur.url || '')); star.innerHTML = ic(cur?.bookmarked ? 'starf' : 'star'); star.classList.toggle('on', !!cur?.bookmarked); star.classList.toggle('off', !page); star.title = cur?.bookmarked ? 'Edit this bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)'; }
+  $('#urlbar').innerHTML = `${ic(top ? { lock: 't-shield', globe: 't-globe', search: 't-search' }[icon] : icon)}<span id="url-text">${label}</span>${top ? '' : cur?.bookmarked ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
+  { const star = document.getElementById('bmstar'), page = !!(cur && /^https?:/i.test(cur.url || '')); star.innerHTML = ic(top ? 't-star' : cur?.bookmarked ? 'starf' : 'star'); star.classList.toggle('on', !!cur?.bookmarked); star.classList.toggle('off', !page); star.title = cur?.bookmarked ? 'Edit this bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)'; }
 
   $('#bmbar').innerHTML = (S.bar || []).length ? S.bar.map((b) => `<button class="bmk" data-bm="${esc(b.url)}" title="${esc(b.title || b.url)}">${b.icon ? `<img src="${b.icon}" alt="">` : ic('globe')}<span>${esc(b.title || hostOf(b.url))}</span></button>`).join('') + `<button class="bmk more" data-do="bookmarks" title="All bookmarks (Ctrl+Shift+O)">${ic('fwd')}</button>` : '';
   const tabs = spaceTabs(), maxAge = (S.settings.archiveAfterHours || 24) * 3600e3;
@@ -202,7 +207,8 @@ function render() {
   // the tab budget shows only when it matters (the last fifth of it), as a quiet number next to the other small figures
   const tcount = S.settings.maxTabs && S.tabs.length >= S.settings.maxTabs * 0.8 ? `<span class="tcount ${S.tabs.length >= S.settings.maxTabs - 3 ? 'hot' : ''}" title="Open tabs / tab budget">${S.tabs.length} / ${S.settings.maxTabs}</span>` : '';
   $('#stats').innerHTML = tcount + chips;
-  $('#tools').innerHTML = (top ? spaceButton() + dlButton() : '') + extMenuButton() + `<span class="grow"></span>` + (top ? '' : ibtn('bookmark', 'Library: bookmarks, history, downloads (Ctrl+H)', 'library')) + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings');
+  $('#tools').innerHTML = top ? ibtn('t-grid', 'Tab overview (Ctrl+E)', 'overview') + extMenuButton(true) + dlButton(true) + profileButton() + menuButton()
+    : extMenuButton() + `<span class="grow"></span>` + ibtn('bookmark', 'Library: bookmarks, history, downloads (Ctrl+H)', 'library') + ibtn('grid', 'Tab overview (Ctrl+E)', 'overview') + ibtn('sliders', 'Settings (Ctrl+,)', 'settings');
 }
 setInterval(() => { if (S && !document.hidden) { S.now = Date.now(); render(); } }, 60000); // only the dimming of idle tabs changes with time
 
@@ -212,7 +218,7 @@ document.addEventListener('click', (e) => {
   const d = e.target.closest('[data-do]')?.dataset.do;
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
-    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: () => dlToggle(), hub: A('hub'), bookmark: A('bookmark'), extmenu: () => nova.cmd('overlay', { kind: 'extmenu' }), spacemenu: () => nova.cmd('overlay', { kind: 'spacemenu' }), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
+    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: () => dlToggle(), hub: A('hub'), bookmark: A('bookmark'), extmenu: () => nova.cmd('overlay', { kind: 'extmenu' }), spacemenu: () => nova.cmd('overlay', { kind: 'spacemenu' }), profilemenu: () => nova.cmd('overlay', { kind: 'profilemenu' }), mainmenu: () => nova.cmd('overlay', { kind: 'mainmenu' }), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
     return m[d]?.();
   }
   if (e.target.closest('#urlbar')) return nova.cmd('action', { name: 'go' });
@@ -291,8 +297,8 @@ function setOverlay(kind, data) {
   if (kind === 'menu') return;
   const o = $('#overlay'); o.hidden = false; o.innerHTML = '';
   o.onmousedown = (e) => { if (e.target === o && kind !== 'wizard') nova.cmd('closeOverlay'); };
-  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' || kind === 'extmenu' || kind === 'bookmark' || kind === 'spacemenu' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
-  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew, extmenu: extMenu, bookmark: bookmarkPop, spacemenu: spacePop })[kind](o, data || {});
+  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' || kind === 'extmenu' || kind === 'bookmark' || kind === 'spacemenu' || kind === 'profilemenu' || kind === 'mainmenu' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
+  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew, extmenu: extMenu, bookmark: bookmarkPop, spacemenu: spacePop, profilemenu: profilePop, mainmenu: mainMenu })[kind](o, data || {});
 }
 function clearOverlay() { if (askResolve && askShown) { const r = askResolve; askResolve = null; askShown = false; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; o.className = ''; }
 // Settings and the hub sit beside the browser, not over it: the sidebar (or the top bar) stays sharp and live while you change things

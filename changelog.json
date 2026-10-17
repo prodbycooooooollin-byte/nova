@@ -1,5 +1,19 @@
 [
   {
+    "version": "26.10.18",
+    "date": "2026-10-17",
+    "headline": {
+      "title": "The top bar as drawn",
+      "text": "a dark tab strip over a lighter toolbar, the active tab growing out of it, a wide address bar with the bookmark star inside, and thin outline symbols."
+    },
+    "notes": [
+      "Where other browsers show three coloured dots there is now the Nova crystal with your current space; one click opens the list of spaces and lets you add one.",
+      "A profile button with your name (you can rename it), the ad and tracker blocker, history, clearing data and your spaces, and a menu behind the three lines with everything that is not on the bar.",
+      "The extensions button is a puzzle piece and downloads are a folder with a progress ring; the bookmarks row, memory use, blocked ads and the tab overview stay.",
+      "Light themes get the same contrast: tab strip darker, toolbar lighter."
+    ]
+  },
+  {
     "version": "26.10.17",
     "date": "2026-10-17",
     "headline": {

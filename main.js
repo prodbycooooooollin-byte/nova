@@ -45,6 +45,7 @@ const DEFAULTS = {
   budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false }, cache: { limitMB: 500, auto: true }, pageScheme: 'system', layoutBlocks: { order: [], hidden: [] },
   features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, autoPip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false, videoSpeed: false, sponsorBlock: false, ytDislike: false, cookieBanners: false, passwords: false },
   darkSites: [],
+  userName: '', // shown in the profile menu
   bookmarkNames: true, // false: the bookmarks bar shows only the small icons
   newTabPage: 'home', // what a new tab shows: the start page ('home') or the address bar to type into ('bar')
 };
@@ -210,7 +211,7 @@ function layout() {
   const [w, h] = win.getContentSize();
   const gap = settings.gap;
   const side = settings.compact ? 56 : settings.sidebarWidth;
-  const top = 89 + barHeight(); // top layout: tab row (40) + address row (49) + the bookmarks row when there are bookmarks
+  const top = 90 + barHeight(); // top layout: tab row (38) + toolbar (52) + the bookmarks row when there are bookmarks
   const hidden = sidebarHidden || focusMode || pageFullscreen;
   let uiRect = { x: 0, y: 0, width: 0, height: 0 }, c;
   if (hidden) c = { x: 0, y: 0, width: w, height: h };

@@ -1,6 +1,6 @@
 {
     "name":  "nova",
-    "version":  "26.10.17",
+    "version":  "26.10.18",
     "description":  "Nova - a minimal, fully customizable Chromium browser with rethought tab management",
     "main":  "boot.js",
     "novaLoader":  1,
