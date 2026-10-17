@@ -1,5 +1,21 @@
 [
   {
+    "version": "26.10.23",
+    "date": "2026-10-17",
+    "headline": {
+      "title": "Fewer crashes, server logins, screen sharing and a download folder",
+      "text": "Nova no longer crashes while it closes, a server that asks for a name and a password gets a card, pages can share a screen or a window, and you choose where files go."
+    },
+    "notes": [
+      "Crash: a hidden page of an extension, a password manager for example, could crash Nova while it was closing. Nova now lets go of every debugger before it ends and no longer attaches one to such pages. When Nova ends badly, the log now keeps the last steps, so a crash on one site can be traced.",
+      "Download folder: Settings > Downloads has a Change button for the folder, and a switch that lets Windows ask where to save each file.",
+      "Server login: a router, a NAS box, a company site or a proxy that asks for a user name and a password gets a small card under the address bar. It warns when the connection is not encrypted and says when the answer was not accepted.",
+      "Share your screen: Meet, Discord, Teams and other pages in the browser can ask to share. Nova shows the screens and windows as pictures, you pick one, and you can add the sound of the computer.",
+      "Protected video: this Setup carries Widevine for Netflix, Prime Video, Disney+ and the Spotify web player. It needs the new Setup once, the small update cannot add it. The module comes from Google on the first start, about 15 MB, and can be switched off under Search and privacy. Nova is not signed by the maker of the module, so a service may limit the picture quality.",
+      "Lighter: when all is calm Nova looks at its memory every 12 seconds instead of every 5, page pictures are taken at most every 20 seconds, and when Windows itself runs short of memory the two oldest background tabs go to sleep."
+    ]
+  },
+  {
     "version": "26.10.22",
     "date": "2026-10-17",
     "headline": {

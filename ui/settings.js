@@ -117,7 +117,9 @@ function settings(o, d) {
           row('Only for files bigger than', `<div class="unit">${stepper('minMB', d.minMB || 8, 1, 4096, 1, 'data-dl')}<span>MB</span></div>`, 'Small files finish too quickly to gain anything.', 'file'),
           row('Speed limit', `<div class="unit">${stepper('limitMBs', d.limitMBs || 0, 0, 1000, 1, 'data-dl')}<span>MB/s</span></div>`, 'Keeps the rest of your connection free. 0 means no limit.', 'gauge'))
         + (live.length ? sect('Running now') + `<div class="group">${live.map((j) => row(esc(j.name), `<span class="val">${j.size ? Math.round(j.received / j.size * 100) + '%' : '…'}</span>`, j.state === 'paused' ? 'Paused' : `${fmtBytes(j.speed)}/s`, 'download')).join('')}</div>` : '')
-        + sect('Where files go') + grp(row('Download folder', '<button class="btn" id="dlfolder">Show in Explorer</button>', 'Files are saved to your Downloads folder, with a number added if a name is taken.', 'open'));
+        + sect('Where files go') + grp(
+          row('Download folder', '<button class="btn" id="dlpick">Change…</button> <button class="btn" id="dlfolder">Show in Explorer</button>', (d.dir ? `Files are saved to <b>${esc(d.dir)}</b>` : 'Files are saved to your Windows Downloads folder') + ', with a number added if a name is taken.' + (d.dir ? ' <button class="btn small" id="dlreset">Use the Windows folder</button>' : ''), 'open'),
+          row('Ask where to save each file', dsw('ask', !!d.ask), 'Windows shows its save window for every download, starting in the folder above. Such a download uses one connection, without the acceleration.', 'file'));
     },
     'Search & privacy': (s) => sect('Search engine') + `<div class="engines">${Object.keys(ENGINES).map((n) => `<button class="engine ${ENGINES[n] === s.searchEngine ? 'on' : ''}" data-engine="${n}">${brand('eng-' + n.toLowerCase())}${n}</button>`).join('')}</div>`
       + grp(row('Custom search URL', `<input type="text" data-k="searchEngine" value="${esc(s.searchEngine)}">`, 'Use %s where the query goes.', 'search2'), row('Search shortcuts', `<textarea class="kwarea" data-k="searchKeywords" spellcheck="false" rows="7">${esc(s.searchKeywords || '')}</textarea>`, 'Type a keyword and a space in the address bar, then what to look for: yt cats. One per line: keyword, address with %s, name.', 'search2'))
@@ -129,6 +131,7 @@ function settings(o, d) {
         row('Search suggestions', sw('suggestions', s.suggestions), 'Shows suggestions from your search engine while you type. This sends what you type to that engine, so it is off by default.', 'search2'),
         row('Keep browsing history', sw('keepHistory', s.keepHistory), 'Lets Ctrl K find pages you visited. Off keeps nothing.', 'clock'),
         row('Passkeys and security keys', sw('passkeys', !!s.passkeys), 'Off: a website that asks for a passkey does not make Windows open its security window and ask for your PIN. It is told none is available and offers the password. Switch on to sign in with passkeys. Applies to pages you open or reload afterwards.', 'password'),
+        row('Protected video (Widevine)', sw('drm', s.drm !== false), '<span id="drminfo">Checking…</span>', 'film'),
         row('Tab previews', sw('thumbnails', s.thumbnails), 'Small screenshots in the tab overview. Off saves a little CPU and memory.', 'eye'),
         row('Clear browsing data', '<button class="btn" id="cleardata">Clear…</button>', 'History, cookies and cached files.', 'trash'))
       + sect('Site permissions', 'Sites you gave or refused location, camera, microphone, notifications or clipboard. Change one for the page in front with the shield in the address bar.') + grp(row('Saved choices', '<button class="btn" data-permreset>Forget all</button>', 'Nothing is remembered in private tabs.', 'lock')) + '<div class="permlist" id="permlist"></div>',
@@ -206,6 +209,13 @@ function settings(o, d) {
       const show = (st) => { if (!info || !st || !st.on) return; info.textContent = st.total ? `${st.total.toLocaleString('en-US')} known dangerous sites on this computer, updated ${ago(st.updated)}. Every page and every download is checked before it opens; your pages are never sent anywhere.` : (st.updating ? 'Downloading the lists…' : 'The lists are not downloaded yet. Nova fetches them shortly after it starts.'); if (upd) upd.hidden = false; };
       if (info) nova.cmd('sbStatus').then(show);
       if (upd) upd.onclick = async () => { upd.disabled = true; upd.textContent = 'Updating…'; const r = await nova.cmd('sbUpdate'); upd.disabled = false; upd.textContent = 'Update lists now'; show(r && r.status); const bad = r && r.res && Object.values(r.res).filter((v) => /failed/.test(v)).length; if (bad) toast('Some lists could not be downloaded. Check the connection.'); }; }
+    { const box = body.querySelector('#drminfo'); // Netflix, Prime Video, Disney+: is the video module there
+      if (box) nova.cmd('drmStatus').then((r) => { if (!r || !box.isConnected) return; box.textContent = ({
+        ready: 'Ready. Netflix, Prime Video, Disney+ and the Spotify web player can play protected video. Reload a page that was open before. A service may limit the picture quality for a browser that its maker has not signed.',
+        loading: 'Nova is getting the Widevine module from Google (about 15 MB, once). Protected video works as soon as it is there.',
+        off: 'Off. Switch on and restart Nova to use it.',
+        error: 'The module could not be loaded' + (r.error ? ': ' + r.error : '') + '. Check the connection and restart Nova.',
+        unsupported: 'This copy of Nova does not contain the module. Install the newest Nova-Setup once; the small automatic update cannot add it.' })[r.state] || ''; if (r.off && r.state !== 'off') box.textContent += ' Switched off: applies after a restart.'; }); }
     { const box = body.querySelector('#permlist'); // the sites that were given or refused something
       if (box) {
         const draw = async () => {
@@ -254,6 +264,8 @@ function settings(o, d) {
     on('#arrreset', () => { patch({ layoutBlocks: { order: [], hidden: [] } }); again(100); });
     on('#cacheclean', async () => { const b = $('#cacheclean'); if (b) { b.disabled = true; b.textContent = 'Cleaning…'; } const r = await nova.cmd('storageClean'); if (b) { b.disabled = false; b.textContent = 'Clean now'; } toast('Caches emptied. Your logins stay.'); const el = $('#cache-size'); if (el && r) el.textContent = storageText(r); });
     on('#dlfolder', () => nova.cmd('openDownloadsFolder'));
+    on('#dlpick', async () => { const r = await nova.cmd('pickDownloadDir'); if (r) again(150); });
+    on('#dlreset', () => { patch({ downloads: { ...S.settings.downloads, dir: '' } }); again(150); });
     on('#darkclear', () => { patch({ darkSites: [] }); again(150); });
     on('#rk', () => { patch({ keys: {} }); again(150); }); bindUpd(); on('#rerun', () => nova.cmd('runSetup')); fillPatchNotes();
     on('#applycode', () => { patch({ customCss: $('#ccss').value, pageCss: $('#pcss').value, customJs: $('#cjs').value }); toast('Applied'); });

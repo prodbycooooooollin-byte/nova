@@ -25,6 +25,7 @@ function apply(wc) {
 async function run(wc) {
   try {
     if (wc.isDestroyed()) return;
+    const kind = wc.getType(); if (kind === 'backgroundPage' || kind === 'remote') return; // the hidden pages of extensions are not pages you look at: no debugger session on them (one left open there crashed Nova while it was closing)
     if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
     await wc.debugger.sendCommand('Emulation.setUserAgentOverride', { userAgent: UA, acceptLanguage: acceptLanguage(), platform: 'Win32', userAgentMetadata: META });
   } catch (e) { /* the page is closing, or DevTools holds the session */ }

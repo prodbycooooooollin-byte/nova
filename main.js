@@ -1,5 +1,5 @@
 // Nova - minimal Chromium browser. Main process: window, tabs, spaces, sleeping/archiving, adblock.
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage, net, systemPreferences, nativeTheme, crashReporter } = require('electron');
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, screen, nativeImage, net, systemPreferences, nativeTheme, crashReporter, webContents, desktopCapturer } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const updater = require('./updater');
@@ -53,7 +53,7 @@ const DEFAULTS = {
   sleepAfterMin: 10, archiveAfterHours: 24, maxTabs: 25, dedupeTabs: true,
   adblock: true, extensions: [], keys: {}, updateFeed: '', zoom: {},
   // Optional features. Everything beyond the essentials is off until the user turns it on.
-  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false }, cache: { limitMB: 250, auto: true }, pageScheme: 'system', layoutBlocks: { order: [], hidden: [] },
+  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, drm: true, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false, dir: '', ask: false }, cache: { limitMB: 250, auto: true }, pageScheme: 'system', layoutBlocks: { order: [], hidden: [] },
   features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, autoPip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false, videoSpeed: false, sponsorBlock: false, ytDislike: false, cookieBanners: false, passwords: false, safeBrowsing: true },
   darkSites: [],
   profiles: [], purge: [], // the user's profiles (profiles.js: a name, a colour and a session of their own); purge: partition folders of deleted profiles, removed at the next start
@@ -119,21 +119,37 @@ const writeJson = (f, v) => { try { fs.writeFileSync(userFile(f), JSON.stringify
 // ---------- diagnostics: crash dumps stay on this PC, and a short log of what Nova was doing explains why it closed ----------
 try { crashReporter.start({ uploadToServer: false, compress: true, productName: 'Nova', companyName: 'Nova' }); } catch { /* not available */ }
 const dlog = (m) => { try { fs.appendFileSync(userFile('nova.log'), `${new Date().toISOString()} ${m}\n`); } catch { /* disk full or locked */ } };
+// A short trail of what Nova was doing (pages opened, processes that ended) is kept in a small file and removed when Nova closes properly; after a crash the next start copies it into the log.
+const trailBuf = []; let trailTimer = null;
+const trail = (m) => {
+  trailBuf.push(new Date().toISOString().slice(11, 19) + ' ' + m); if (trailBuf.length > 30) trailBuf.shift();
+  if (!trailTimer) trailTimer = setTimeout(() => { trailTimer = null; try { fs.writeFileSync(userFile('trail.txt'), trailBuf.join('\n')); } catch { /* the trail is a help only */ } }, 3000);
+};
+// No page may carry a debugger session when Nova ends: Electron frees its debugger objects before it frees the hidden pages of extensions (a password manager's offscreen page, for example),
+// and such a page then calls one that is gone. Three crashes at exit, all in this one place, were this.
+const detachDebuggers = () => { try { for (const w of webContents.getAllWebContents()) { try { if (!w.isDestroyed() && w.debugger.isAttached()) w.debugger.detach(); } catch { /* closing */ } } } catch { /* nothing to detach */ } };
 try {
   const lp = userFile('nova.log'), flag = userFile('running.flag');
   if (fs.existsSync(lp) && fs.statSync(lp).size > 400 * 1024) fs.renameSync(lp, userFile('nova.old.log'));
-  if (fs.existsSync(flag)) dlog('!! the previous session did not end cleanly (' + fs.readFileSync(flag, 'utf8') + ')');
+  if (fs.existsSync(flag)) {
+    dlog('!! the previous session did not end cleanly (' + fs.readFileSync(flag, 'utf8') + ')');
+    try { const tr = fs.readFileSync(userFile('trail.txt'), 'utf8').split('\n').slice(-14); if (tr.length) dlog('   its last steps: ' + tr.join(' | ')); } catch { /* no trail */ }
+  }
   fs.writeFileSync(flag, `${app.getVersion()} pid ${process.pid} since ${new Date().toISOString()}`);
-  app.on('will-quit', () => { try { fs.unlinkSync(flag); } catch { /* gone */ } });
+  app.on('will-quit', () => { clearTimeout(trailTimer); trailTimer = null; try { fs.unlinkSync(flag); } catch { /* gone */ } try { fs.unlinkSync(userFile('trail.txt')); } catch { /* none */ } });
 } catch { /* the log is a help, never a reason to stop */ }
 process.on('uncaughtException', (e) => dlog('uncaught exception: ' + ((e && e.stack) || e)));
 process.on('unhandledRejection', (e) => dlog('unhandled rejection: ' + ((e && e.stack) || e)));
-app.on('child-process-gone', (_e, d) => dlog(`child process gone: ${d.type} ${d.reason} exit ${d.exitCode}${d.name ? ' ' + d.name : ''}`));
-app.on('render-process-gone', (_e, wc, d) => { let u = ''; try { u = wc.getURL().slice(0, 80); } catch { /* gone */ } dlog(`renderer gone: ${d.reason} exit ${d.exitCode} ${u}`); });
+let lastGone = '', goneRepeat = 0; // when Windows ends the session a helper process is restarted and ends again hundreds of times in a second: one line for those
+const outside = (d) => (d.exitCode === -1 && d.reason === 'crashed' ? ' (exit -1: ended from outside, for example by Task Manager or a script; a real crash shows a long negative code and leaves a dump)' : ''); // what the exit code says
+const goneLog = (m) => { if (m === lastGone) { goneRepeat++; return; } if (goneRepeat) dlog(`   (and ${goneRepeat} more of the same)`); goneRepeat = 0; lastGone = m; dlog(m); trail(m); };
+app.on('child-process-gone', (_e, d) => goneLog(`child process gone: ${d.type} ${d.reason} exit ${d.exitCode}${d.name ? ' ' + d.name : ''}${outside(d)}`));
+app.on('render-process-gone', (_e, wc, d) => { let u = ''; try { u = wc.getURL().slice(0, 80); } catch { /* gone */ } goneLog(`renderer gone: ${d.reason} exit ${d.exitCode} ${u}${outside(d)}`); });
 
 try {
   const early = readJson('settings.json', {});
   if (early.lowIsolation) app.commandLine.appendSwitch('disable-site-isolation-trials'); // opt-in: one process for a page and its frames, about 12% less memory, weaker isolation
+  if (early.drm === false) app.commandLine.appendSwitch('disable-component-update'); // no module download from Google when protected video is switched off
   let cacheMB = early.cache && early.cache.limitMB !== undefined ? +early.cache.limitMB : 250; if (!early.cacheV2 && cacheMB === 500) cacheMB = 250; // 500 MB per profile (two profiles: a gigabyte) was the old default; // the page cache on disk: Chromium itself keeps it under this size
   if (cacheMB > 0) app.commandLine.appendSwitch('disk-cache-size', String(Math.round(cacheMB * 1048576)));
 } catch {}
@@ -446,9 +462,9 @@ function wake(t) {
   on('page-favicon-updated', (_e, f) => { t.favicon = f[0] || ''; if (!t.private && settings.keepHistory) features.setIcon(wc.getURL(), f[0]); push(); });
   on('did-start-loading', () => { t.loading = true; push(); });
   on('render-process-gone', (_e, d) => { if (d.reason === 'clean-exit' || d.reason === 'killed') return; const now = Date.now(); if (now - (t.lastCrash || 0) < 30000) return; t.lastCrash = now; setTimeout(() => { if (!wc.isDestroyed()) wc.reload(); }, 400); });
-  on('did-stop-loading', () => { t.loading = false; upd(); if (t.id === state.activeTab) setTimeout(() => capture(t), 1500); });
+  on('did-stop-loading', () => { t.loading = false; upd(); if (t.id === state.activeTab) setTimeout(() => capture(t, true), 1500); });
   on('did-navigate', () => {
-    t.mediaAt = 0;
+    t.mediaAt = 0; trail('open ' + (t.private ? 'a private page' : hostOfUrl(wc.getURL()) || 'a page'));
     if (isInter(wc.getURL()) && t.inter) { try { const nh = wc.navigationHistory, i = nh.getActiveIndex(); if (i > 0) { const prev = nh.getEntryAtIndex(i - 1); if (prev && (prev.url === t.inter.url || /^chrome-error:/.test(prev.url || ''))) nh.removeEntryAtIndex(i - 1); } } catch { /* an older history API: the failed address stays one step back */ } } // "Back" from a warning page must not land on the failed address again
     upd(); applyZoom(wc); if (!t.private && !isInter(wc.getURL())) features.recordVisit(wc.getURL(), wc.getTitle(), t.pid, t.spaceId);
   });
@@ -583,14 +599,16 @@ function closePage(wc) {
   };
   wait();
 }
-async function capture(t) {
+async function capture(t, soft) { // soft: after a page finished loading. A page that loads again and again (a chat, a video site) must not be photographed every time: at most every 20 seconds. Leaving a tab always takes the picture.
   const thumbs = settings.thumbnails, ghost = settings.budget.softWake && !isHome(t.url);
   if (!thumbs && !ghost) return;
+  if (soft && Date.now() - (t.capAt || 0) < 20000) return;
   if (!t.view || !t.attached || t.view.webContents.isDestroyed()) return;
   const W = wins.get(t.wid); if (!W || W.closed || W.win.isDestroyed() || W.win.isMinimized() || !W.win.isVisible()) return;
   try {
     const img = await nat(t.view.webContents, t.view.webContents.capturePage());
     if (img.isEmpty()) { if (ghost) t.ghost = ''; return; } // no picture is better than one of a different scroll position
+    t.capAt = Date.now();
     if (thumbs) t.thumb = 'data:image/jpeg;base64,' + img.resize({ width: 360 }).toJPEG(55).toString('base64');
     if (ghost) { t.ghost = 'data:image/jpeg;base64,' + (img.getSize().width > 960 ? img.resize({ width: 960 }) : img).toJPEG(60).toString('base64'); t.ghostBg = dominantColor(img); }
   } catch { if (ghost) t.ghost = ''; }
@@ -886,7 +904,7 @@ function endDrag() {
 
 // ---------- overlay & keys ----------
 function openOverlay(kind, data) {
-  if (overlayOpen && overlayKind === 'perm' && kind !== 'perm') { const p = permQueue.find((x) => x.shown && !x.done); if (p) permFinish(p, 'dismiss'); setTimeout(permNext, 300); }
+  if (overlayOpen && askKind(overlayKind) && !askKind(kind)) { const p = permQueue.find((x) => x.shown && !x.done); if (p) permFinish(p, 'dismiss'); setTimeout(permNext, 300); }
   overlayOpen = true; overlayKind = kind; dlog('overlay ' + kind);
   layout();
   win.contentView.addChildView(ui);
@@ -895,7 +913,7 @@ function openOverlay(kind, data) {
 }
 function closeOverlay() {
   if (!overlayOpen) return;
-  if (overlayKind === 'perm') { const p = permQueue.find((x) => x.shown && !x.done); if (p) permFinish(p, 'dismiss'); setTimeout(permNext, 300); }
+  if (askKind(overlayKind)) { const p = permQueue.find((x) => x.shown && !x.done); if (p) permFinish(p, 'dismiss'); setTimeout(permNext, 300); }
   features.closePeek();
   overlayOpen = false;
   ui.webContents.send('overlay', null);
@@ -1187,11 +1205,12 @@ const persistentSessions = () => sessions.filter((s) => !(sesInfo.get(s) || {}).
 const curSes = () => sessionFor(curProfile(), false);
 // ---------- site permissions: location, camera, microphone, notifications, clipboard. The question is a small card under the address bar, the answer is remembered
 // per site and profile (perms.js), changed from the shield in the address bar, and forgotten for private tabs ----------
-let permSeq = 1; const permQueue = []; // { id, key, t, wcr, origin, kinds, cb, shown, done, tries }
+let permSeq = 1; const permQueue = []; // { id, key, t, wcr, origin, kinds, cb, shown, done, tries }; a login or a screen choice carries ov ('login', 'screen') and data instead
+const askKind = (k) => k === 'perm' || k === 'login' || k === 'screen'; // the overlays that are one question at a time
 const permMemo = new WeakMap(); // per page: the "Allow this time" answers and the questions that were dismissed a moment ago
 const memoOf = (wc) => { let m = permMemo.get(wc); if (!m) { m = { once: new Set(), quiet: new Map() }; permMemo.set(wc, m); } return m; };
 function permRequest(pid, priv, wc, perm, cb, details) {
-  if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock'].includes(perm)) return cb(true);
+  if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock', 'display-capture'].includes(perm)) return cb(true); // sharing the screen is decided in the picker card, not here
   const kinds = perms.kindsOf(perm, details); if (!kinds) return cb(false);
   const origin = perms.originOf((details && details.requestingUrl) || wc.getURL()); if (!origin) return cb(false);
   const key = priv ? pid + '!' : pid, d = perms.decide(key, origin, kinds);
@@ -1205,9 +1224,10 @@ function permRequest(pid, priv, wc, perm, cb, details) {
   permQueue.push({ id: permSeq++, key, t, wcr: wc, origin, kinds, cb, shown: false, done: false, tries: 0 });
   permNext();
 }
-function permFinish(p, decision) { // decision: allow (remembered), once, block (remembered), dismiss (no answer: denied this time)
+function permFinish(p, decision, extra) { // decision: allow (remembered), once, block (remembered), dismiss (no answer: denied this time)
   if (p.done) return; p.done = true;
   const i = permQueue.indexOf(p); if (i >= 0) permQueue.splice(i, 1);
+  if (p.ov) { try { p.cb(decision, extra); } catch { /* the page is gone */ } return; }
   const wc = p.wcr;
   if (decision === 'allow' || decision === 'block') for (const k of p.kinds) perms.set(p.key, p.origin, k, decision);
   if (decision === 'once') for (const k of p.kinds) memoOf(wc).once.add(p.origin + '|' + k);
@@ -1222,13 +1242,63 @@ function permNext() { // one question at a time; if another panel is open the qu
   try {
     if (overlayOpen) { if (++p.tries > 40) { permFinish(p, 'dismiss'); } else setTimeout(permNext, 500); return; }
     p.shown = true;
+    if (p.ov) { openOverlay(p.ov, { id: p.id, ...p.data }); return; }
     let host = p.origin; try { host = new URL(p.origin).host; } catch { /* keep */ }
     openOverlay('perm', { id: p.id, host, secure: /^https:/.test(p.origin), kinds: p.kinds.map((k) => ({ k, label: perms.KINDS[k].label })) });
   } finally { if (keep && keep !== W) useWin(keep); }
 }
 function permDrop(t) { // the page left or the tab went away: its questions are over
-  for (const p of [...permQueue]) if (p.t === t) { const was = p.shown; permFinish(p, 'dismiss'); if (was) { const keep = curW; useWinOf(t); try { if (overlayOpen && overlayKind === 'perm') closeOverlay(); } finally { if (keep && keep !== curW) useWin(keep); } } }
+  for (const p of [...permQueue]) if (p.t === t) { const was = p.shown; permFinish(p, 'dismiss'); if (was) { const keep = curW; useWinOf(t); try { if (overlayOpen && askKind(overlayKind)) closeOverlay(); } finally { if (keep && keep !== curW) useWin(keep); } } }
   setTimeout(permNext, 200);
+}
+// ---------- a server asks for a user name and password (a router, a NAS box, a company site, a proxy): the same small card as the permission questions ----------
+const loginMemo = new WeakMap(); // page -> the box that got an answer last, so a second ask for the same box says the answer was not accepted
+app.on('login', (event, wc, details, info, callback) => {
+  event.preventDefault();
+  const t = wc ? tabOfWc(wc) : null;
+  if (!t || !t.view || !shown(t)) return callback(); // nobody is looking at that page: the box stays unanswered and the page shows what the server sent
+  let host = String(info.host || ''); if (info.port && ![80, 443].includes(info.port)) host += ':' + info.port;
+  const key = (info.isProxy ? 'proxy ' : '') + host + '|' + (info.realm || ''), last = loginMemo.get(wc);
+  permQueue.push({ id: permSeq++, key: '', t, wcr: wc, origin: '', kinds: [], shown: false, done: false, tries: 0, ov: 'login',
+    data: { host, realm: String(info.realm || '').slice(0, 120), proxy: !!info.isProxy, secure: !!info.isProxy || /^https:/i.test((details && details.url) || ''), wrong: !!(last && last.key === key && Date.now() - last.at < 90000) },
+    cb: (d, x) => {
+      if (d === 'ok' && x && typeof x.user === 'string' && typeof x.pass === 'string') { loginMemo.set(wc, { key, at: Date.now() }); callback(x.user.slice(0, 256), x.pass.slice(0, 1024)); } else callback();
+    } });
+  permNext();
+});
+// ---------- sharing the screen or a window (Meet, Discord, Teams in the browser): the page asks, Nova shows what can be shared as pictures, the person picks ----------
+async function displayRequest(request, cb) {
+  const deny = () => { try { cb({}); } catch { /* the page is gone */ } };
+  let wc = null; try { wc = request.frame ? webContents.fromFrame(request.frame) : null; } catch { /* the frame is gone */ }
+  const t = wc ? tabOfWc(wc) : null;
+  if (!t || !shown(t) || !request.videoRequested) return deny();
+  let list = [];
+  try { list = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 200 }, fetchWindowIcons: false }); } catch { return deny(); }
+  if (!list.length) return deny();
+  const own = new Set(); for (const W of wins.values()) { try { own.add(W.win.getMediaSourceId()); } catch { /* closing */ } }
+  let host = request.securityOrigin || ''; try { host = new URL(host).host; } catch { /* keep */ }
+  const sources = list.map((x) => ({ id: x.id, name: x.name, screen: /^screen:/.test(x.id), own: own.has(x.id), thumb: x.thumbnail && !x.thumbnail.isEmpty() ? 'data:image/jpeg;base64,' + x.thumbnail.toJPEG(65).toString('base64') : '' }));
+  permQueue.push({ id: permSeq++, key: '', t, wcr: wc, origin: '', kinds: [], shown: false, done: false, tries: 0, ov: 'screen',
+    data: { host, secure: /^https:/i.test(request.securityOrigin || ''), audio: !!request.audioRequested, sources },
+    cb: (d, x) => {
+      const src = d === 'ok' && x ? list.find((y) => y.id === x.source) : null;
+      if (!src) return deny();
+      const streams = { video: src }; if (request.audioRequested && x.audio) streams.audio = 'loopback'; // the sound of the whole computer, which Windows can give
+      try { cb(streams); } catch { /* the page is gone */ }
+    } });
+  permNext();
+}
+// ---------- protected video (Widevine: Netflix, Prime Video, Disney+, the Spotify web player). Only a build of Electron that carries the module has `components`;
+// it fetches the module from Google the first time, about 15 MB ----------
+const drm = { state: 'unsupported', error: '' };
+function drmInit() {
+  try {
+    const { components } = require('electron');
+    if (!components || typeof components.whenReady !== 'function') return;
+    if (settings.drm === false) { drm.state = 'off'; return; }
+    drm.state = 'loading';
+    components.whenReady(typeof components.WIDEVINE_CDM_ID === 'string' ? [components.WIDEVINE_CDM_ID] : undefined).then(() => { drm.state = 'ready'; dlog('widevine ready'); push(); }).catch((e) => { drm.state = 'error'; drm.error = String((e && e.message) || e).slice(0, 160); dlog('widevine: ' + drm.error); });
+  } catch (e) { drm.state = 'error'; drm.error = String((e && e.message) || e).slice(0, 160); }
 }
 const permKey = (t) => (t.private ? t.pid + '!' : t.pid);
 let legacyChecked = false;
@@ -1241,6 +1311,7 @@ function sessionFor(pid, priv) {
   s.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'shim-preload.js') });
   s.webRequest.onBeforeSendHeaders({ urls: ['https://*/*'] }, (d, cb) => { const h = d.requestHeaders; for (const [k, v] of Object.entries(persona.hints)) if (!Object.keys(h).some((x) => x.toLowerCase() === k)) h[k] = v; cb({ requestHeaders: h }); });
   s.setPermissionRequestHandler((wc, perm, cb, details) => permRequest(pid, !!priv, wc, perm, cb, details));
+  s.setDisplayMediaRequestHandler((request, cb) => displayRequest(request, cb), { useSystemPicker: false });
   if (blocker && settings.adblock) { try { adblockEnable(s); } catch (e) { console.error('adblock on a new session', e.message); } } // before the lists are loaded, initAdblock enables every session that exists by then
   webtools.sync(); darkmode.sync(); passwords.sync(); // their preloads follow the Features switches on every session, also on this one
   features.attachSession(s, pid, !!priv); // downloads
@@ -1267,6 +1338,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   if (settings.purge.length) { settings.purge = profiles.purge(app.getPath('userData'), settings.purge); saveSettings(); } // the partition folders of profiles deleted last time
   bindState(state); // activeTab, activeSpace, split and prevTab live in each window's record
   Menu.setApplicationMenu(null);
+  drmInit();
 
   // sessions are made by sessionFor() when a page of a profile first needs one; every page (tabs, sign-in popups) presents the same regular-Chrome identity
   if (!process.env.NOVA_NO_PERSONA) app.on('web-contents-created', (_e, wc) => { if (sessions.includes(wc.session)) persona.apply(wc); });
@@ -1301,7 +1373,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   initAdblock(sessions);
   budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => allVisibleIds(), toast: (m) => toast(m), push: () => push(), watching: () => anyOverlay() });
   sleeper.init({ tabs, settings: () => settings, visibleIds: () => allVisibleIds(), native: (wc, p) => nat(wc, p), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
-  app.on('before-quit', () => { persist(true); quitting = true; sleeper.flush(); perms.flush(); features.shutdown(); });
+  app.on('before-quit', () => { detachDebuggers(); persist(true); quitting = true; sleeper.flush(); perms.flush(); features.shutdown(); });
   updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. Restart to finish the update.`); push(); } else if (e.type === 'status') push(); });
   ui.webContents.once('did-finish-load', () => setTimeout(() => { try { global.__novaBoot && global.__novaBoot.good(); } catch {} }, 8000)); // started fine: the update bundle is trusted from now on
   const feed = () => settings.updateFeed || updater.defaultFeed;
@@ -1401,7 +1473,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         if ('features' in a.patch) { darkmode.sync(); webtools.sync(); passwords.sync(); }
         if ('pageScheme' in a.patch) applyScheme();
         if ('darkSites' in a.patch) darkmode.refreshAll();
-        if ('lowIsolation' in a.patch) toast('Restart Nova to apply this change.');
+        if ('lowIsolation' in a.patch || 'drm' in a.patch) toast('Restart Nova to apply this change.');
         if ('passkeys' in a.patch) toast('Reload open pages for this to apply.');
         if (a.patch.budget && !settings.budget.freeze) for (const x of tabs.values()) if (x.frozen) sleeper.thaw(x);
         saveSettings();
@@ -1413,7 +1485,8 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'pw': return passwords.cmd(_e, a);
       case 'extDebug': return process.env.NOVA_DEBUG_SW ? extbridge.debug(a, t) : undefined;
       case 'applyProfile': applyProfile(a.name); break;
-      case 'permAnswer': { const p = permQueue.find((x) => x.id === a.id && x.shown && !x.done); if (p) { permFinish(p, ['allow', 'once', 'block'].includes(a.decision) ? a.decision : 'dismiss'); closeOverlay(); setTimeout(permNext, 200); } break; }
+      case 'permAnswer': { const p = permQueue.find((x) => x.id === a.id && x.shown && !x.done); if (p) { if (p.ov) permFinish(p, a.decision === 'ok' ? 'ok' : 'dismiss', { user: a.user, pass: a.pass, source: a.source, audio: !!a.audio }); else permFinish(p, ['allow', 'once', 'block'].includes(a.decision) ? a.decision : 'dismiss'); closeOverlay(); setTimeout(permNext, 200); } break; }
+      case 'drmStatus': return { ...drm, off: settings.drm === false };
       case 'siteInfo': { // what the shield in the address bar shows for the page in front
         if (!t) return null;
         const url = t.url || '', origin = perms.originOf(url), wc = t.view && !t.view.webContents.isDestroyed() ? t.view.webContents : null, host = hostOfUrl(url);

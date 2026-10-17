@@ -154,6 +154,41 @@ function permPop(o, d) {
   o.querySelectorAll('[data-pa]').forEach((b) => (b.onclick = () => nova.cmd('permAnswer', { id: d.id, decision: b.dataset.pa })));
   const first = o.querySelector('[data-pa=allow]'); if (first) first.focus();
 }
+// a server asks for a user name and a password (a router, a NAS box, a company site, a proxy)
+function loginPop(o, d) {
+  const W = 360, p = popAt(document.getElementById('urlbar'), W, false);
+  o.innerHTML = `<div class="pmenu perm login box" style="left:${p.left}px;top:${p.top}px;width:${W}px"><div class="pmh"><span class="plock">${ic(d.secure ? 't-lock' : 't-unlock')}</span><b>${esc(d.host)}</b></div>
+    <div class="ptxt">${d.proxy ? 'This proxy server' : 'This site'} asks you to sign in${d.realm ? ' (' + esc(d.realm) + ')' : ''}.</div>
+    ${d.wrong ? '<div class="lerr">That user name and password were not accepted.</div>' : ''}
+    <form class="lform" autocomplete="off"><input id="lu" type="text" placeholder="User name" spellcheck="false" autocomplete="off"><input id="lp" type="password" placeholder="Password" autocomplete="off">
+      ${d.secure ? '' : '<div class="lwarn">This connection is not encrypted: the name and the password can be read on their way. Only sign in if you trust this network.</div>'}
+      <div class="pact"><button class="btn primary" type="submit">Sign in</button><button class="btn ghost" type="button" data-no>Cancel</button></div></form></div>`;
+  o.querySelector('form').onsubmit = (e) => { e.preventDefault(); nova.cmd('permAnswer', { id: d.id, decision: 'ok', user: o.querySelector('#lu').value, pass: o.querySelector('#lp').value }); };
+  o.querySelector('[data-no]').onclick = () => nova.cmd('permAnswer', { id: d.id, decision: 'no' });
+  o.querySelector('#lu').focus();
+}
+// a page asks to share the screen or a window: what can be shared, as pictures
+function screenPop(o, d) {
+  const W = 580, p = popAt(document.getElementById('urlbar'), W, false), has = (k) => d.sources.some((x) => (k === 'screen') === x.screen);
+  let tab = has('screen') ? 'screen' : 'window', pick = '';
+  o.innerHTML = `<div class="pmenu perm screen box" style="left:${p.left}px;top:${p.top}px;width:${W}px"><div class="pmh"><span class="plock">${ic(d.secure ? 't-lock' : 't-unlock')}</span><b>${esc(d.host)}</b></div>
+    <div class="ptxt">wants to show your screen. Choose what it may see.</div>
+    <div class="sseg">${[['screen', 'Screens'], ['window', 'Windows']].map(([k, l]) => `<button class="${has(k) ? '' : 'off'}" data-st="${k}">${l}</button>`).join('')}</div>
+    <div class="srcs"></div>
+    ${d.audio ? '<label class="sawake saud"><input type="checkbox" id="saud"> Also share the sound of this computer</label>' : ''}
+    <div class="pact"><button class="btn primary" data-share disabled>Share</button><button class="btn ghost" data-no>Cancel</button></div></div>`;
+  const draw = () => {
+    const list = d.sources.filter((x) => (tab === 'screen') === x.screen).sort((a, b) => a.own - b.own);
+    o.querySelector('.srcs').innerHTML = list.map((x) => `<button class="src ${x.id === pick ? 'on' : ''}" data-id="${esc(x.id)}">${x.thumb ? `<img src="${x.thumb}" alt="">` : '<div class="nothumb"></div>'}<span>${esc(x.name)}${x.own ? ' (Nova)' : ''}</span></button>`).join('') || '<div class="plempty">Nothing to share here.</div>';
+    o.querySelectorAll('.src').forEach((b) => (b.onclick = () => { pick = b.dataset.id; draw(); }));
+    o.querySelectorAll('[data-st]').forEach((b) => b.classList.toggle('on', b.dataset.st === tab));
+    o.querySelector('[data-share]').disabled = !pick;
+  };
+  o.querySelectorAll('[data-st]').forEach((b) => (b.onclick = () => { if (b.classList.contains('off')) return; tab = b.dataset.st; pick = ''; draw(); }));
+  o.querySelector('[data-share]').onclick = () => nova.cmd('permAnswer', { id: d.id, decision: 'ok', source: pick, audio: !!(o.querySelector('#saud') || {}).checked });
+  o.querySelector('[data-no]').onclick = () => nova.cmd('permAnswer', { id: d.id, decision: 'no' });
+  draw();
+}
 // the shield in the address bar: is the connection safe, what may this site do, keep it awake, clear its data
 async function sitePop(o) {
   const info = await nova.cmd('siteInfo'), W = 360, p = popAt(document.querySelector('#urlbar .uicon') || document.getElementById('urlbar'), W, false);

@@ -142,7 +142,9 @@ const finishedFast = new Set();
 const bumpDl = () => { dlRev++; C.push(); };
 const saveDownloads = () => { downloads.length = Math.min(downloads.length, 60); C.writeJson('downloads.json', downloads); };
 const remember = (rec, priv) => { dlDoneAt = Date.now(); if (!priv) { downloads.unshift(rec); saveDownloads(); } bumpDl(); };
-const dlCfg = () => ({ fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false, ...(C.settings().downloads || {}) });
+const dlCfg = () => ({ fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false, dir: '', ask: false, ...(C.settings().downloads || {}) });
+// where files go: the folder chosen in Settings, or the Windows Downloads folder when none is chosen or the chosen one is gone
+const dlDir = () => { const d = String(dlCfg().dir || '').trim(); try { if (d && fs.statSync(d).isDirectory()) return d; } catch { /* the folder was removed: the Windows one is used */ } return app.getPath('downloads'); };
 const dlOptions = () => { const c = dlCfg(); return { connections: Math.max(1, Math.min(32, +c.connections || 8)), minSplitMB: Math.max(1, +c.minMB || 8), limitBps: Math.max(0, +c.limitMBs || 0) * 1048576 }; };
 function fastDownloader(pid) {
   pid = pid || C.profile();
@@ -184,6 +186,7 @@ function trackNormal(item, p, priv) {
   liveNormal.set(id, v);
   item.on('updated', (_e, st) => {
     if (v.handedOver || v.probing) return;
+    try { const sp = item.getSavePath(); if (sp && sp !== rec.path) { rec.path = sp; rec.name = path.basename(sp); } } catch { /* not known yet */ }
     rec.state = st === 'interrupted' ? (item.canResume() ? 'paused' : 'error') : item.isPaused() ? 'paused' : 'downloading';
     const now = Date.now(); if (now - v.last < 400 && rec.state === 'downloading') return; v.last = now;
     rec.received = item.getReceivedBytes(); rec.size = item.getTotalBytes();
@@ -195,8 +198,9 @@ function trackNormal(item, p, priv) {
     liveNormal.delete(id);
     if (v.handedOver) return;
     const got = item.getReceivedBytes(), size = item.getTotalBytes() || got;
-    if (st === 'completed') remember({ name: rec.name, path: p, url: rec.url, size, state: 'completed', t: Date.now() }, priv);
-    else if (st === 'interrupted') remember({ name: rec.name, path: p, url: rec.url, size, state: 'interrupted', t: Date.now() }, priv);
+    const fp = (() => { try { return item.getSavePath() || p; } catch { return p; } })();
+    if (st === 'completed') remember({ name: path.basename(fp), path: fp, url: rec.url, size, state: 'completed', t: Date.now() }, priv);
+    else if (st === 'interrupted') remember({ name: path.basename(fp), path: fp, url: rec.url, size, state: 'interrupted', t: Date.now() }, priv);
     else bumpDl(); // cancelled: nothing to keep
   });
   return v;
@@ -222,13 +226,13 @@ function initDownloads(ses, pid, priv) {
     } catch { /* the check must never break a download */ }
     dlSeen++;
     try { if (C.dlStart) C.dlStart(); } catch { /* only a little animation */ }
-    const dir = app.getPath('downloads'); let name = item.getFilename(), p = path.join(dir, name), i = 1;
-    const ext = path.extname(name), base = path.basename(name, ext);
-    while (fs.existsSync(p)) p = path.join(dir, `${base} (${i++})${ext}`);
-    item.setSavePath(p);
+    const dir = dlDir(); let name = item.getFilename(), p = path.join(dir, name), i = 1;
+    const ext = path.extname(name), base = path.basename(name, ext), ask = !!dlCfg().ask;
+    if (!ask) { while (fs.existsSync(p)) p = path.join(dir, `${base} (${i++})${ext}`); item.setSavePath(p); }
+    else { try { item.setSaveDialogOptions({ title: 'Save file', defaultPath: p }); } catch { /* the window then opens where Windows wants it */ } } // no path is set: Windows shows its save window, in the chosen folder
     const v = trackNormal(item, p, !!priv), url = item.getURL();
     const shown = () => { bumpDl(); try { const st = C.settings(); if (dlCfg().panel && (st.layout === 'top' || st.compact) && !(C.overlayBusy && C.overlayBusy())) C.openOverlay('downloads', { auto: true }); } catch { /* window is closing */ } };
-    if (priv || dlCfg().fast === false || !/^https?:/i.test(url)) return shown();
+    if (ask || priv || dlCfg().fast === false || !/^https?:/i.test(url)) return shown(); // the accelerated download needs the place at once: a file that asks where it goes downloads the normal way
     try { item.pause(); v.probing = true; } catch { return shown(); }
     (async () => {
       try {
@@ -364,7 +368,7 @@ async function handle(name, a, t) {
     case 'bookmarkRemove': { const d = D(t && t.pid), i = t ? d.bookmarks.findIndex((x) => x.url === t.url) : -1; if (i >= 0) { d.bookmarks.splice(i, 1); saveBookmarks(d); C.push(); } return; }
     case 'screenshot': { const wc = t?.view?.webContents; if (!wc) return; let img = await (C.native ? C.native(wc, wc.capturePage()) : wc.capturePage()).catch(() => null); if (!img || img.isEmpty()) { C.win().focus(); await new Promise((r) => setTimeout(r, 300)); img = await (C.native ? C.native(wc, wc.capturePage()) : wc.capturePage()).catch(() => null); } if (!img || img.isEmpty()) return C.toast('Could not capture the page. Bring Nova to the front and try again.'); const dir = path.join(app.getPath('pictures'), 'Nova'); fs.mkdirSync(dir, { recursive: true }); const f = path.join(dir, `Nova ${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`); fs.writeFileSync(f, img.toPNG()); clipboard.writeImage(img); C.toast('Screenshot saved to Pictures/Nova and copied.'); return; }
     case 'pip': { const wc = t?.view?.webContents; if (!wc) return; const r = await wc.executeJavaScript("(()=>{const v=[...document.querySelectorAll('video')].sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0];if(!v)return 'none';if(document.pictureInPictureElement){document.exitPictureInPicture();return 'exit'}v.requestPictureInPicture();return 'ok'})()", true).catch(() => 'none'); if (r === 'none') C.toast('No video on this page.'); return; }
-    case 'savePdf': { const wc = t?.view?.webContents; if (!wc) return; const data = await wc.printToPDF({ printBackground: true }); const name = (t.title || 'page').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'page'; const f = path.join(app.getPath('downloads'), name + '.pdf'); fs.writeFileSync(f, data); C.toast(`Saved ${name}.pdf to Downloads.`); return; }
+    case 'savePdf': { const wc = t?.view?.webContents; if (!wc) return; const data = await wc.printToPDF({ printBackground: true }); const name = (t.title || 'page').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'page'; const f = path.join(dlDir(), name + '.pdf'); fs.writeFileSync(f, data); C.toast(`Saved ${name}.pdf to ${path.basename(dlDir())}.`); return; }
     case 'translate': if (t && /^https?:/i.test(t.url)) C.openUrl(`https://translate.google.com/translate?sl=auto&tl=${app.getLocale().slice(0, 2)}&u=${encodeURIComponent(t.url)}`, { forceNew: true }); return;
     case 'newPrivate': C.newPrivateTab(); return;
     case 'snooze': if (t) snooze(t, a.until); return;
@@ -376,7 +380,12 @@ async function handle(name, a, t) {
     case 'peek': openPeek(a.url); return;
     case 'peekOpen': { const u = peekUrl() || a.url; C.closeOverlay(); C.openUrl(u, { forceNew: true }); return; }
     case 'showDownload': shell.showItemInFolder(a.path); return;
-    case 'openDownloadsFolder': shell.openPath(app.getPath('downloads')); return;
+    case 'openDownloadsFolder': shell.openPath(dlDir()); return;
+    case 'pickDownloadDir': { // the folder window of Windows; the choice is kept in the settings
+      const r = await dialog.showOpenDialog(C.win(), { title: 'Choose where Nova saves files', defaultPath: dlDir(), properties: ['openDirectory', 'createDirectory'] });
+      if (r.canceled || !r.filePaths[0]) return null;
+      const st = C.settings(); st.downloads = { ...(st.downloads || {}), dir: r.filePaths[0] }; C.saveSettings(); C.push(); return r.filePaths[0];
+    }
     case 'dlPause': dlControl('pause', a.id); return;
     case 'dlResume': dlControl('resume', a.id); return;
     case 'dlCancel': dlControl('cancel', a.id); return;

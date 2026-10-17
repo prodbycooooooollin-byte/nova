@@ -391,8 +391,8 @@ function setOverlay(kind, data) {
   if (kind === 'menu') return;
   const o = $('#overlay'); o.hidden = false; o.innerHTML = '';
   o.onmousedown = (e) => { if (e.target === o && kind !== 'wizard') nova.cmd('closeOverlay'); };
-  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' || kind === 'perm' || kind === 'sitepanel' || kind === 'extmenu' || kind === 'bookmark' || kind === 'spacemenu' || kind === 'profilemenu' || kind === 'mainmenu' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
-  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew, extmenu: extMenu, bookmark: bookmarkPop, spacemenu: spacePop, profilemenu: profilePop, mainmenu: mainMenu, perm: permPop, sitepanel: sitePop })[kind](o, data || {});
+  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' || kind === 'perm' || kind === 'login' || kind === 'screen' || kind === 'sitepanel' || kind === 'extmenu' || kind === 'bookmark' || kind === 'spacemenu' || kind === 'profilemenu' || kind === 'mainmenu' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
+  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew, extmenu: extMenu, bookmark: bookmarkPop, spacemenu: spacePop, profilemenu: profilePop, mainmenu: mainMenu, perm: permPop, login: loginPop, screen: screenPop, sitepanel: sitePop })[kind](o, data || {});
 }
 function clearOverlay() { if (askResolve && askShown) { const r = askResolve; askResolve = null; askShown = false; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; o.className = ''; }
 // Settings and the hub sit beside the browser, not over it: the sidebar (or the top bar) stays sharp and live while you change things
