@@ -20,7 +20,8 @@ const MIN_GAP_S = 4;          // switching past a tab with Ctrl+Tab is not a vis
 // Chrome itself does not freeze such pages; the CDP freeze ignores that rule, so Nova applies it: a page that has played or made sound since it was loaded, and the
 // well-known live services, are never frozen. They are still discarded after the idle delay, which loads a clean page when the tab is opened again.
 const LIVE_HOSTS = /(^|\.)(twitch\.tv|kick\.com|discord\.com|whatsapp\.com|slack\.com|teams\.microsoft\.com|teams\.live\.com|meet\.google\.com|zoom\.us|telegram\.org)$/;
-const live = (t) => !!t.mediaAt || LIVE_HOSTS.test(hostOf(t.url));
+const awake = (t) => { const a = C && C.settings().awakeHosts; return Array.isArray(a) && a.includes(hostOf(t.url)); }; // a site you chose to keep awake (the shield menu)
+const live = (t) => !!t.mediaAt || LIVE_HOSTS.test(hostOf(t.url)) || awake(t);
 
 let C, rev = {}, saveTimer = null;
 
@@ -174,7 +175,7 @@ function tick() {
     const wc = t.view.webContents; if (wc.isDestroyed()) continue;
     if (vis.has(t.id)) { t.wasVisible = true; if (t.frozen) t.frozen = false; continue; }
     if (t.wasVisible) { t.wasVisible = false; if (now - t.lastActive > 8000) t.lastActive = now; } // came out of a split view
-    if (t.pinned || t.audible || t.playing || busy.has(t.id)) { t.sleepAt = 0; continue; }
+    if (t.pinned || t.audible || t.playing || busy.has(t.id) || awake(t)) { t.sleepAt = 0; continue; }
     const since = Math.max(t.lastActive || 0, t.warmAt || 0, t.audibleAt || 0), idle = now - since;
     const settle = t.warmAt > t.lastActive ? 9000 : 4000; // a hover-woken page needs a moment to put itself back
     const wantSnap = b.softWake && (t.snapAt || 0) < since && idle >= settle;

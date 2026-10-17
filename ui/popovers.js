@@ -7,6 +7,15 @@ Object.assign(PATHS, {
   't-globe': '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>', 't-search': '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   't-star': '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>',
   't-puzzle': '<path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/>',
+  't-pin': '<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  't-video': '<path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+  't-mic': '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
+  't-bell': '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  't-clip': '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+  't-lock': '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  't-unlock': '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+  't-alert': '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  't-home': '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
   't-edit': '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
   't-folder': '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="m9 13 3 3 3-3"/>',
   't-user': '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/>', 't-menu': '<path d="M4 12h16"/><path d="M4 6h16"/><path d="M4 18h16"/>',
@@ -83,10 +92,11 @@ function mainMenu(o) {
     ${row('overview', 'Tab overview')}${row('find', 'Find in page')}
     <div class="mmrow zoom"><span>Zoom</span><span class="zb"><button data-act="zoomOut" title="Zoom out">−</button><button data-act="zoomReset" title="Back to 100%">Reset</button><button data-act="zoomIn" title="Zoom in">+</button></span></div>
     ${row('print', 'Print')}${row('fullscreen', 'Full screen')}${sep}
-    ${row('settings', 'Settings')}<button class="mmrow" data-cmd="checkUpdate"><span>Check for updates</span><kbd></kbd></button>
+    ${row('settings', 'Settings')}<button class="mmrow" data-cmd="checkUpdate"><span>Check for updates</span><kbd></kbd></button><button class="mmrow" data-cmd="makeDefault" id="mmdef" hidden><span>Make Nova your default browser</span><kbd></kbd></button>
     <div class="mmver">Nova ${esc(S.version || '')}</div></div></div>`;
   o.querySelectorAll('[data-act]').forEach((b) => (b.onclick = () => nova.cmd('action', { name: b.dataset.act })));
   o.querySelectorAll('[data-cmd]').forEach((b) => (b.onclick = async () => { await nova.cmd('closeOverlay'); nova.cmd(b.dataset.cmd); }));
+  nova.cmd('defaultBrowser').then((r) => { const b = o.querySelector('#mmdef'); if (b && r && !r.isDefault) b.hidden = false; }); // only offered while it is not the default
 }
 
 // the profile: who you are browsing as (switch, add, rename), the privacy switches, the spaces of this profile
@@ -131,4 +141,34 @@ function profilePop(o) {
     const done = () => { const v = input.value.trim() || cur.name; nova.cmd('renameProfile', { id: cur.id, name: v }); const b = document.createElement('b'); b.id = 'pfname'; b.textContent = v; input.replaceWith(b); $('.pfav').textContent = (v[0] || 'N').toUpperCase(); ren.textContent = 'Rename'; ren.onclick = null; setTimeout(() => nova.cmd('closeOverlay'), 350); };
     ren.onclick = done; input.addEventListener('keydown', (e) => { if (e.key === 'Enter') done(); });
   };
+}
+
+// a site asks for something: location, camera, microphone, notifications, clipboard. Allow remembers, "this time" does not, Block remembers; closing the card answers nothing.
+const PERM_ICON = { geolocation: 't-pin', camera: 't-video', microphone: 't-mic', notifications: 't-bell', clipboard: 't-clip' };
+function permPop(o, d) {
+  const W = 360, p = popAt(document.getElementById('urlbar'), W, false);
+  o.innerHTML = `<div class="pmenu perm box" style="left:${p.left}px;top:${p.top}px;width:${W}px"><div class="pmh"><span class="plock">${ic(d.secure ? 't-lock' : 't-unlock')}</span><b>${esc(d.host)}</b></div>
+    <div class="ptxt">wants to</div><ul class="pkinds">${d.kinds.map((k) => `<li><span class="si">${ic(PERM_ICON[k.k] || 't-globe')}</span>${esc(k.label)}</li>`).join('')}</ul>
+    <div class="pact"><button class="btn primary" data-pa="allow">Allow</button><button class="btn" data-pa="once">Allow this time</button><button class="btn ghost danger" data-pa="block">Block</button></div>
+    <div class="pnote">You can change this any time with the shield in the address bar.</div></div>`;
+  o.querySelectorAll('[data-pa]').forEach((b) => (b.onclick = () => nova.cmd('permAnswer', { id: d.id, decision: b.dataset.pa })));
+  const first = o.querySelector('[data-pa=allow]'); if (first) first.focus();
+}
+// the shield in the address bar: is the connection safe, what may this site do, keep it awake, clear its data
+async function sitePop(o) {
+  const info = await nova.cmd('siteInfo'), W = 360, p = popAt(document.querySelector('#urlbar .uicon') || document.getElementById('urlbar'), W, false);
+  if (!info) return nova.cmd('closeOverlay');
+  const line = info.warn === 'cert' ? ['warn', 't-alert', 'Certificate warning: you chose to continue'] : info.warn ? ['warn', 't-alert', 'On a list of dangerous sites: you chose to continue'] : info.secure ? ['ok', 't-lock', 'The connection is secure'] : info.web ? ['warn', 't-unlock', 'The connection is not secure'] : info.file ? ['dim', 't-globe', 'A file on this computer'] : ['dim', 't-shield', 'A page of Nova'];
+  const rows = info.perms ? Object.entries(info.kinds).map(([k, m]) => `<div class="sprow"><span class="si">${ic(PERM_ICON[k])}</span><span class="spn">${esc(m.short)}</span><div class="seg3" data-k="${k}">${['ask', 'allow', 'block'].map((v) => `<button data-v="${v}" class="${info.perms[k] === v ? 'on' : ''}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>`).join('') : '';
+  o.innerHTML = `<div class="pmenu site box" style="left:${p.left}px;top:${p.top}px;width:${W}px"><div class="pmh"><b>${esc(info.host || 'This page')}</b>${info.private ? '<span>Private tab: nothing is remembered</span>' : ''}</div>
+    <div class="sline ${line[0]}"><span class="si">${ic(line[1])}</span>${line[2]}</div>
+    ${rows ? `<div class="sperm"><div class="slbl">This site may</div>${rows}</div>` : ''}
+    ${info.web ? `<label class="sprow sawake"><span class="si">${ic('clock')}</span><span class="spn">Keep this site awake<small>Its tabs are never frozen or put to sleep</small></span><label class="sw"><input type="checkbox" id="awake" ${info.awake ? 'checked' : ''}><i></i></label></label>` : ''}
+    <div class="pmf">${info.web ? '<button class="btn small ghost danger" data-s="clear">Clear this site’s data</button>' : ''}<span style="flex:1"></span><button class="btn small ghost" data-s="all">All sites…</button></div></div>`;
+  o.querySelectorAll('.seg3').forEach((g) => g.querySelectorAll('button').forEach((b) => (b.onclick = () => { nova.cmd('permSet', { origin: info.origin, kind: g.dataset.k, value: b.dataset.v }); g.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); })));
+  const aw = o.querySelector('#awake'); if (aw) aw.onchange = () => nova.cmd('awakeSet', { host: info.host, on: aw.checked });
+  o.querySelectorAll('[data-s]').forEach((b) => (b.onclick = async () => {
+    if (b.dataset.s === 'all') { await nova.cmd('closeOverlay'); return nova.cmd('overlay', { kind: 'settings', data: { tab: 'Search & privacy' } }); }
+    await nova.cmd('siteClear', { origin: info.origin }); nova.cmd('closeOverlay');
+  }));
 }

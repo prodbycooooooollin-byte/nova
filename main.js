@@ -13,12 +13,15 @@ const scriptletGuard = require('./scriptlet-guard');
 const extmgr = require('./extmgr');
 const budget = require('./budget');
 const sleeper = require('./sleeper');
+const safebrowsing = require('./safebrowsing');
+const perms = require('./perms');
 const persona = require('./persona');
 const profiles = require('./profiles');
 const UA = persona.UA;
 const setup = require('./setup');
 const setupMode = setup.detectMode();
 const gotLock = setupMode ? true : app.requestSingleInstanceLock();
+if (!setupMode && !gotLock) app.exit(0); // the running Nova already has the address; this one used to stay behind without a window, 200 to 300 MB each time a link was opened from another program
 const fs = require('fs');
 
 const DEFAULT_KEYS = {
@@ -37,10 +40,12 @@ const DEFAULT_KEYS = {
 // Smart sleep (Settings > Resource budget): freeze background tabs, wake them invisibly, learn per site how soon to sleep them
 const SMART = { freeze: true, freezeAfterSec: 30, softWake: true, earlySleepMin: 3, adaptive: true };
 const DEFAULTS = {
-  suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'preset', preset: 'stars', dim: 30, blur: 0, follow: false }, startPage: { sites: true, greeting: true, stats: true },
+  suggestions: false, bookmarksBar: true, blockAutoplay: true, density: 'comfortable', wallpaper: { mode: 'preset', preset: 'waves', dim: 30, blur: 0, follow: false }, startPage: { sites: true, greeting: true, stats: true },
   firstRun: true, setupVersion: 0, profile: 'nova', effects: true, keepHistory: true, thumbnails: true,
   searchEngine: 'https://duckduckgo.com/?q=%s',
   searchKeywords: 'yt https://www.youtube.com/results?search_query=%s YouTube\nw https://en.wikipedia.org/w/index.php?search=%s Wikipedia\ngh https://github.com/search?q=%s GitHub\nr https://www.reddit.com/search/?q=%s Reddit\na https://www.amazon.com/s?k=%s Amazon\nmaps https://www.google.com/maps/search/%s Google Maps\ng https://www.google.com/search?q=%s Google\ntw https://www.twitch.tv/search?term=%s Twitch', // address bar: a keyword, a space and what to look for (yt cats): keyword, address with %s, name
+  startup: 'last', startupPage: '', homeButton: false, homePage: '', // what Nova opens at start (last / home = a start page / page = startupPage) and the home button
+  awakeHosts: [], // sites whose tabs are never frozen or put to sleep (the shield menu)
   bookmarksPos: 'below', topHide: [], // tabs-on-top bar: where the bookmarks row sits (below / above the address bar) and which buttons are hidden
   layout: 'top', compact: false, sidebarWidth: 252, gap: 8, radius: 12, fontSize: 13, font: 'Inter',
   theme: { bg: '#0b0b12', page: '#161621', surface: '#13131c', surface2: '#1c1c28', text: '#ececf3', dim: '#8b8ba0', accent: '#8b7dff', danger: '#ff6b7a' },
@@ -48,8 +53,8 @@ const DEFAULTS = {
   sleepAfterMin: 10, archiveAfterHours: 24, maxTabs: 25, dedupeTabs: true,
   adblock: true, extensions: [], keys: {}, updateFeed: '', zoom: {},
   // Optional features. Everything beyond the essentials is off until the user turns it on.
-  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false }, cache: { limitMB: 500, auto: true }, pageScheme: 'system', layoutBlocks: { order: [], hidden: [] },
-  features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, autoPip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false, videoSpeed: false, sponsorBlock: false, ytDislike: false, cookieBanners: false, passwords: false },
+  budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART }, lowIsolation: false, downloads: { fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false }, cache: { limitMB: 250, auto: true }, pageScheme: 'system', layoutBlocks: { order: [], hidden: [] },
+  features: { tabSearch: false, snooze: false, rewind: false, peek: false, darkPage: false, cleanLinks: false, soloAudio: false, screenshot: false, pip: false, autoPip: false, savePdf: false, translate: false, privateTabs: false, darkSite: false, videoSpeed: false, sponsorBlock: false, ytDislike: false, cookieBanners: false, passwords: false, safeBrowsing: true },
   darkSites: [],
   profiles: [], purge: [], // the user's profiles (profiles.js: a name, a colour and a session of their own); purge: partition folders of deleted profiles, removed at the next start
   passkeys: false, // websites may ask Windows for a passkey or security key (the Windows Security window with a PIN); off: they are told none is available
@@ -62,14 +67,42 @@ const AUMID = 'app.nova.browser.v2'; // the taskbar groups windows and picks the
 const HOME = 'nova://home';
 const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
 const isHome = (u) => u === HOME || (u || '').startsWith(HOME_FILE);
+// ---------- warning pages: connection errors, certificate errors and known dangerous sites (ui/interstitial.html) ----------
+const INTER_FILE = pathToFileURL(path.join(__dirname, 'ui', 'interstitial.html')).href;
+const isInter = (u) => (u || '').startsWith(INTER_FILE);
+const certAllow = new Set(), sbAllow = new Set(); // "profile|host|fingerprint" and "profile|host": what you chose to continue to, until Nova ends
+const hostOfUrl = (u) => { try { return new URL(u).hostname.toLowerCase(); } catch { return ''; } };
+const tabOfWc = (wc) => { for (const t of tabs.values()) if (t.view && t.view.webContents === wc) return t; return null; };
+function showInterstitial(t, wc, info) { // t.inter remembers what was asked for; the page itself only shows it, the buttons come back through nova-action: addresses
+  if (!wc || wc.isDestroyed()) return;
+  t.inter = info;
+  const q = new URLSearchParams({ kind: info.kind, url: info.url, code: info.code || '', list: info.list || '', cert: info.cert ? JSON.stringify(info.cert) : '', bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim });
+  wc.loadURL(INTER_FILE + '?' + q).catch(() => {});
+}
+function interAction(t, wc, action) {
+  const info = t.inter; if (!info || wc.isDestroyed()) return;
+  if (action === 'retry') { wc.loadURL(info.url).catch(() => {}); return; }
+  if (action === 'back') { if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); else { t.inter = null; t.url = HOME; wc.loadURL(homeUrl()).catch(() => {}); } return; }
+  if (action === 'proceed' && info.kind !== 'conn') {
+    const host = hostOfUrl(info.url);
+    if (info.kind === 'cert') certAllow.add(`${t.pid}|${host}|${info.cert ? info.cert.fp : ''}`); else sbAllow.add(`${t.pid}|${host}`);
+    wc.loadURL(info.url).catch(() => {});
+  }
+}
+function reloadWc(wc, hard) { // reloading a warning page tries the address again
+  if (!wc || wc.isDestroyed()) return;
+  const t = tabOfWc(wc);
+  if (t && t.inter && isInter(wc.getURL())) wc.loadURL(t.inter.url).catch(() => {}); else if (hard) wc.reloadIgnoringCache(); else wc.reload();
+}
+const unsafeFor = (pid, url) => { const r = settings.features.safeBrowsing ? safebrowsing.check(url) : null; return r && !sbAllow.has(`${pid}|${hostOfUrl(url)}`) && !sbAllow.has(`${pid}|${r.host}`) ? r : null; };
 const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, kw: settings.searchKeywords || '', prof: settings.profile, fx: settings.effects ? 1 : 0, wall: settings.wallpaper.mode === 'none' ? '' : settings.wallpaper.preset });
 // Profiles: one switch that decides how much Nova does.
-const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'darkSite', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate', 'privateTabs', 'videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners', 'passwords'];
-const featureSet = (on) => Object.fromEntries(FEATURE_KEYS.map((k) => [k, on]));
+const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'darkSite', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate', 'privateTabs', 'videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners', 'passwords', 'safeBrowsing'];
+const featureSet = (on, extra = {}) => ({ ...Object.fromEntries(FEATURE_KEYS.map((k) => [k, on])), ...extra });
 const GROUP_COLORS = ['#8b7dff', '#4db8ff', '#4ddc9a', '#ffb04d', '#ff7a90', '#c084fc', '#2dd4bf', '#ff6b6b'];
 const PROFILES = {
   ultra: { blockAutoplay: true, effects: false, keepHistory: false, thumbnails: false, adblock: false, gap: 0, radius: 0, features: featureSet(false), budget: { enabled: true, ramMB: 800, cpuGuard: true, cpuPct: 20, ...SMART } },
-  nova: { blockAutoplay: true, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(false), budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART } },
+  nova: { blockAutoplay: true, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(false, { safeBrowsing: true }), budget: { enabled: true, ramMB: 1500, cpuGuard: true, cpuPct: 20, ...SMART } },
   complete: { blockAutoplay: false, effects: true, keepHistory: true, thumbnails: true, adblock: true, gap: 8, radius: 12, features: featureSet(true), budget: { enabled: true, ramMB: 3000, cpuGuard: true, cpuPct: 25, ...SMART } },
 };
 let sessions = []; // every session that exists: one per profile that was opened, plus an in-memory one for its private tabs (made on first use, see sessionFor)
@@ -101,7 +134,7 @@ app.on('render-process-gone', (_e, wc, d) => { let u = ''; try { u = wc.getURL()
 try {
   const early = readJson('settings.json', {});
   if (early.lowIsolation) app.commandLine.appendSwitch('disable-site-isolation-trials'); // opt-in: one process for a page and its frames, about 12% less memory, weaker isolation
-  const cacheMB = early.cache && early.cache.limitMB !== undefined ? +early.cache.limitMB : 500; // the page cache on disk: Chromium itself keeps it under this size
+  let cacheMB = early.cache && early.cache.limitMB !== undefined ? +early.cache.limitMB : 250; if (!early.cacheV2 && cacheMB === 500) cacheMB = 250; // 500 MB per profile (two profiles: a gigabyte) was the old default; // the page cache on disk: Chromium itself keeps it under this size
   if (cacheMB > 0) app.commandLine.appendSwitch('disk-cache-size', String(Math.round(cacheMB * 1048576)));
 } catch {}
 
@@ -111,8 +144,12 @@ function loadSettings() {
   const s = readJson('settings.json', {});
   settings = { ...DEFAULTS, ...s, features: { ...DEFAULTS.features, ...(s.features || {}) }, downloads: { ...DEFAULTS.downloads, ...(s.downloads || {}) }, cache: { ...DEFAULTS.cache, ...(s.cache || {}) }, budget: { ...DEFAULTS.budget, ...(s.budget || {}) }, wallpaper: { ...DEFAULTS.wallpaper, ...(s.wallpaper || {}) }, startPage: { ...DEFAULTS.startPage, ...(s.startPage || {}) }, theme: { ...DEFAULTS.theme, ...(s.theme || {}), ...(s.theme && !s.theme.page ? { page: s.theme.surface || DEFAULTS.theme.page } : {}) }, keys: { ...DEFAULT_KEYS, ...(s.keys || {}) } };
   settings.wallpaper.preset = { orbit: 'stars', grid: 'dots' }[settings.wallpaper.preset] || settings.wallpaper.preset; // the orbit and follow-theme backgrounds are gone, the grid became dots
-  if (!['', 'stars', 'glow', 'dots'].includes(settings.wallpaper.preset)) settings.wallpaper.preset = 'stars';
+  if (!s.wallV3 && settings.wallpaper.preset === 'stars') settings.wallpaper.preset = 'waves'; // the new default background; a pick of 'stars' made before this version is not told apart from the migrated old default
+  if (!['', 'waves', 'stars', 'glow', 'dots'].includes(settings.wallpaper.preset)) settings.wallpaper.preset = 'waves';
+  settings.wallV3 = true;
+  if (!s.cacheV2) { if (settings.cache && settings.cache.limitMB === 500) settings.cache.limitMB = 250; settings.cacheV2 = true; } // the disk cache default went from 500 to 250 MB per profile
   if (settings.wallpaper.mode === 'theme') settings.wallpaper.mode = 'preset';
+  if (!s.features || !('safeBrowsing' in s.features)) settings.features.safeBrowsing = settings.profile !== 'ultra'; // protection against dangerous sites: on, except in the bare-minimum profile
   if (!s.budgetV2 && s.budget) { const old = s.budget.ramMB; settings.budget.ramMB = { 1024: 800, 2048: 1500, 4096: 3000 }[old] || Math.max(400, Math.round((old || 2048) * 0.75 / 50) * 50); } // limits now count real (private) memory, which is smaller than the old figure
   settings.budgetV2 = true;
   if (!s.layoutV2) settings.layout = 'top'; // the default is now tabs on top, address bar in the middle; switch back in Settings > Layout
@@ -404,14 +441,35 @@ function wake(t) {
   const wc = view.webContents;
   const on = (ev, fn) => wc.on(ev, (...a) => { if (t.view !== view) return; useWinOf(t); return fn(...a); }); // the window that shows this page is the current one while its event runs; a page that went to sleep is ignored
   extbridge.watch(t);
-  const upd = () => { if (wc.isDestroyed()) return; const u = wc.getURL(); t.url = isHome(u) ? HOME : u || t.url; if (t.url === HOME) t.title = 'New tab'; t.canBack = wc.navigationHistory.canGoBack(); t.canForward = wc.navigationHistory.canGoForward(); push(); };
-  on('page-title-updated', (_e, title) => { t.title = isHome(t.url) ? 'New tab' : title; if (!isHome(t.url) && !t.private) features.recordVisit(wc.getURL(), title, t.pid, t.spaceId); push(); });
+  const upd = () => { if (wc.isDestroyed()) return; const u = wc.getURL(); t.url = isHome(u) ? HOME : isInter(u) && t.inter ? t.inter.url : u || t.url; if (t.url === HOME) t.title = 'New tab'; t.canBack = wc.navigationHistory.canGoBack(); t.canForward = wc.navigationHistory.canGoForward(); push(); };
+  on('page-title-updated', (_e, title) => { t.title = isHome(t.url) ? 'New tab' : title; if (!isHome(t.url) && !t.private && !isInter(wc.getURL())) features.recordVisit(wc.getURL(), title, t.pid, t.spaceId); push(); });
   on('page-favicon-updated', (_e, f) => { t.favicon = f[0] || ''; if (!t.private && settings.keepHistory) features.setIcon(wc.getURL(), f[0]); push(); });
   on('did-start-loading', () => { t.loading = true; push(); });
   on('render-process-gone', (_e, d) => { if (d.reason === 'clean-exit' || d.reason === 'killed') return; const now = Date.now(); if (now - (t.lastCrash || 0) < 30000) return; t.lastCrash = now; setTimeout(() => { if (!wc.isDestroyed()) wc.reload(); }, 400); });
   on('did-stop-loading', () => { t.loading = false; upd(); if (t.id === state.activeTab) setTimeout(() => capture(t), 1500); });
-  on('did-navigate', () => { t.mediaAt = 0; upd(); applyZoom(wc); if (!t.private) features.recordVisit(wc.getURL(), wc.getTitle(), t.pid, t.spaceId); });
+  on('did-navigate', () => {
+    t.mediaAt = 0;
+    if (isInter(wc.getURL()) && t.inter) { try { const nh = wc.navigationHistory, i = nh.getActiveIndex(); if (i > 0) { const prev = nh.getEntryAtIndex(i - 1); if (prev && (prev.url === t.inter.url || /^chrome-error:/.test(prev.url || ''))) nh.removeEntryAtIndex(i - 1); } } catch { /* an older history API: the failed address stays one step back */ } } // "Back" from a warning page must not land on the failed address again
+    upd(); applyZoom(wc); if (!t.private && !isInter(wc.getURL())) features.recordVisit(wc.getURL(), wc.getTitle(), t.pid, t.spaceId);
+  });
   on('did-navigate-in-page', upd);
+  // known dangerous sites are stopped before they load; connection and certificate errors get a page of their own
+  const guard = (ev, ...rest) => {
+    const d = ev && typeof ev.isMainFrame === 'boolean' ? ev : { url: rest[0], isSameDocument: rest[1], isMainFrame: rest[2] };
+    if (!d.isMainFrame || d.isSameDocument || !/^https?:/i.test(d.url || '')) return;
+    const r = unsafeFor(t.pid, d.url); if (!r) return;
+    dlog(`safe browsing: ${r.kind} (${r.list}, ${r.via}) ${hostOfUrl(d.url)}`);
+    try { wc.stop(); } catch { /* already gone */ }
+    showInterstitial(t, wc, { kind: r.kind, url: d.url, list: r.list, via: r.via });
+  };
+  on('did-start-navigation', guard); on('did-redirect-navigation', guard);
+  on('did-start-navigation', (ev, ...rest) => { const d = ev && typeof ev.isMainFrame === 'boolean' ? ev : { isSameDocument: rest[1], isMainFrame: rest[2] }; if (d.isMainFrame && !d.isSameDocument) { permMemo.delete(wc); permDrop(t); } }); // a new page asks its own questions
+  on('did-fail-load', (_e, code, desc, url, isMain) => {
+    if (!isMain || !/^https?:/i.test(url || '') || [-3, -20, -27].includes(code)) return; // -3: stopped by you or a script; -20 and -27: blocked on purpose
+    const cert = wc.__cert && wc.__cert.url === url ? wc.__cert : null; wc.__cert = null;
+    showInterstitial(t, wc, cert ? { kind: 'cert', url, code: desc, cert } : { kind: 'conn', url, code: desc });
+  });
+  on('will-navigate', (e, url) => { if (typeof url === 'string' && url.startsWith('nova-action:')) { e.preventDefault(); if (isInter(wc.getURL())) interAction(t, wc, url.slice(12)); } });
   on('audio-state-changed', (e) => { t.audible = e.audible; if (e.audible) t.mediaAt = Date.now(); else t.audibleAt = Date.now(); features.onAudio(t); push(); });
   on('media-started-playing', () => { t.playing = true; t.mediaAt = Date.now(); });
   on('media-paused', () => { t.playing = false; });
@@ -438,7 +496,7 @@ function wake(t) {
     applyPageCss(wc); if (t.dark) features.applyDark(t);
     if (isHome(wc.getURL())) pushHome(wc);
     if (isHome(wc.getURL()) && !t.private) wc.executeJavaScript(`window.novaSites && window.novaSites(${JSON.stringify(settings.keepHistory ? features.topSites(8, t.pid) : [])})`).catch(() => {});
-    if (isHome(wc.getURL())) { let b = { used: 0 }; try { b = budget.get(); } catch { /* not ready */ } wc.executeJavaScript(`window.novaStats && window.novaStats(${JSON.stringify({ used: b.used || 0, cap: settings.budget.enabled ? settings.budget.ramMB : 0, blocked: blockedCount || 0, asleep: [...tabs.values()].filter((x) => !x.view).length })})`).catch(() => {}); }
+    if (isHome(wc.getURL())) wc.executeJavaScript(`window.novaStats && window.novaStats(${JSON.stringify(homeStats())})`).catch(() => {});
   });
   // the page loads once the identity is in place and the profile's extensions are loaded (waiting at most 3 s), so their content scripts meet the very first page
   const extsReady = sesReady.has(ses) ? new Promise((res) => { const to = setTimeout(res, 3000), done = () => { clearTimeout(to); res(); }; sesReady.get(ses).then(done, done); }) : null;
@@ -451,6 +509,17 @@ function wallImage() {
   try { wallData = 'data:image/jpeg;base64,' + fs.readFileSync(userFile('wallpaper.jpg')).toString('base64'); } catch { wallData = ''; }
   return wallData;
 }
+// the three panels of the start page: memory (with the last minutes as a line), blocked ads, sleeping tabs
+const memHist = [];
+function homeStats() {
+  let b = { used: 0 }; try { b = budget.get(); } catch { /* not ready */ }
+  return { used: b.used || 0, cap: settings.budget.enabled ? settings.budget.ramMB : 0, blocked: blockedCount || 0, ads: !!settings.adblock, asleep: [...tabs.values()].filter((x) => !x.view).length, hist: memHist.slice() };
+}
+setInterval(() => { // every 15 seconds: one more point for the line, and the start pages that are on screen get fresh numbers
+  try { const u = budget.get().used; if (u) { memHist.push(u); if (memHist.length > 40) memHist.shift(); } } catch { /* not ready */ }
+  const js = `window.novaStats && window.novaStats(${JSON.stringify(homeStats())})`;
+  for (const id of allVisibleIds()) { const t = tabs.get(id); if (t && t.view && isHome(t.url) && !t.view.webContents.isDestroyed()) t.view.webContents.executeJavaScript(js).catch(() => {}); }
+}, 15000);
 function homeTheme() {
   const w = settings.wallpaper, t = settings.theme;
   return { bg: t.page, chrome: t.bg, accent: t.accent, text: t.text, dim: t.dim, wall: w.mode === 'none' ? '' : w.preset, dim_amount: w.dim, blur: w.blur, image: w.mode === 'image' ? wallImage() : '', stars: w.mode !== 'image', fx: !!settings.effects, prof: settings.profile, sites: settings.startPage.sites, greeting: settings.startPage.greeting, stats: settings.startPage.stats !== false };
@@ -528,6 +597,7 @@ async function capture(t) {
 }
 function sleep(t) {
   if (!t.view) return;
+  permDrop(t);
   extbridge.removed(t);
   sleeper.missed(t);
   if (t.attached) { const W = wins.get(t.wid); try { (W ? W.win : win).contentView.removeChildView(t.view); } catch { /* its window is gone */ } t.attached = false; }
@@ -816,6 +886,7 @@ function endDrag() {
 
 // ---------- overlay & keys ----------
 function openOverlay(kind, data) {
+  if (overlayOpen && overlayKind === 'perm' && kind !== 'perm') { const p = permQueue.find((x) => x.shown && !x.done); if (p) permFinish(p, 'dismiss'); setTimeout(permNext, 300); }
   overlayOpen = true; overlayKind = kind; dlog('overlay ' + kind);
   layout();
   win.contentView.addChildView(ui);
@@ -824,6 +895,7 @@ function openOverlay(kind, data) {
 }
 function closeOverlay() {
   if (!overlayOpen) return;
+  if (overlayKind === 'perm') { const p = permQueue.find((x) => x.shown && !x.done); if (p) permFinish(p, 'dismiss'); setTimeout(permNext, 300); }
   features.closePeek();
   overlayOpen = false;
   ui.webContents.send('overlay', null);
@@ -885,7 +957,7 @@ function runAction(action, arg) {
     case 'nextTab': cycle(1); break;
     case 'prevTab': cycle(-1); break;
     case 'overview': openOverlay('overview'); break;
-    case 'reload': wc?.reload(); break;
+    case 'reload': reloadWc(wc); break;
     case 'back': if (wc?.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); break;
     case 'forward': if (wc?.navigationHistory.canGoForward()) wc.navigationHistory.goForward(); break;
     case 'toggleSidebar': sidebarHidden = !sidebarHidden; layout(); push(); break;
@@ -911,7 +983,7 @@ function runAction(action, arg) {
     case 'devtools': wc?.toggleDevTools(); break;
     case 'pinTab': if (t) { t.pinned = !t.pinned; push(); } break;
     case 'cleanUp': openOverlay('overview'); break;
-    case 'hardReload': wc?.reloadIgnoringCache(); break;
+    case 'hardReload': reloadWc(wc, true); break;
     case 'viewSource': if (t && /^https?:/i.test(t.url)) openUrl('view-source:' + t.url, { forceNew: true }); break;
     case 'clearData': openOverlay('library', { tab: 'Clear data' }); break;
     case 'findNext': case 'findPrev': if (wc) { if (!lastFind) openOverlay('palette', { mode: 'find', text: '' }); else wc.findInPage(lastFind, { forward: action === 'findNext', findNext: true }); } break;
@@ -1113,12 +1185,52 @@ async function loadExtensions(ses) {
 // A profile nobody opens has no session at all: no partition folder, no extension load, no blocker hooks. Everything a session needs is wired here, once.
 const persistentSessions = () => sessions.filter((s) => !(sesInfo.get(s) || {}).priv);
 const curSes = () => sessionFor(curProfile(), false);
-const permissions = (wc, perm, cb, details) => {
+// ---------- site permissions: location, camera, microphone, notifications, clipboard. The question is a small card under the address bar, the answer is remembered
+// per site and profile (perms.js), changed from the shield in the address bar, and forgotten for private tabs ----------
+let permSeq = 1; const permQueue = []; // { id, key, t, wcr, origin, kinds, cb, shown, done, tries }
+const permMemo = new WeakMap(); // per page: the "Allow this time" answers and the questions that were dismissed a moment ago
+const memoOf = (wc) => { let m = permMemo.get(wc); if (!m) { m = { once: new Set(), quiet: new Map() }; permMemo.set(wc, m); } return m; };
+function permRequest(pid, priv, wc, perm, cb, details) {
   if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock'].includes(perm)) return cb(true);
-  if (!['media', 'geolocation', 'notifications', 'clipboard-read'].includes(perm)) return cb(false);
-  const host = (() => { try { return new URL(details.requestingUrl).host; } catch { return 'this site'; } })();
-  dialog.showMessageBox(win, { type: 'question', buttons: ['Allow', 'Block'], defaultId: 1, cancelId: 1, message: `${host} wants permission: ${perm}` }).then((r) => cb(r.response === 0));
-};
+  const kinds = perms.kindsOf(perm, details); if (!kinds) return cb(false);
+  const origin = perms.originOf((details && details.requestingUrl) || wc.getURL()); if (!origin) return cb(false);
+  const key = priv ? pid + '!' : pid, d = perms.decide(key, origin, kinds);
+  if (d === 'allow') return cb(true);
+  if (d === 'block') return cb(false);
+  const memo = memoOf(wc);
+  if (kinds.every((k) => memo.once.has(origin + '|' + k))) return cb(true); // "Allow this time" was answered for this page already
+  if (kinds.some((k) => (memo.quiet.get(origin + '|' + k) || 0) > Date.now())) return cb(false); // dismissed a moment ago: do not ask again at once
+  const t = tabOfWc(wc);
+  if (!t || !shown(t)) return cb(false); // a page in the background does not get to ask; it can ask again when it is in front
+  permQueue.push({ id: permSeq++, key, t, wcr: wc, origin, kinds, cb, shown: false, done: false, tries: 0 });
+  permNext();
+}
+function permFinish(p, decision) { // decision: allow (remembered), once, block (remembered), dismiss (no answer: denied this time)
+  if (p.done) return; p.done = true;
+  const i = permQueue.indexOf(p); if (i >= 0) permQueue.splice(i, 1);
+  const wc = p.wcr;
+  if (decision === 'allow' || decision === 'block') for (const k of p.kinds) perms.set(p.key, p.origin, k, decision);
+  if (decision === 'once') for (const k of p.kinds) memoOf(wc).once.add(p.origin + '|' + k);
+  if (decision === 'dismiss') for (const k of p.kinds) memoOf(wc).quiet.set(p.origin + '|' + k, Date.now() + 120000);
+  try { p.cb(decision === 'allow' || decision === 'once'); } catch { /* the page is gone */ }
+}
+function permNext() { // one question at a time; if another panel is open the question waits for it (at most 20 seconds)
+  const p = permQueue.find((x) => !x.shown && !x.done); if (!p || permQueue.some((x) => x.shown && !x.done)) return;
+  const W = wins.get(p.t.wid);
+  if (!W || W.closed || W.win.isDestroyed() || !p.t.view || p.t.view.webContents.isDestroyed()) { permFinish(p, 'dismiss'); return permNext(); }
+  const keep = curW; useWin(W);
+  try {
+    if (overlayOpen) { if (++p.tries > 40) { permFinish(p, 'dismiss'); } else setTimeout(permNext, 500); return; }
+    p.shown = true;
+    let host = p.origin; try { host = new URL(p.origin).host; } catch { /* keep */ }
+    openOverlay('perm', { id: p.id, host, secure: /^https:/.test(p.origin), kinds: p.kinds.map((k) => ({ k, label: perms.KINDS[k].label })) });
+  } finally { if (keep && keep !== W) useWin(keep); }
+}
+function permDrop(t) { // the page left or the tab went away: its questions are over
+  for (const p of [...permQueue]) if (p.t === t) { const was = p.shown; permFinish(p, 'dismiss'); if (was) { const keep = curW; useWinOf(t); try { if (overlayOpen && overlayKind === 'perm') closeOverlay(); } finally { if (keep && keep !== curW) useWin(keep); } } }
+  setTimeout(permNext, 200);
+}
+const permKey = (t) => (t.private ? t.pid + '!' : t.pid);
 let legacyChecked = false;
 function sessionFor(pid, priv) {
   const key = pid + (priv ? '!' : '');
@@ -1128,7 +1240,7 @@ function sessionFor(pid, priv) {
   s.setUserAgent(UA, persona.acceptLanguage());
   s.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'shim-preload.js') });
   s.webRequest.onBeforeSendHeaders({ urls: ['https://*/*'] }, (d, cb) => { const h = d.requestHeaders; for (const [k, v] of Object.entries(persona.hints)) if (!Object.keys(h).some((x) => x.toLowerCase() === k)) h[k] = v; cb({ requestHeaders: h }); });
-  s.setPermissionRequestHandler(permissions);
+  s.setPermissionRequestHandler((wc, perm, cb, details) => permRequest(pid, !!priv, wc, perm, cb, details));
   if (blocker && settings.adblock) { try { adblockEnable(s); } catch (e) { console.error('adblock on a new session', e.message); } } // before the lists are loaded, initAdblock enables every session that exists by then
   webtools.sync(); darkmode.sync(); passwords.sync(); // their preloads follow the Features switches on every session, also on this one
   features.attachSession(s, pid, !!priv); // downloads
@@ -1163,7 +1275,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
     state: () => state, settings: () => settings, saveSettings, win: () => win, ui: () => ui,
     toast: (m) => toast(m), push: () => push(), native: (wc, p) => nat(wc, p), dlStart: () => dlFlyStart(), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(), overlayBusy: () => overlayOpen,
     newPrivateTab: () => { const t = newTabObj({ private: true }); activate(t.id); return t; },
-    openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
+    unsafeUrl: (u, pid) => unsafeFor(pid, u), openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
     addBackgroundTab: (o) => { const t = newTabObj({ url: o.url, title: o.title, favicon: o.favicon, spaceId: state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace, pinned: o.pinned }); push(); return t; },
   });
   webtools.init({ sessions: () => sessions, settings: () => settings });
@@ -1174,6 +1286,10 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   // restore tabs lazily (all asleep except the active one)
   if (saved?.tabs?.length) {
     for (const s of saved.tabs) if (s && s.id != null && !tabs.has(s.id)) newTabObj(state.spaces.some((x) => x.id === s.spaceId) ? s : { ...s, spaceId: (profSpaces(s.profile)[0] || {}).id }); // the space is the truth; a tab whose space is gone goes to its profile's first space // saved states from older versions can list a tab twice
+    if (settings.startup === 'home' || settings.startup === 'page') { // not "where I left off": the open pages wait in Stardust, pinned tabs stay, one fresh tab opens
+      for (const t of [...tabs.values()]) if (!t.pinned) { if (t.url && !isHome(t.url) && !t.private) state.archive.unshift({ url: t.url, title: t.title, favicon: t.favicon, spaceId: t.spaceId, closedAt: Date.now() }); tabs.delete(t.id); }
+      const fresh = newTabObj({ url: settings.startup === 'page' && settings.startupPage ? normalizeInput(settings.startupPage) : HOME }); saved.activeTab = fresh.id;
+    }
     const sp = [...tabs.values()].filter((t) => t.spaceId === state.activeSpace);
     const pick = tabs.get(saved.activeTab) || sp[0] || [...tabs.values()][0];
     ui.webContents.once('did-finish-load', () => { useWin(first); activate(pick.id); });
@@ -1185,13 +1301,22 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   initAdblock(sessions);
   budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => allVisibleIds(), toast: (m) => toast(m), push: () => push(), watching: () => anyOverlay() });
   sleeper.init({ tabs, settings: () => settings, visibleIds: () => allVisibleIds(), native: (wc, p) => nat(wc, p), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
-  app.on('before-quit', () => { persist(true); quitting = true; sleeper.flush(); features.shutdown(); });
+  app.on('before-quit', () => { persist(true); quitting = true; sleeper.flush(); perms.flush(); features.shutdown(); });
   updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. Restart to finish the update.`); push(); } else if (e.type === 'status') push(); });
   ui.webContents.once('did-finish-load', () => setTimeout(() => { try { global.__novaBoot && global.__novaBoot.good(); } catch {} }, 8000)); // started fine: the update bundle is trusted from now on
   const feed = () => settings.updateFeed || updater.defaultFeed;
   setTimeout(() => updater.check(feed()), 20000);
   setInterval(() => updater.check(feed()), 4 * 3600e3);
   app.on('before-quit', () => { try { updater.applyOnQuit(); } catch (e) { console.error('update on quit', e.message); } });
+  app.on('certificate-error', (event, wc, url, error, cert, callback) => { // no click-through box: the page shows a warning, "Continue" there remembers the choice until Nova ends
+    event.preventDefault();
+    const t = tabOfWc(wc), host = hostOfUrl(url);
+    if (t && certAllow.has(`${t.pid}|${host}|${cert.fingerprint}`)) return callback(true);
+    if (wc) wc.__cert = { url, error, fp: cert.fingerprint, issuer: cert.issuerName, subject: cert.subjectName, from: cert.validStart, to: cert.validExpiry };
+    callback(false);
+  });
+  perms.init({ fileOf: (pid) => userFile(profiles.fileOf('permissions.json', pid)) });
+  safebrowsing.init({ dir: app.getPath('userData'), fetch: (u, o) => net.fetch(u, o), enabled: () => !!settings.features.safeBrowsing, log: (m) => dlog(m) });
   app.on('second-instance', (_e, argv) => {
     const W = curW || firstW(); if (!W) return; useWin(W);
     if (win.isMinimized()) win.restore(); win.focus();
@@ -1255,7 +1380,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'action': closeOverlay(); runAction(a.name); break;
       case 'back': t?.view?.webContents.navigationHistory.goBack(); break;
       case 'forward': t?.view?.webContents.navigationHistory.goForward(); break;
-      case 'reload': t?.view?.webContents.reload(); break;
+      case 'reload': reloadWc(t?.view?.webContents); break;
       case 'find': { const wc = activeTab()?.view?.webContents; if (!wc) break; if (a.text) lastFind = a.text; if (!a.text) wc.stopFindInPage('clearSelection'); else wc.findInPage(a.text, { forward: a.forward !== false, findNext: !!a.next }); } break;
       case 'switchSpace': if (inProfile(a.id)) switchSpace(a.id); break; // the interface only knows the spaces of its profile
       case 'switchProfile': switchProfile(a.id); break;
@@ -1288,6 +1413,27 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'pw': return passwords.cmd(_e, a);
       case 'extDebug': return process.env.NOVA_DEBUG_SW ? extbridge.debug(a, t) : undefined;
       case 'applyProfile': applyProfile(a.name); break;
+      case 'permAnswer': { const p = permQueue.find((x) => x.id === a.id && x.shown && !x.done); if (p) { permFinish(p, ['allow', 'once', 'block'].includes(a.decision) ? a.decision : 'dismiss'); closeOverlay(); setTimeout(permNext, 200); } break; }
+      case 'siteInfo': { // what the shield in the address bar shows for the page in front
+        if (!t) return null;
+        const url = t.url || '', origin = perms.originOf(url), wc = t.view && !t.view.webContents.isDestroyed() ? t.view.webContents : null, host = hostOfUrl(url);
+        return { url, host, web: !!origin, secure: /^https:/i.test(url), warn: wc && isInter(wc.getURL()) && t.inter ? t.inter.kind : '', file: /^file:/i.test(url), private: !!t.private, perms: origin ? perms.forOrigin(permKey(t), origin) : null, kinds: perms.KINDS, origin, awake: (settings.awakeHosts || []).includes(host) };
+      }
+      case 'permSet': if (t && perms.originOf(a.origin)) { perms.set(permKey(t), a.origin, a.kind, a.value === 'allow' || a.value === 'block' ? a.value : null); } break;
+      case 'permList': return { list: perms.list(curProfile()), kinds: perms.KINDS };
+      case 'permForget': perms.forget(curProfile(), a.origin); break;
+      case 'permResetAll': perms.reset(curProfile()); break;
+      case 'siteClear': if (t && perms.originOf(a.origin)) { try { await sessionFor(t.pid, t.private).clearStorageData({ origin: a.origin }); toast(`Cookies and data of ${hostOfUrl(a.origin)} are gone. Reload the page to start fresh.`); } catch { toast('Could not clear that site.'); } } break;
+      case 'awakeSet': { const h = String(a.host || '').toLowerCase(), set = new Set(settings.awakeHosts || []); if (h) { if (a.on) set.add(h); else set.delete(h); settings.awakeHosts = [...set]; saveSettings(); push(); } break; }
+      case 'defaultBrowser': { let d = false; try { d = app.isDefaultProtocolClient('https'); } catch { /* unknown */ } return { isDefault: d }; }
+      case 'makeDefault': Promise.resolve(shell.openExternal('ms-settings:defaultapps?registeredAppUser=Nova')).catch(() => shell.openExternal('ms-settings:defaultapps')); break; // Windows only lets you choose in its own settings
+      case 'duplicate': if (t) openUrl(t.url, { forceNew: true, afterId: t.id, spaceId: t.spaceId, private: t.private }); break;
+      case 'closeOthers': case 'closeRight': if (t) { // the other tabs of this window and space that are not pinned; "right": only those after this one
+        const own = [...tabs.values()].filter((x) => x.wid === t.wid && x.spaceId === t.spaceId), at = own.indexOf(t);
+        for (const x of own) if (x !== t && !x.pinned && (name === 'closeOthers' || own.indexOf(x) > at)) closeTab(x.id);
+      } break;
+      case 'sbStatus': return safebrowsing.status();
+      case 'sbUpdate': { const res = await safebrowsing.update(true); return { res, status: safebrowsing.status() }; }
       case 'runSetup': closeOverlay(); setTimeout(() => openOverlay('wizard'), 60); break;
       case 'newPrivate': return features.handle('newPrivate', a, t);
       case 'resetSettings': settings = { ...DEFAULTS, theme: { ...DEFAULTS.theme }, keys: { ...DEFAULT_KEYS }, features: { ...DEFAULTS.features }, budget: { ...DEFAULTS.budget }, downloads: { ...DEFAULTS.downloads }, cache: { ...DEFAULTS.cache }, profiles: settings.profiles, purge: settings.purge, firstRun: false, setupVersion: 2 }; darkmode.sync(); webtools.sync(); passwords.sync(); saveSettings(); layoutAll(); push(); break;

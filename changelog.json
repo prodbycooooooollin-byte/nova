@@ -1,5 +1,21 @@
 [
   {
+    "version": "26.10.22",
+    "date": "2026-10-17",
+    "headline": {
+      "title": "A start page like the picture, warnings for dangerous sites and site permissions",
+      "text": "a clock, a big search bar and three panels on a wave background, a warning page for known phishing and malware sites, and a card inside Nova when a site asks for your location."
+    },
+    "notes": [
+      "Start page: a thin clock, the big round search bar, three panels (memory with its last minutes, ads blocked, sleeping tabs) and a new Waves background that follows your theme colours.",
+      "Dangerous sites: Nova checks every page and every download against public lists of known phishing and malware sites that are kept on this computer (OpenPhish, Phishing.Database, URLhaus). Your pages are never sent anywhere. The switch is under Search and privacy.",
+      "Warning pages: a certificate problem or a page that cannot be reached now gets a page of its own, with Try again, Back to safety and a way to continue.",
+      "Site permissions: location, camera, microphone, notifications and clipboard are asked in a small card under the address bar (Allow, Allow this time, Block). The shield in the address bar shows and changes them for each site, keeps a site awake or clears its data.",
+      "Start and home: choose what Nova opens at start (where you left off, the start page or a page) and add a home button. The arrow at the start of the tab row opens the list of all tabs, and the tab menu has Reload, Duplicate, Close other tabs and Close tabs to the right. Make Nova your default browser from Settings or the menu.",
+      "Lighter: a second Nova started by another program no longer stays behind as an invisible process, the disk cache default is 250 MB per profile, site icons are stored much smaller, and Settings > Performance shows what is on the disk and cleans the caches."
+    ]
+  },
+  {
     "version": "26.10.21",
     "date": "2026-10-17",
     "headline": {

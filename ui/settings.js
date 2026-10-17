@@ -36,6 +36,7 @@ const PAGE_INFO = {
   'Backup & updates': ['save', 'Your whole setup is one JSON document. Nova updates itself.'],
 };
 const FEATURE_ICONS = { tabSearch: 'search2', snooze: 'clock', rewind: 'rewind', soloAudio: 'vol', peek: 'eye', darkPage: 'moon', darkSite: 'contrast', cleanLinks: 'link', screenshot: 'camera', pip: 'film', autoPip: 'film', videoSpeed: 'clock', sponsorBlock: 'zap', ytDislike: 'eye', cookieBanners: 'shield', savePdf: 'file', translate: 'globe', privateTabs: 'lock', passwords: 'password' };
+const storageText = (r) => `${fmtBytes(r.total)} in all: web cache ${fmtBytes(r.cache)}, compiled code ${fmtBytes(r.code)}, offline copies of sites ${fmtBytes(r.workers)}, site data ${fmtBytes(r.data)}, the rest ${fmtBytes(r.other)}. “Clean now” empties the first three and keeps your logins.`;
 const TAB_ALIAS = { Theme: 'Appearance', Arrange: 'Layout', 'Resource budget': 'Performance', Code: 'Custom code' };
 
 function settings(o, d) {
@@ -63,7 +64,7 @@ function settings(o, d) {
   const schemeRow = (s) => row('Websites follow', `<div class="seg">${[['system', 'Windows'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => `<button data-scheme="${v}" class="${(s.pageScheme || 'system') === v ? 'on' : ''}">${l}</button>`).join('')}</div>`, 'Sites with a dark theme of their own use it when this is Dark, or when it follows Windows and Windows is dark. Smart dark mode is separate: it darkens sites that have no dark theme.', 'moon');
   const pages = {
     Profile: (s) => `<div class="profiles">${PROFILE_INFO.map(([id, name, icon, tag, bullets, speed, feat]) => `<div class="pcard ${s.profile === id ? 'on' : ''}"><div class="pic">${ic(icon)}</div><div class="ph"><b>${name}</b>${id === 'nova' ? '<span class="tag">Recommended</span>' : ''}</div><p>${tag}</p><div class="meters"><span>Speed</span><i class="dots d${speed}"></i><span>Features</span><i class="dots d${feat}"></i></div><ul>${bullets.map((b) => `<li>${b}</li>`).join('')}</ul>${s.profile === id ? '<div class="active"><span>' + ic('check') + 'Active</span></div>' : `<button class="btn" data-profile="${id}">Use ${name}</button>`}</div>`).join('')}</div>`
-      + sect('Setup') + grp(row('Run the welcome setup again', '<button class="btn" id="rerun">Start setup</button>', 'Walk through profile, layout, search and extensions once more.', 'refresh')),
+      + sect('Setup') + grp(row('Default browser', '<button class="btn" data-makedef>Make default</button>', '<span id="defbrowser">Links from other programs open in Nova.</span>', 'globe'), row('Run the welcome setup again', '<button class="btn" id="rerun">Start setup</button>', 'Walk through profile, layout, search and extensions once more.', 'refresh')),
     Appearance: (s) => sect('Theme', 'Pick a look. Every colour stays editable below.') + `<div class="themes">${Object.entries(PRESETS).map(([n, p]) => `<button class="theme ${s.theme.accent === p.accent && s.theme.bg === p.bg ? 'on' : ''}" data-preset="${n}">${mock('', p)}<span>${n}</span></button>`).join('')}</div>`
       + `<details class="more"><summary>Fine-tune colours</summary>${grp(row('Windows accent colour', '<button class="btn" id="winaccent">Use it</button>', 'Takes the accent colour from your Windows settings and leaves the rest as it is.', 'palette'), ...Object.keys(s.theme).filter((k) => k !== 'wall').map((k) => row(k[0].toUpperCase() + k.slice(1), `<input class="swatch" type="color" data-theme="${k}" value="${s.theme[k]}">`)))}</details>`
       + sect('Type and motion') + grp(row('Interface font size', rng('fontSize', 11, 17, 1, 'px')), row('Interface font', `<input type="text" data-k="font" value="${esc(s.font)}" placeholder="Inter">`, 'Any installed font family. Inter is built in.'), row('Animations and blur', sw('effects', s.effects), 'Turn off for the leanest possible interface.'), schemeRow(s)),
@@ -80,6 +81,11 @@ function settings(o, d) {
       row('Tab budget', stepper('maxTabs', s.maxTabs, 0, 200), 'Past this many tabs, the least recently used are archived. 0 means unlimited.', 'layers'),
       row('Sleep after', `<div class="unit">${stepper('sleepAfterMin', s.sleepAfterMin, 0, 1440)}<span>min</span></div>`, 'Frees memory. A sleeping tab reloads when you open it. Smart sleep (under Performance) can sleep tabs sooner. 0 means never.', 'moon'),
       row('Archive after', `<div class="unit">${stepper('archiveAfterHours', s.archiveAfterHours, 0, 720)}<span>hours</span></div>`, 'Unpinned tabs idle this long move to Stardust, still searchable from Ctrl K.', 'archive'))
+      + sect('Start and home') + grp(
+        row('When Nova starts', `<div class="seg">${[['last', 'Where I left off'], ['home', 'Start page'], ['page', 'A page']].map(([v, l]) => `<button data-startup="${v}" class="${(s.startup || 'last') === v ? 'on' : ''}">${l}</button>`).join('')}</div>`, 'With the start page or a page, the tabs you had open wait in Stardust (pinned tabs stay).', 'refresh'),
+        row('Page to open at start', `<input type="text" data-k="startupPage" placeholder="https://…" value="${esc(s.startupPage || '')}">`, 'Used when you choose “A page”.'),
+        row('Home button', sw('homeButton', !!s.homeButton), 'A house next to reload.', 'bookmark'),
+        row('Home button opens', `<input type="text" data-k="homePage" placeholder="Nova start page" value="${esc(s.homePage || '')}">`, 'Leave empty for the start page.'))
       + sect('Behaviour') + grp(row('New tab opens', `<div class="seg">${[['home', 'Start page'], ['bar', 'Search bar']].map(([v, l]) => `<button data-ntp="${v}" class="${(s.newTabPage || 'home') === v ? 'on' : ''}">${l}</button>`).join('')}</div>`, 'The start page with the greeting and search, or straight to the address bar.', 'plus'), row('Reuse existing tabs', sw('dedupeTabs', s.dedupeTabs), 'Opening a page you already have open switches to it.', 'link')),
     Performance: (s) => {
       const b = s.budget, pct = b.enabled && b.ramMB ? Math.min(100, Math.round(S.budget.used / b.ramMB * 100)) : 0;
@@ -97,7 +103,7 @@ function settings(o, d) {
         + sect('Disk cache', 'Pages keep images and scripts on disk so they open faster next time. Past the limit, the oldest are dropped.') + grp(
           row('Cache limit', `<div class="chips">${[[100, '100 MB'], [250, '250 MB'], [500, '500 MB'], [1000, '1 GB']].map(([v, l]) => `<button class="chip2 ${(s.cache || {}).limitMB === v ? 'on' : ''}" data-cache="limitMB" data-v="${v}">${l}</button>`).join('')}</div>`, 'Applies from the next start. Smaller keeps your disk tidy, larger saves more loading.', 'save'),
           row('Clean automatically', `<label class="sw"><input type="checkbox" data-cache="auto" ${(s.cache || {}).auto !== false ? 'checked' : ''}><i></i></label>`, 'If the cache ever grows well past the limit, Nova empties it on its own.', 'trash'),
-          row('Cache size now', '<button class="btn" id="cacheclean">Clean now</button>', '<span id="cache-size">Measuring…</span>', 'gauge'))
+          row('Disk use', '<button class="btn" id="cacheclean">Clean now</button>', '<span id="cache-size">Measuring…</span>', 'gauge'))
         + sect('Background CPU') + grp(row('CPU guard', bsw('cpuGuard', b.cpuGuard), 'A background tab that keeps using a lot of CPU is put to sleep.', 'zap'), row('Guard threshold', `<div class="rng"><input type="range" min="5" max="80" step="5" value="${b.cpuPct}" data-bud="cpuPct" data-num><span class="val">${b.cpuPct}%</span></div>`))
         + sect('Heaviest tabs right now') + `<div class="group" id="bud-list">${budList()}</div>`;
     },
@@ -118,12 +124,14 @@ function settings(o, d) {
       + sect('Privacy') + grp(
         row('Ad and tracker blocker', sw('adblock', s.adblock), (() => { const ab = S.adblock || {}; const when = ab.updated ? new Date(ab.updated).toLocaleDateString() : ''; return `${ab.state === 'ready' ? `Active with uBlock Origin, EasyList and EasyPrivacy lists plus uBlock Origin scriptlets (${ab.source}${when ? ', ' + when : ''}).` : ab.state === 'failed' ? 'Not loaded: ' + (ab.error || 'unknown problem') + '.' : 'Loading the filter lists…'} ${S.blockedCount} blocked this session. Lists refresh daily and apply from the next start.`; })(), 'shield'),
         ...((S.adblock || {}).state === 'failed' || (S.adblock || {}).state === 'ready' ? [row((S.adblock || {}).state === 'failed' ? 'Ad blocker problem' : 'Update filter lists', '<button class="btn" data-adretry>' + ((S.adblock || {}).state === 'failed' ? 'Retry' : 'Update now') + '</button>', (S.adblock || {}).state === 'failed' ? 'Nova tries again with its own network stack and falls back to the lists bundled with the app.' : 'Fetches the newest lists now. They apply from the next start.', 'refresh')] : []),
+        row('Protection against dangerous sites', fsw('safeBrowsing', !!s.features.safeBrowsing), '<span id="sbinfo">Every page is checked against lists of known phishing and malware sites that Nova keeps on this computer. The pages you visit are never sent anywhere.</span> <button class="btn small" data-sbupdate hidden>Update lists now</button>', 'shield'),
         row('Block autoplay', sw('blockAutoplay', s.blockAutoplay), 'Videos and sound start only after you click. Saves a lot of CPU on news sites. Applies to tabs opened after you change it.', 'zap'),
         row('Search suggestions', sw('suggestions', s.suggestions), 'Shows suggestions from your search engine while you type. This sends what you type to that engine, so it is off by default.', 'search2'),
         row('Keep browsing history', sw('keepHistory', s.keepHistory), 'Lets Ctrl K find pages you visited. Off keeps nothing.', 'clock'),
         row('Passkeys and security keys', sw('passkeys', !!s.passkeys), 'Off: a website that asks for a passkey does not make Windows open its security window and ask for your PIN. It is told none is available and offers the password. Switch on to sign in with passkeys. Applies to pages you open or reload afterwards.', 'password'),
         row('Tab previews', sw('thumbnails', s.thumbnails), 'Small screenshots in the tab overview. Off saves a little CPU and memory.', 'eye'),
-        row('Clear browsing data', '<button class="btn" id="cleardata">Clear…</button>', 'History, cookies and cached files.', 'trash')),
+        row('Clear browsing data', '<button class="btn" id="cleardata">Clear…</button>', 'History, cookies and cached files.', 'trash'))
+      + sect('Site permissions', 'Sites you gave or refused location, camera, microphone, notifications or clipboard. Change one for the page in front with the shield in the address bar.') + grp(row('Saved choices', '<button class="btn" data-permreset>Forget all</button>', 'Nothing is remembered in private tabs.', 'lock')) + '<div class="permlist" id="permlist"></div>',
     'Built in': (s) => {
       const on = BUILT_IN.filter(([k]) => s.features[k]).length;
       return `<div class="bihero"><div><b>Already part of Nova</b><span>The jobs people usually add extensions for, built in. No extra process, and nothing running while a tool is off.</span></div><div class="bicount"><b>${on}</b><span>of ${BUILT_IN.length} on</span></div></div>`
@@ -186,10 +194,27 @@ function settings(o, d) {
     body.querySelectorAll('[data-theme]').forEach((el) => (el.oninput = () => patch({ theme: { ...S.settings.theme, [el.dataset.theme]: el.value } })));
     body.querySelectorAll('[data-preset]').forEach((b) => (b.onclick = () => { const n = b.dataset.preset; patch({ theme: PRESETS[n], wallpaper: S.settings.wallpaper.mode === 'theme' ? { ...S.settings.wallpaper, preset: WALL_OF[n] || '' } : S.settings.wallpaper }); body.querySelectorAll('[data-preset]').forEach((x) => x.classList.toggle('on', x === b)); again(200); }));
     body.querySelectorAll('[data-ntp]').forEach((b) => (b.onclick = () => { patch({ newTabPage: b.dataset.ntp }); body.querySelectorAll('[data-ntp]').forEach((x) => x.classList.toggle('on', x === b)); }));
+    body.querySelectorAll('[data-startup]').forEach((b) => (b.onclick = () => { patch({ startup: b.dataset.startup }); body.querySelectorAll('[data-startup]').forEach((x) => x.classList.toggle('on', x === b)); }));
+    { const mk = body.querySelector('[data-makedef]'), txt = body.querySelector('#defbrowser'); // is Nova what Windows opens links with
+      if (mk) { nova.cmd('defaultBrowser').then((r) => { if (r && r.isDefault && txt) { txt.textContent = 'Nova is your default browser.'; mk.hidden = true; } }); mk.onclick = () => { nova.cmd('makeDefault'); if (txt) txt.textContent = 'Windows opens its settings: choose Nova there, for web links and .html files.'; }; } }
     body.querySelectorAll('[data-bmpos]').forEach((b) => (b.onclick = () => { patch({ bookmarksPos: b.dataset.bmpos }); body.querySelectorAll('[data-bmpos]').forEach((x) => x.classList.toggle('on', x === b)); }));
     body.querySelectorAll('[data-top]').forEach((el) => (el.onchange = () => { const hide = new Set(S.settings.topHide || []); if (el.checked) hide.delete(el.dataset.top); else hide.add(el.dataset.top); patch({ topHide: [...hide] }); }));
     body.querySelectorAll('[data-dens]').forEach((b) => (b.onclick = () => { patch({ density: b.dataset.dens }); body.querySelectorAll('[data-dens]').forEach((x) => x.classList.toggle('on', x === b)); }));
     body.querySelectorAll('[data-wall]').forEach((b) => (b.onclick = async () => { const id = b.dataset.wall, w = S.settings.wallpaper; if (id === 'image') { const ok = await nova.cmd('pickWallpaper'); if (ok) again(200); return; } patch({ wallpaper: id === 'theme' ? { ...w, mode: 'theme', preset: WALL_OF[Object.keys(PRESETS).find((n) => PRESETS[n].accent === S.settings.theme.accent && PRESETS[n].bg === S.settings.theme.bg)] || w.preset } : id === 'none' ? { ...w, mode: 'none' } : { ...w, mode: 'preset', preset: id } }); again(200); }));
+    { const info = body.querySelector('#sbinfo'), upd = body.querySelector('[data-sbupdate]'); // what the lists hold and how fresh they are
+      const ago = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 2 ? 'just now' : m < 120 ? m + ' minutes ago' : m < 2880 ? Math.round(m / 60) + ' hours ago' : Math.round(m / 1440) + ' days ago'; };
+      const show = (st) => { if (!info || !st || !st.on) return; info.textContent = st.total ? `${st.total.toLocaleString('en-US')} known dangerous sites on this computer, updated ${ago(st.updated)}. Every page and every download is checked before it opens; your pages are never sent anywhere.` : (st.updating ? 'Downloading the lists…' : 'The lists are not downloaded yet. Nova fetches them shortly after it starts.'); if (upd) upd.hidden = false; };
+      if (info) nova.cmd('sbStatus').then(show);
+      if (upd) upd.onclick = async () => { upd.disabled = true; upd.textContent = 'Updating…'; const r = await nova.cmd('sbUpdate'); upd.disabled = false; upd.textContent = 'Update lists now'; show(r && r.status); const bad = r && r.res && Object.values(r.res).filter((v) => /failed/.test(v)).length; if (bad) toast('Some lists could not be downloaded. Check the connection.'); }; }
+    { const box = body.querySelector('#permlist'); // the sites that were given or refused something
+      if (box) {
+        const draw = async () => {
+          const r = await nova.cmd('permList'), list = (r && r.list) || [];
+          box.innerHTML = list.length ? list.map((e) => `<div class="plrow"><b>${esc(e.origin.replace(/^https?:\/\//, ''))}</b><span>${Object.keys(r.kinds).filter((k) => e[k]).map((k) => r.kinds[k].short + ': ' + (e[k] === 'allow' ? 'allowed' : 'blocked')).join(' · ')}</span><button class="ibtn sm" data-pf="${esc(e.origin)}" title="Forget this site">${ic('x')}</button></div>`).join('') : '<div class="plempty">No site has been given or refused a permission yet.</div>';
+          box.querySelectorAll('[data-pf]').forEach((b) => (b.onclick = async () => { await nova.cmd('permForget', { origin: b.dataset.pf }); draw(); }));
+        };
+        draw(); const rb = body.querySelector('[data-permreset]'); if (rb) rb.onclick = async () => { await nova.cmd('permResetAll'); draw(); };
+      } }
     body.querySelectorAll('[data-adretry]').forEach((b) => (b.onclick = () => { nova.cmd('adblockRetry'); toast('Loading the ad blocker lists…'); }));
     body.querySelectorAll('[data-wp]').forEach((el) => (el.oninput = () => { el.nextElementSibling.textContent = el.value + (el.dataset.wp === 'blur' ? 'px' : '%'); patch({ wallpaper: { ...S.settings.wallpaper, [el.dataset.wp]: +el.value } }); }));
     body.querySelectorAll('[data-sp]').forEach((el) => (el.onchange = () => patch({ startPage: { ...S.settings.startPage, [el.dataset.sp]: el.checked } })));
@@ -211,7 +236,7 @@ function settings(o, d) {
       if (el.tagName === 'BUTTON') el.onclick = () => { set(+el.dataset.v); body.querySelectorAll('[data-cache="limitMB"]').forEach((x) => x.classList.toggle('on', x === el)); };
       else el.onchange = () => set(el.checked);
     });
-    if ($('#cache-size')) nova.cmd('cacheInfo').then((r) => { const el = $('#cache-size'); if (el && r) el.textContent = `${fmtBytes(r.size)} on disk, limit ${fmtBytes(r.limit)}`; });
+    if ($('#cache-size')) nova.cmd('storageInfo').then((r) => { const el = $('#cache-size'); if (el && r) el.textContent = storageText(r); });
     body.querySelectorAll('[data-tab-go]').forEach((b) => (b.onclick = () => show(b.dataset.tabGo)));
     body.querySelectorAll('[data-scheme]').forEach((b) => (b.onclick = () => { patch({ pageScheme: b.dataset.scheme }); body.querySelectorAll('[data-scheme]').forEach((x) => x.classList.toggle('on', x === b)); toast(b.dataset.scheme === 'system' ? 'Websites follow Windows.' : `Websites now see a ${b.dataset.scheme} colour scheme.`); }));
     body.querySelectorAll('[data-bud-off]').forEach((b) => (b.onclick = () => { patch({ budget: { ...S.settings.budget, enabled: false } }); again(140); }));
@@ -227,7 +252,7 @@ function settings(o, d) {
     body.querySelectorAll('[data-blk-mv]').forEach((b) => (b.onclick = () => { const ord = blockOrder(S.settings), i = ord.indexOf(b.dataset.b), j = i + +b.dataset.blkMv; if (j < 0 || j >= ord.length) return; [ord[i], ord[j]] = [ord[j], ord[i]]; patch({ layoutBlocks: { ...S.settings.layoutBlocks, order: ord } }); again(160); }));
     body.querySelectorAll('[data-blk-show]').forEach((el) => (el.onchange = () => { const hid = new Set((S.settings.layoutBlocks || {}).hidden || []); el.checked ? hid.delete(el.dataset.blkShow) : hid.add(el.dataset.blkShow); patch({ layoutBlocks: { ...S.settings.layoutBlocks, hidden: [...hid] } }); }));
     on('#arrreset', () => { patch({ layoutBlocks: { order: [], hidden: [] } }); again(100); });
-    on('#cacheclean', async () => { const r = await nova.cmd('cacheClean'); toast('Cache emptied.'); const el = $('#cache-size'); if (el && r) el.textContent = `${fmtBytes(r.size)} on disk`; });
+    on('#cacheclean', async () => { const b = $('#cacheclean'); if (b) { b.disabled = true; b.textContent = 'Cleaning…'; } const r = await nova.cmd('storageClean'); if (b) { b.disabled = false; b.textContent = 'Clean now'; } toast('Caches emptied. Your logins stay.'); const el = $('#cache-size'); if (el && r) el.textContent = storageText(r); });
     on('#dlfolder', () => nova.cmd('openDownloadsFolder'));
     on('#darkclear', () => { patch({ darkSites: [] }); again(150); });
     on('#rk', () => { patch({ keys: {} }); again(150); }); bindUpd(); on('#rerun', () => nova.cmd('runSetup')); fillPatchNotes();

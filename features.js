@@ -4,6 +4,7 @@ const { app, BrowserWindow, WebContentsView, clipboard, shell, net, dialog } = r
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const iconutil = require('./iconutil');
 const extmgr = require('./extmgr');
 const profiles = require('./profiles');
 const { createDownloader } = require('./downloader');
@@ -215,6 +216,10 @@ function dlControl(op, id) {
 }
 function initDownloads(ses, pid, priv) {
   ses.on('will-download', (_e, item, wc) => {
+    try { // a download from a site on a list of dangerous sites is stopped before it starts
+      const bad = C.unsafeUrl && [item.getURL(), ...(item.getURLChain ? item.getURLChain() : [])].map((u) => C.unsafeUrl(u, pid)).find(Boolean);
+      if (bad) { _e.preventDefault(); item.cancel(); C.toast(`Nova stopped a download from a site on the ${bad.list} list of dangerous sites.`); return; }
+    } catch { /* the check must never break a download */ }
     dlSeen++;
     try { if (C.dlStart) C.dlStart(); } catch { /* only a little animation */ }
     const dir = app.getPath('downloads'); let name = item.getFilename(), p = path.join(dir, name), i = 1;
@@ -314,6 +319,11 @@ function init(ctx) {
   // ses is the session of the profile the current window shows, so it is read when needed, never kept
   extmgr.init({ get ses() { return ctx.ses; }, sessions: () => ctx.sessions(), settings: ctx.settings, saveSettings: ctx.saveSettings, push: ctx.push, toast: ctx.toast, userAgent: ctx.userAgent, win: ctx.win, fetch: (u, o) => net.fetch(u, o), sesFetch: (u, o) => ctx.ses.fetch(u, o) });
   snapshots = load('snapshots.json', []); icons = load('icons.json', {});
+  setTimeout(() => { // icons saved by older versions: shrunk once, in small steps, a little after the start
+    const hosts = Object.keys(icons).filter((h) => icons[h].length > 6000); let i = 0, changed = false;
+    const step = () => { const end = Math.min(i + 15, hosts.length); for (; i < end; i++) { const o = icons[hosts[i]], n = iconutil.shrinkData(o); if (n !== o) { icons[hosts[i]] = n; changed = true; } } if (i < hosts.length) setTimeout(step, 60); else if (changed) saveSoon('icons.json', () => icons); };
+    step();
+  }, 30000);
   setInterval(snapshot, 5 * 60e3); setTimeout(snapshot, 60e3);
   setInterval(wakeSnoozed, 30e3);
   downloads = load('downloads.json', []);
@@ -397,7 +407,9 @@ async function handle(name, a, t) {
     }
     case 'clearHistory': { const d = D(), sp = +a.space || 0, before = d.history.length; d.history = sp ? d.history.filter((h) => h.sp && h.sp !== sp) : []; saveHistory(d); C.forgetRevisits && !sp && C.forgetRevisits(); C.push(); return before - d.history.length; }
     case 'clearData': return clearData(a.what || {}, a.range);
-    case 'cacheInfo': { let size = 0; try { size = await C.ses.getCacheSize(); } catch { /* not readable right now */ } return { size, limit: cacheCfg().limitMB * 1048576 }; }
+    case 'cacheInfo': { let size = 0; for (const x of C.sessions()) { try { size += await x.getCacheSize(); } catch { /* not readable right now */ } } return { size, limit: cacheCfg().limitMB * 1048576 }; }
+    case 'storageInfo': return storageInfo();
+    case 'storageClean': return storageClean();
     case 'cacheClean': { await emptyCache(); let size = 0; try { size = await C.ses.getCacheSize(); } catch { /* ignore */ } return { size }; }
     case 'suggest': return suggest(a.q);
     case 'importPart': { // one category at a time so the interface can show live progress
@@ -431,6 +443,7 @@ async function setIcon(pageUrl, iconUrl) {
       if (buf.length < 60 || buf.length > 70000) return;
       data = `data:${/^image\//.test(ct) ? ct : 'image/x-icon'};base64,${buf.toString('base64')}`;
     }
+    data = iconutil.shrinkData(data); if (/^data:image\/svg/i.test(data) && data.length > 16000) return; // a big vector icon is not worth keeping
     icons[host] = data;
     const keys = Object.keys(icons); if (keys.length > 500) delete icons[keys[0]];
     saveSoon('icons.json', () => icons);
@@ -505,8 +518,27 @@ function library(kind, q = '', space = 0) {
 }
 // The page cache on disk. Chromium keeps it under the limit by itself (the disk-cache-size switch set at start); this is the safety net
 // that empties it if it ever grows well past the limit, checked half an hour at a time and once shortly after start.
-const cacheCfg = () => ({ limitMB: 500, auto: true, ...(C.settings().cache || {}) });
+const cacheCfg = () => ({ limitMB: 250, auto: true, ...(C.settings().cache || {}) });
 async function emptyCache(s = C.ses) { try { await s.clearCache(); await s.clearCodeCaches({ urls: [] }); } catch { /* cache busy */ } }
+// what Nova keeps on the disk: caches (they can go), data of sites (logins, local storage: they stay) and the rest
+async function folderSize(dir) {
+  let n = 0, ents; try { ents = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return 0; }
+  for (const e of ents) { const p = path.join(dir, e.name); if (e.isDirectory()) n += await folderSize(p); else { try { n += (await fs.promises.stat(p)).size; } catch { /* gone meanwhile */ } } }
+  return n;
+}
+let storageMemo = null;
+async function storageInfo() {
+  if (storageMemo && Date.now() - storageMemo.at < 30000) return storageMemo.v;
+  const root = app.getPath('userData'), out = { cache: 0, code: 0, workers: 0, data: 0, other: 0, total: 0 }, dirs = [root];
+  try { for (const d of fs.readdirSync(path.join(root, 'Partitions'))) dirs.push(path.join(root, 'Partitions', d)); } catch { /* no profile folders yet */ }
+  for (const d of dirs) for (const [name, key] of [['Cache', 'cache'], ['Code Cache', 'code'], ['GPUCache', 'code'], ['DawnGraphiteCache', 'code'], ['DawnWebGPUCache', 'code'], ['Service Worker', 'workers'], ['IndexedDB', 'data'], ['Local Storage', 'data'], ['Session Storage', 'data'], ['File System', 'data']]) out[key] += await folderSize(path.join(d, name));
+  out.total = await folderSize(root); out.other = Math.max(0, out.total - out.cache - out.code - out.workers - out.data);
+  storageMemo = { at: Date.now(), v: out }; return out;
+}
+async function storageClean() { // the web cache, compiled code and the offline copies of sites, in every profile; logins and saved site data stay
+  for (const s of C.sessions()) { await emptyCache(s); try { await s.clearStorageData({ storages: ['serviceworkers', 'cachestorage', 'shadercache'] }); } catch { /* busy */ } }
+  storageMemo = null; return storageInfo();
+}
 async function cacheGuard() { // every profile in use has a cache of its own
   const c = cacheCfg(); if (!c.auto || !(c.limitMB > 0)) return;
   for (const s of C.sessions()) { try { if ((await s.getCacheSize()) > c.limitMB * 1048576 * 1.25) await emptyCache(s); } catch { /* ignore */ } }

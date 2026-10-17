@@ -68,7 +68,7 @@ const PRESETS = {
 };
 const WALL_OF = {'Nova': 'orbit', 'Daylight': 'orbit', 'Nebula': 'orbit', 'Supernova': 'orbit', 'Aurora': 'orbit', 'Graphite': 'stars', 'Midnight': 'orbit', 'Rosé': 'orbit', 'Forest': 'orbit', 'Ocean': 'orbit', 'Sakura': 'orbit', 'Sand': 'orbit', 'Mono': 'stars', 'Cyber': 'grid', 'Tokyo Night': 'orbit', 'Dracula': 'orbit', 'Nord': 'stars', 'Catppuccin': 'orbit', 'Gruvbox': 'orbit'};
 const WIZARD_THEMES = ['Nova', 'Daylight', 'Nebula', 'Aurora', 'Midnight', 'Rosé', 'Forest', 'Tokyo Night', 'Graphite'];
-const WALLS = [['none', 'Plain'], ['stars', 'Pixel stars'], ['glow', 'Glow'], ['dots', 'Dots']];
+const WALLS = [['none', 'Plain'], ['waves', 'Waves'], ['stars', 'Pixel stars'], ['glow', 'Glow'], ['dots', 'Dots']];
 const ACTIONS = {
   newTab: 'New tab', newWindow: 'New window', go: 'Address and search bar', closeTab: 'Close tab', reopenTab: 'Reopen closed tab', nextTab: 'Next tab', prevTab: 'Previous tab',
   overview: 'Tab overview', reload: 'Reload', back: 'Back', forward: 'Forward', toggleSidebar: 'Toggle sidebar', focusMode: 'Focus mode',
@@ -114,13 +114,13 @@ function arrangeChrome(top) {
   const g = (id) => document.getElementById(id), mk = (id) => g(id) || Object.assign(document.createElement('div'), { id });
   if (top) {
     const rt = mk('rowtabs'), rb = mk('rowbar'), rm = mk('rowbm'), bl = mk('barl'), br = mk('barr'), ub = mk('urlbox');
-    rt.append(g('pins'), g('tabs'), g('winctl')); c.append(g('spaces')); // the tab row belongs to the tabs; the spaces are in the profile menu (the list itself is hidden here)
+    rt.append(g('tabopen'), g('pins'), g('tabs'), g('winctl')); c.append(g('spaces')); // the tab row belongs to the tabs; the spaces are in the profile menu (the list itself is hidden here)
     bl.append(g('nav'), g('bmstar')); ub.append(g('urlbar')); br.append(g('stats'), g('tools'));
     rb.append(bl, ub, br); rm.append(g('bmbar'));
     c.append(rt, rb, rm);
   } else {
     const head = g('head'); head.append(g('nav'), g('winctl'));
-    c.append(head, g('urlbar'), g('bmstar'), g('bmbar'), g('pins'), g('tabhead'), g('tabs'), g('spaces'), g('dltray'), g('stats'), g('tools'));
+    c.append(head, g('urlbar'), g('bmstar'), g('tabopen'), g('bmbar'), g('pins'), g('tabhead'), g('tabs'), g('spaces'), g('dltray'), g('stats'), g('tools'));
     for (const id of ['rowtabs', 'rowbar', 'rowbm', 'barl', 'barr', 'urlbox', 'lead']) { const e = g(id); if (e) e.remove(); }
   }
 }
@@ -259,13 +259,13 @@ function render() {
   if (typeof dragTab !== 'undefined' && dragTab !== null) { if (Date.now() - dragSince < 5000) { deferredRender = true; return; } dragTab = null; dropInfo = null; } // a drag that never ended must not freeze the tab list
   applySettings();
   const cur = S.tabs.find((t) => t.id === S.activeTab), top = S.settings.layout === 'top';
-  $('#nav').innerHTML = (top ? '' : `<img id="mark" src="mark.svg" alt="">`) + ibtn(top ? 't-back' : 'back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn(top ? 't-fwd' : 'fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn(top ? 't-reload' : 'reload', 'Reload (Ctrl+R)', 'reload') + (top ? '' : dlButton());
+  $('#nav').innerHTML = (top ? '' : `<img id="mark" src="mark.svg" alt="">`) + ibtn(top ? 't-back' : 'back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn(top ? 't-fwd' : 'fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn(top ? 't-reload' : 'reload', 'Reload (Ctrl+R)', 'reload') + (S.settings.homeButton ? ibtn('t-home', 'Home', 'home') : '') + (top ? '' : dlButton());
   $('#winctl').innerHTML = ibtn('min', 'Minimize', 'min') + ibtn('max', 'Maximize', 'max') + ibtn('x', 'Close', 'wclose', 'close');
   let label = '<span>Search or enter address</span>', icon = 'search';
   if (cur && cur.url !== HOME) {
     try { const u = new URL(cur.url); icon = u.protocol === 'https:' ? 'lock' : 'globe'; label = `<b>${esc(u.hostname.replace(/^www\./, ''))}</b><span>${esc((u.pathname + u.search).replace(/^\/$/, '').slice(0, 60))}</span>`; } catch { label = `<b>${esc(cur.url)}</b>`; }
   }
-  $('#urlbar').innerHTML = `${ic(top ? { lock: 't-shield', globe: 't-globe', search: 't-search' }[icon] : icon)}<span id="url-text">${label}</span>${top ? '' : cur?.bookmarked ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
+  $('#urlbar').innerHTML = `${top ? `<span class="uicon" data-do="sitepanel" title="Site settings">${ic({ lock: 't-shield', globe: 't-globe', search: 't-search' }[icon])}</span>` : ic(icon)}<span id="url-text">${label}</span>${top ? '' : cur?.bookmarked ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
   { const star = document.getElementById('bmstar'), page = !!(cur && /^https?:/i.test(cur.url || '')); star.innerHTML = ic(top ? 't-star' : cur?.bookmarked ? 'starf' : 'star'); star.classList.toggle('on', !!cur?.bookmarked); star.classList.toggle('off', !page); star.title = cur?.bookmarked ? 'Edit this bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)'; }
 
   $('#bmbar').innerHTML = (S.bar || []).length ? S.bar.map((b) => `<button class="bmk" data-bm="${esc(b.url)}" title="${esc(b.title || b.url)}">${siteFav(b.url, b.icon)}<span>${esc(b.title || hostOf(b.url))}</span></button>`).join('') + `<button class="bmk more" data-do="bookmarks" title="All bookmarks (Ctrl+Shift+O)">${ic('fwd')}</button>` : '';
@@ -301,7 +301,7 @@ document.addEventListener('click', (e) => {
   if (d === 'newTab' && e.target.closest('.newrow')) freezeStrip('add');
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
-    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: () => dlToggle(), hub: A('hub'), bookmark: A('bookmark'), extmenu: () => nova.cmd('overlay', { kind: 'extmenu' }), spacemenu: () => nova.cmd('overlay', { kind: 'spacemenu' }), profilemenu: () => nova.cmd('overlay', { kind: 'profilemenu' }), mainmenu: () => nova.cmd('overlay', { kind: 'mainmenu' }), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
+    const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: () => dlToggle(), hub: A('hub'), bookmark: A('bookmark'), extmenu: () => nova.cmd('overlay', { kind: 'extmenu' }), spacemenu: () => nova.cmd('overlay', { kind: 'spacemenu' }), profilemenu: () => nova.cmd('overlay', { kind: 'profilemenu' }), mainmenu: () => nova.cmd('overlay', { kind: 'mainmenu' }), sitepanel: () => nova.cmd('overlay', { kind: 'sitepanel' }), home: () => nova.cmd('open', { text: S.settings.homePage || '' }), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
     return m[d]?.();
   }
   if (e.target.closest('#urlbar')) return nova.cmd('action', { name: 'go' });
@@ -341,6 +341,9 @@ const hideMenu = () => { $('#menu').hidden = true; if (menuOpen) { menuOpen = fa
 function tabMenu(id) {
   const t = S.tabs.find((x) => x.id === id), others = S.spaces.filter((s) => s.id !== t.spaceId);
   return [
+    { label: 'Reload', run: () => nova.cmd('reload', { id }) },
+    { label: 'Duplicate tab', run: () => nova.cmd('duplicate', { id }) },
+    ...(t.audible || t.muted ? [{ label: t.muted ? 'Unmute tab' : 'Mute tab', run: () => nova.cmd('mute', { id }) }] : []),
     { label: t.pinned ? 'Unpin tab' : 'Pin tab', run: () => nova.cmd('pin', { id }) },
     ...(t.pinned ? [] : ['-', { label: 'Add to a new group', run: () => nova.cmd('groupTab', { id, group: 'new' }) }, ...(S.groups || []).filter((g) => g.spaceId === t.spaceId && g.id !== t.group).slice(0, 6).map((g, i) => ({ label: 'Add to ' + (g.name ? '“' + g.name.slice(0, 18) + '”' : 'group ' + (i + 1)), run: () => nova.cmd('groupTab', { id, group: g.id }) })), ...(t.group ? [{ label: 'Remove from its group', run: () => nova.cmd('ungroupTab', { id }) }] : []), '-']),
     { label: id === S.split ? 'Close split view' : 'Open in split view', run: () => nova.cmd('split', { id }) },
@@ -348,7 +351,10 @@ function tabMenu(id) {
     ...(S.tabs.length > 1 ? [{ label: 'Move to new window', run: () => nova.cmd('detachTab', { id, force: true }) }] : []),
     ...((S.windows || []).length ? ['-', { label: 'Move to window' }, ...S.windows.map((w) => ({ label: (w.title || 'Nova window').slice(0, 30), run: () => nova.cmd('moveToWindow', { id, wid: w.id }) }))] : []),
     ...(others.length ? ['-', { label: 'Move to space' }, ...others.map((s) => ({ label: s.name, run: () => nova.cmd('moveToSpace', { id, spaceId: s.id }) }))] : []),
+    '-', { label: 'Show all tabs', run: () => nova.cmd('action', { name: 'overview' }) },
     '-', { label: 'Archive to Stardust', run: () => nova.cmd('archive', { id }) }, { label: 'Close tab', run: () => nova.cmd('close', { id }) },
+    ...(spaceTabs().filter((x) => x.id !== id && !x.pinned).length ? [{ label: 'Close other tabs', run: () => nova.cmd('closeOthers', { id }) }] : []),
+    ...(spaceTabs().some((x, i, a) => i > a.findIndex((y) => y.id === id) && !x.pinned) ? [{ label: 'Close tabs to the right', run: () => nova.cmd('closeRight', { id }) }] : []),
   ];
 }
 function spaceMenu(id) {
@@ -385,8 +391,8 @@ function setOverlay(kind, data) {
   if (kind === 'menu') return;
   const o = $('#overlay'); o.hidden = false; o.innerHTML = '';
   o.onmousedown = (e) => { if (e.target === o && kind !== 'wizard') nova.cmd('closeOverlay'); };
-  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' || kind === 'extmenu' || kind === 'bookmark' || kind === 'spacemenu' || kind === 'profilemenu' || kind === 'mainmenu' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
-  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew, extmenu: extMenu, bookmark: bookmarkPop, spacemenu: spacePop, profilemenu: profilePop, mainmenu: mainMenu })[kind](o, data || {});
+  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' || kind === 'perm' || kind === 'sitepanel' || kind === 'extmenu' || kind === 'bookmark' || kind === 'spacemenu' || kind === 'profilemenu' || kind === 'mainmenu' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
+  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew, extmenu: extMenu, bookmark: bookmarkPop, spacemenu: spacePop, profilemenu: profilePop, mainmenu: mainMenu, perm: permPop, sitepanel: sitePop })[kind](o, data || {});
 }
 function clearOverlay() { if (askResolve && askShown) { const r = askResolve; askResolve = null; askShown = false; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; o.className = ''; }
 // Settings and the hub sit beside the browser, not over it: the sidebar (or the top bar) stays sharp and live while you change things

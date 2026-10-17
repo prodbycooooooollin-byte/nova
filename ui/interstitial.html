@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nova</title>
+<style>
+@font-face { font-family:'Inter'; src:url(fonts/inter-latin-wght-normal.woff2) format('woff2'); font-weight:100 900; }
+:root { --bg:#161621; --chrome:#0b0b12; --accent:#8b7dff; --text:#ececf3; --dim:#8b8ba0; --danger:#ff6b7a; --tone:var(--accent); }
+* { box-sizing:border-box; margin:0; }
+html, body { height:100%; background:var(--bg); color:var(--text); font:450 14px/1.55 'Inter',system-ui,sans-serif; letter-spacing:-.006em; -webkit-font-smoothing:antialiased; }
+body.bad { --tone:var(--danger); background:radial-gradient(90% 70% at 50% 0%,color-mix(in srgb,var(--danger) 13%,transparent),transparent 70%),var(--bg); }
+main { min-height:100%; display:grid; place-items:center; padding:40px 24px; }
+.box { width:min(560px,100%); }
+.ic { width:56px; height:56px; border-radius:16px; display:grid; place-items:center; color:var(--tone); background:color-mix(in srgb,var(--tone) 14%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--tone) 32%,transparent); margin-bottom:22px; }
+.ic svg { width:28px; height:28px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+h1 { font-size:26px; font-weight:640; letter-spacing:-.02em; line-height:1.2; margin-bottom:12px; }
+p { color:color-mix(in srgb,var(--text) 82%,var(--bg)); max-width:52ch; } p + p { margin-top:10px; } p.dim { color:var(--dim); font-size:13px; }
+b.h { font-weight:620; color:var(--text); overflow-wrap:anywhere; }
+.btns { display:flex; gap:10px; flex-wrap:wrap; margin-top:28px; }
+button { font:inherit; font-weight:560; height:40px; padding:0 18px; border-radius:11px; color:var(--text); background:color-mix(in srgb,var(--text) 9%,transparent); border:0; cursor:pointer; transition:background .12s,transform .1s; }
+button:hover { background:color-mix(in srgb,var(--text) 15%,transparent); } button:active { transform:scale(.98); }
+button.main { background:var(--tone); color:#fff; } body:not(.bad) button.main { color:var(--chrome); } button.main:hover { background:color-mix(in srgb,var(--tone) 88%,#fff); }
+button.risk { background:none; color:var(--dim); padding:0 6px; } button.risk:hover { color:var(--danger); background:none; }
+details { margin-top:22px; color:var(--dim); font-size:13px; } summary { cursor:pointer; list-style:none; user-select:none; } summary::-webkit-details-marker { display:none; } summary::before { content:'›'; display:inline-block; width:14px; transition:transform .15s; } details[open] summary::before { transform:rotate(90deg); }
+dl { margin-top:12px; display:grid; grid-template-columns:max-content 1fr; gap:6px 16px; } dt { color:var(--dim); } dd { color:var(--text); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; user-select:text; }
+code { font:12px/1.5 'Cascadia Code',Consolas,monospace; background:color-mix(in srgb,var(--text) 8%,transparent); padding:1px 6px; border-radius:6px; user-select:text; }
+.more { display:none; margin-top:20px; padding-top:18px; border-top:1px solid color-mix(in srgb,var(--text) 10%,transparent); } .more.on { display:block; }
+@media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+</head>
+<body>
+<main><div class="box">
+  <div class="ic" id="ic"></div>
+  <h1 id="h"></h1>
+  <p id="lead"></p>
+  <p id="sub" class="dim"></p>
+  <div class="btns" id="btns"></div>
+  <div class="more" id="more"><p id="risk"></p><div class="btns"><button class="risk" id="go"></button></div></div>
+  <details id="det"><summary>Details</summary><dl id="dl"></dl></details>
+</div></main>
+<script>
+const Q = new URLSearchParams(location.search), $ = (id) => document.getElementById(id);
+for (const [k, v] of [['bg', '--bg'], ['chrome', '--chrome'], ['accent', '--accent'], ['text', '--text'], ['dim', '--dim']]) if (/^#[0-9a-f]{3,8}$/i.test(Q.get(k) || '')) document.documentElement.style.setProperty(v, Q.get(k));
+const kind = Q.get('kind') || 'conn', url = Q.get('url') || '', code = Q.get('code') || '', list = Q.get('list') || '';
+let cert = null; try { cert = JSON.parse(Q.get('cert') || 'null'); } catch { /* none */ }
+let host = url; try { host = new URL(url).host; } catch { /* keep the text */ }
+const ICONS = {
+  conn: '<svg viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16.2a5 5 0 0 1 7 0"/><path d="M12 20h.01"/><path d="m3 3 18 18"/></svg>',
+  cert: '<svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/><path d="M12 15v2"/></svg>',
+  phish: '<svg viewBox="0 0 24 24"><path d="M12 3 2.5 20h19Z"/><path d="M12 10v4.5"/><path d="M12 17.5h.01"/></svg>',
+  malware: '<svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.5 3.2 7.8 8 9 4.8-1.2 8-4.5 8-9V6Z"/><path d="m9.5 9.5 5 5"/><path d="m14.5 9.5-5 5"/></svg>',
+};
+const CONN = {
+  ERR_NAME_NOT_RESOLVED: 'couldn’t be found. Check the address for typing mistakes.',
+  ERR_INTERNET_DISCONNECTED: 'can’t be reached because this computer is offline. Nova tries again as soon as the connection is back.',
+  ERR_CONNECTION_REFUSED: 'refused the connection.', ERR_CONNECTION_TIMED_OUT: 'took too long to answer.', ERR_TIMED_OUT: 'took too long to answer.',
+  ERR_CONNECTION_RESET: 'closed the connection unexpectedly.', ERR_CONNECTION_CLOSED: 'closed the connection unexpectedly.', ERR_EMPTY_RESPONSE: 'sent no data.',
+  ERR_CONNECTION_FAILED: 'can’t be reached.', ERR_ADDRESS_UNREACHABLE: 'can’t be reached from this network.', ERR_NETWORK_CHANGED: 'could not be loaded because the network changed.',
+  ERR_TOO_MANY_REDIRECTS: 'sent Nova in circles (too many redirects). Clearing the cookies of this site often helps.', ERR_PROXY_CONNECTION_FAILED: 'can’t be reached: the proxy server does not answer.',
+  ERR_TUNNEL_CONNECTION_FAILED: 'can’t be reached through the proxy server.', ERR_NAME_RESOLUTION_FAILED: 'couldn’t be found.', ERR_BLOCKED_BY_RESPONSE: 'does not allow this page to be shown.',
+};
+const CERT = {
+  ERR_CERT_AUTHORITY_INVALID: 'The certificate of this site was not issued by an authority that this computer trusts. It may be self-made, or someone may be in between you and the site.',
+  ERR_CERT_DATE_INVALID: 'The certificate of this site has expired or is not valid yet. If your computer’s clock is wrong, correct it first.',
+  ERR_CERT_COMMON_NAME_INVALID: 'The certificate does not belong to this address: it was issued for a different site.',
+  ERR_CERT_REVOKED: 'The certificate of this site was withdrawn by the authority that issued it.',
+  ERR_CERT_WEAK_SIGNATURE_ALGORITHM: 'The certificate of this site is signed with a method that is no longer considered safe.',
+  ERR_CERT_INVALID: 'The certificate of this site is damaged or not valid.', ERR_CERT_NAME_CONSTRAINT_VIOLATION: 'The certificate is not allowed to be used for this address.',
+};
+// title, the words before the address, the words after it, and a second line
+const T = {
+  conn: () => ['This page can’t be reached', '', ' ' + (CONN[code] || (/^ERR_SSL/.test(code) ? 'uses a secure connection that could not be set up.' : 'could not be loaded.')), ''],
+  cert: () => ['Your connection isn’t private', 'Someone might be trying to steal your information from ', ', for example passwords, messages or card numbers.', CERT[code] || 'The certificate of this site could not be checked.'],
+  phish: () => ['Deceptive site ahead', '', ' may be trying to trick you into sharing something dangerous, like passwords or card numbers.', 'This page is on the list of known phishing sites of ' + (list || 'a public list') + '.'],
+  malware: () => ['Dangerous site ahead', '', ' is known for spreading harmful software that can damage your computer or steal your data.', 'This page is on the list of known malware sites of ' + (list || 'a public list') + '.'],
+}[kind] || (() => ['Nova', '', '', '']);
+const [title, before, after, sub] = T();
+document.title = title; document.body.classList.toggle('bad', kind !== 'conn');
+$('ic').innerHTML = ICONS[kind] || ICONS.conn; $('h').textContent = title;
+$('lead').append(document.createTextNode(before), Object.assign(document.createElement('b'), { className: 'h', textContent: host }), document.createTextNode(after)); // only the address of the page comes from outside, and it goes in as text
+$('sub').textContent = sub; $('sub').hidden = !sub;
+const go = (a) => { location.href = 'nova-action:' + a; };
+const btn = (text, cls, fn) => { const b = document.createElement('button'); b.textContent = text; if (cls) b.className = cls; b.onclick = fn; $('btns').append(b); return b; };
+if (kind === 'conn') {
+  btn('Try again', 'main', () => go('retry'));
+  addEventListener('online', () => go('retry'));
+} else {
+  btn('Back to safety', 'main', () => go('back'));
+  btn('Advanced', '', (e) => { $('more').classList.add('on'); e.target.remove(); });
+  $('risk').textContent = kind === 'cert' ? 'Continuing is not safe: what you type here can be read by others.' : 'Visiting this page anyway can cost you your accounts or your data.';
+  $('go').textContent = kind === 'cert' ? `Continue to ${host} (unsafe)` : 'Visit this page anyway (not recommended)'; $('go').onclick = () => go('proceed');
+}
+const rows = [['Address', url], ['Error', code]];
+if (kind === 'phish' || kind === 'malware') rows.push(['Found on', list], ['Checked', 'on this computer; the lists are downloaded, your pages are never sent anywhere']);
+if (cert) rows.push(['Issued to', cert.subject || ''], ['Issued by', cert.issuer || ''], ['Valid from', cert.from ? new Date(cert.from * 1000).toLocaleDateString() : ''], ['Valid until', cert.to ? new Date(cert.to * 1000).toLocaleDateString() : ''], ['Fingerprint', cert.fp || '']);
+for (const [k, v] of rows) if (v) $('dl').append(Object.assign(document.createElement('dt'), { textContent: k }), Object.assign(document.createElement('dd'), { textContent: v }));
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && kind !== 'conn') go('back'); });
+</script>
+</body>
+</html>
