@@ -28,7 +28,7 @@ const PAGE_INFO = {
   Performance: ['gauge', 'Memory, sleeping tabs and disk cache. Nova keeps itself inside the limits you set.'],
   'Built in': ['zap', 'What people usually add extensions for, already part of Nova. Switch on what you like.'],
   Features: ['sliders', 'Nova stays light. Everything beyond the essentials is off until you want it.'],
-  Shortcuts: ['keyboard', 'Click a shortcut, then press the keys you want.'],
+  Shortcuts: ['keyboard', 'Click a shortcut, then press the keys you want, turn the wheel with Ctrl, Alt or Shift held, or press a mouse side button. Wheel shortcuts apply to pages you open or reload afterwards.'],
   Extensions: ['box', 'Nova ships bare. Add only what you want, installed in one click.'],
   'Custom code': ['code', 'Nova is built from plain CSS variables. Rewrite anything.'],
   Passwords: ['password', 'Logins Nova keeps for you, sealed with your Windows account. Off until you switch it on.'],
@@ -119,6 +119,7 @@ function settings(o, d) {
         row('Block autoplay', sw('blockAutoplay', s.blockAutoplay), 'Videos and sound start only after you click. Saves a lot of CPU on news sites. Applies to tabs opened after you change it.', 'zap'),
         row('Search suggestions', sw('suggestions', s.suggestions), 'Shows suggestions from your search engine while you type. This sends what you type to that engine, so it is off by default.', 'search2'),
         row('Keep browsing history', sw('keepHistory', s.keepHistory), 'Lets Ctrl K find pages you visited. Off keeps nothing.', 'clock'),
+        row('Passkeys and security keys', sw('passkeys', !!s.passkeys), 'Off: a website that asks for a passkey does not make Windows open its security window and ask for your PIN. It is told none is available and offers the password. Switch on to sign in with passkeys. Applies to pages you open or reload afterwards.', 'password'),
         row('Tab previews', sw('thumbnails', s.thumbnails), 'Small screenshots in the tab overview. Off saves a little CPU and memory.', 'eye'),
         row('Clear browsing data', '<button class="btn" id="cleardata">Clear…</button>', 'History, cookies and cached files.', 'trash')),
     'Built in': (s) => {
@@ -211,7 +212,7 @@ function settings(o, d) {
     body.querySelectorAll('[data-scheme]').forEach((b) => (b.onclick = () => { patch({ pageScheme: b.dataset.scheme }); body.querySelectorAll('[data-scheme]').forEach((x) => x.classList.toggle('on', x === b)); toast(b.dataset.scheme === 'system' ? 'Websites follow Windows.' : `Websites now see a ${b.dataset.scheme} colour scheme.`); }));
     body.querySelectorAll('[data-bud-off]').forEach((b) => (b.onclick = () => { patch({ budget: { ...S.settings.budget, enabled: false } }); again(140); }));
     body.querySelectorAll('[data-sleep]').forEach((b) => (b.onclick = () => nova.cmd('sleep', { id: +b.dataset.sleep })));
-    body.querySelectorAll('[data-profile]').forEach((b) => (b.onclick = () => { nova.cmd('applyProfile', { name: b.dataset.profile }); toast('Profile switched.'); again(200); }));
+    body.querySelectorAll('[data-profile]').forEach((b) => (b.onclick = () => { nova.cmd('applyProfile', { name: b.dataset.profile }); toast('Mode switched.'); again(200); }));
     body.querySelectorAll('[data-rec]').forEach((b) => (b.onclick = () => recordKey(b)));
     body.querySelectorAll('[data-code]').forEach((b) => (b.onclick = () => { body.querySelectorAll('[data-code]').forEach((x) => x.classList.toggle('on', x === b)); body.querySelectorAll('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== b.dataset.code)); }));
     const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
@@ -236,23 +237,39 @@ function settings(o, d) {
   render(false, false);
 }
 
-const keyChips = (list) => (list.length ? list.map((k) => `<span class="keys">${k.split('+').map((x) => `<kbd>${esc(x === ' ' ? 'Space' : x)}</kbd>`).join('')}</span>`).join('<span class="or">or</span>') : '<span class="none">Not set</span>');
+const KEY_NAME = { ' ': 'Space', WheelUp: 'Scroll up', WheelDown: 'Scroll down', WheelLeft: 'Scroll left', WheelRight: 'Scroll right', Mouse4: 'Mouse back', Mouse5: 'Mouse forward' };
+const keyChips = (list) => (list.length ? list.map((k) => `<span class="keys">${k.split('+').map((x) => `<kbd>${esc(KEY_NAME[x] || x)}</kbd>`).join('')}</span>`).join('<span class="or">or</span>') : '<span class="none">Not set</span>');
+// records a key combination, or a turn of the wheel with Ctrl / Alt / Shift held, or a side button of the mouse (Mouse back / forward)
 function recordKey(btn) {
   const action = btn.dataset.rec; const prev = btn.innerHTML;
-  btn.classList.add('rec'); btn.innerHTML = '<span class="none">Press the new keys…  Esc cancels, Backspace clears</span>';
+  btn.classList.add('rec'); btn.innerHTML = '<span class="none">Press keys, turn the wheel with Ctrl, Alt or Shift held, or press a mouse side button.  Esc cancels, Backspace clears</span>';
   nova.cmd('keysPause', { on: true });
-  const done = () => { window.removeEventListener('keydown', onKey, true); btn.classList.remove('rec'); nova.cmd('keysPause', { on: false }); };
+  const mods = (e) => { const p = []; if (e.ctrlKey || e.metaKey) p.push('Ctrl'); if (e.altKey) p.push('Alt'); if (e.shiftKey) p.push('Shift'); return p; };
+  const done = () => { window.removeEventListener('keydown', onKey, true); window.removeEventListener('wheel', onWheel, true); window.removeEventListener('mousedown', onMouse, true); window.removeEventListener('mouseup', swallow, true); window.removeEventListener('auxclick', swallow, true); btn.classList.remove('rec'); nova.cmd('keysPause', { on: false }); };
+  const set = (list) => { nova.cmd('settings', { patch: { keys: { ...S.settings.keys, [action]: list } } }); btn.innerHTML = keyChips(list); done(); };
+  const swallow = (e) => { if (e.button === 3 || e.button === 4) { e.preventDefault(); e.stopPropagation(); } };
   const onKey = (e) => {
     if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
     e.preventDefault(); e.stopPropagation();
     if (e.key === 'Escape') { btn.innerHTML = prev; return done(); }
-    let list;
-    if (e.key === 'Backspace' || e.key === 'Delete') list = [];
-    else { const parts = []; if (e.ctrlKey || e.metaKey) parts.push('Ctrl'); if (e.altKey) parts.push('Alt'); if (e.shiftKey) parts.push('Shift'); parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key); list = [parts.join('+')]; }
-    nova.cmd('settings', { patch: { keys: { ...S.settings.keys, [action]: list } } });
-    btn.innerHTML = keyChips(list); done();
+    if (e.key === 'Backspace' || e.key === 'Delete') return set([]);
+    const parts = mods(e); parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key); set([parts.join('+')]);
+  };
+  const onWheel = (e) => {
+    const m = mods(e); if (!m.length) return; // a plain turn of the wheel only scrolls
+    e.preventDefault(); e.stopPropagation();
+    const dir = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? (e.deltaY < 0 ? 'WheelUp' : 'WheelDown') : (e.deltaX < 0 ? 'WheelLeft' : 'WheelRight');
+    set([[...m, dir].join('+')]);
+  };
+  const onMouse = (e) => {
+    if (e.button !== 3 && e.button !== 4) return;
+    e.preventDefault(); e.stopPropagation();
+    set([[...mods(e), e.button === 3 ? 'Mouse4' : 'Mouse5'].join('+')]);
   };
   window.addEventListener('keydown', onKey, true);
+  window.addEventListener('wheel', onWheel, { capture: true, passive: false });
+  window.addEventListener('mousedown', onMouse, true);
+  window.addEventListener('mouseup', swallow, true); window.addEventListener('auxclick', swallow, true);
 }
 
 

@@ -88,13 +88,17 @@ function mainMenu(o) {
   o.querySelectorAll('[data-cmd]').forEach((b) => (b.onclick = async () => { await nova.cmd('closeOverlay'); nova.cmd(b.dataset.cmd); }));
 }
 
-// the profile: a name, the privacy switches, the spaces
+// the profile: who you are browsing as (switch, add, rename), the privacy switches, the spaces of this profile
 function profilePop(o) {
-  const W = 330, p = popAt(document.querySelector('.profbtn'), W, true), s = S.settings, F = s.features || {}, name = s.userName || '', shown = name || 'Your profile';
+  const W = 330, p = popAt(document.querySelector('.profbtn'), W, true), s = S.settings, F = s.features || {};
+  const list = profileList(), cur = list.find((x) => x.id === S.profile) || list[0], sp = S.spaces || [];
   const sw = (k, on) => `<label class="sw"><input type="checkbox" data-pk="${k}" ${on ? 'checked' : ''}><i></i></label>`;
-  const sp = S.spaces || [];
   o.innerHTML = `<div class="pmenu prof box" style="left:${p.left}px;top:${p.top}px;width:${W}px">
-    <div class="pfh"><span class="pfav">${esc((name[0] || 'N').toUpperCase())}</span><div class="pfn"><b id="pfname">${esc(shown)}</b><small>${esc(S.version ? 'Nova ' + S.version : '')}</small></div><button class="btn small ghost" id="pfren">Rename</button></div>
+    <div class="pfh"><span class="pfav" style="background:${esc(cur.color)};color:${inkOn(cur.color)}">${esc((cur.name[0] || 'N').toUpperCase())}</span><div class="pfn"><b id="pfname">${esc(cur.name)}</b><small>${esc(S.version ? 'Nova ' + S.version : '')}</small></div><button class="btn small ghost" id="pfren">Rename</button></div>
+    <div class="pfbody">
+    <div class="pfs">Profiles</div>
+    <div class="pfsp">${list.map((x) => `<button class="mmrow" data-prof="${esc(x.id)}"><span class="spd"><i style="background:${esc(x.color)}"></i>${esc(x.name)}</span>${x.id === cur.id ? ic('t-check') : ''}</button>`).join('')}<button class="mmrow" data-pf="newprofile"><span>New profile…</span><kbd></kbd></button></div>
+    ${list.length < 2 ? '<div class="pfnote">A profile keeps its own logins, cookies, history, bookmarks and passwords. Add one for work and keep your private browsing apart.</div>' : ''}
     <div class="pfs">Privacy</div>
     <div class="pfrow"><span>Ad and tracker blocker<small>${s.adblock ? `${(S.blockedCount || 0).toLocaleString('en-US')} blocked so far` : 'Off'}</small></span>${sw('adblock', s.adblock)}</div>
     <div class="pfrow"><span>Keep browsing history<small>Used for suggestions and the start page</small></span>${sw('keepHistory', s.keepHistory)}</div>
@@ -102,23 +106,28 @@ function profilePop(o) {
     ${F.privateTabs ? '<button class="mmrow" data-pf="private"><span>New private tab</span><kbd></kbd></button>' : ''}
     <div class="pfs">Spaces</div>
     <div class="pfsp">${sp.map((x) => `<button class="mmrow" data-sp="${x.id}"><span class="spd"><i style="background:${x.color}"></i>${esc(x.name)}</span>${x.id === S.activeSpace ? ic('t-check') : ''}</button>`).join('')}<button class="mmrow" data-pf="newspace"><span>New space…</span><kbd></kbd></button></div>
-    <div class="pmf"><button class="btn small ghost" data-pf="perf">Profile mode: ${esc({ ultra: 'Ultra Performance', nova: 'Nova', complete: 'Complete' }[s.profile] || 'Nova')}</button><span style="flex:1"></span><button class="btn small ghost" data-pf="settings">Settings</button></div></div>`;
+    ${list.length > 1 && cur.id !== 'main' ? '<div class="mmsep"></div><button class="mmrow danger" data-pf="delprofile"><span>Delete this profile…</span><kbd></kbd></button>' : ''}
+    </div>
+    <div class="pmf"><button class="btn small ghost" data-pf="perf">Mode: ${esc({ ultra: 'Ultra Performance', nova: 'Nova', complete: 'Complete' }[s.profile] || 'Nova')}</button><span style="flex:1"></span><button class="btn small ghost" data-pf="settings">Settings</button></div></div>`;
   o.querySelectorAll('[data-pk]').forEach((b) => (b.onchange = () => nova.cmd('settings', { patch: { [b.dataset.pk]: b.checked } })));
   o.querySelectorAll('[data-sp]').forEach((b) => (b.onclick = async () => { await nova.cmd('closeOverlay'); nova.cmd('switchSpace', { id: +b.dataset.sp }); }));
+  o.querySelectorAll('[data-prof]').forEach((b) => (b.onclick = async () => { await nova.cmd('closeOverlay'); nova.cmd('switchProfile', { id: b.dataset.prof }); }));
   const go = async (what) => {
     await nova.cmd('closeOverlay');
     if (what === 'clear') setTimeout(() => nova.cmd('overlay', { kind: 'library', data: { tab: 'Clear data' } }), 60);
     else if (what === 'private') nova.cmd('action', { name: 'privateTab' });
     else if (what === 'newspace') setTimeout(newSpaceFlow, 80);
+    else if (what === 'newprofile') setTimeout(newProfileFlow, 80);
+    else if (what === 'delprofile') setTimeout(() => deleteProfileFlow(cur), 80);
     else if (what === 'perf') setTimeout(() => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Profile' } }), 60);
     else if (what === 'settings') nova.cmd('action', { name: 'settings' });
   };
   o.querySelectorAll('[data-pf]').forEach((b) => (b.onclick = () => go(b.dataset.pf)));
   const ren = $('#pfren'), label = $('#pfname');
   ren.onclick = () => {
-    const input = document.createElement('input'); input.value = name; input.placeholder = 'Your name'; input.maxLength = 40; input.autocomplete = 'off'; input.spellcheck = false; input.className = 'pfin';
+    const input = document.createElement('input'); input.value = cur.name; input.placeholder = 'Profile name'; input.maxLength = 40; input.autocomplete = 'off'; input.spellcheck = false; input.className = 'pfin';
     label.replaceWith(input); input.focus(); input.select(); ren.textContent = 'Save';
-    const done = () => { const v = input.value.trim(); nova.cmd('settings', { patch: { userName: v } }); const b = document.createElement('b'); b.id = 'pfname'; b.textContent = v || 'Your profile'; input.replaceWith(b); $('.pfav').textContent = (v[0] || 'N').toUpperCase(); ren.textContent = 'Rename'; ren.onclick = null; setTimeout(() => nova.cmd('closeOverlay'), 350); };
+    const done = () => { const v = input.value.trim() || cur.name; nova.cmd('renameProfile', { id: cur.id, name: v }); const b = document.createElement('b'); b.id = 'pfname'; b.textContent = v; input.replaceWith(b); $('.pfav').textContent = (v[0] || 'N').toUpperCase(); ren.textContent = 'Rename'; ren.onclick = null; setTimeout(() => nova.cmd('closeOverlay'), 350); };
     ren.onclick = done; input.addEventListener('keydown', (e) => { if (e.key === 'Enter') done(); });
   };
 }

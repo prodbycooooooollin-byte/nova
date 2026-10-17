@@ -5,10 +5,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const extmgr = require('./extmgr');
+const profiles = require('./profiles');
 const { createDownloader } = require('./downloader');
 
 let C; // context from main.js
-let history = [], bookmarks = [], snapshots = [], downloads = [], icons = {};
+let snapshots = [], downloads = [], icons = {};
+const pdata = new Map(); // profile id -> { pid, history, bookmarks }: what a profile remembers, loaded the first time it is asked for
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
 let peek = null; // { view, url }
 const saveTimers = {};
@@ -16,32 +18,45 @@ const saveTimers = {};
 const file = (n) => C.userFile(n);
 const load = (n, d) => C.readJson(n, d);
 function saveSoon(name, get) { clearTimeout(saveTimers[name]); saveTimers[name] = setTimeout(() => C.writeJson(name, get()), 1500); }
+// History and bookmarks belong to a profile (history.json and bookmarks.json for the first one, history-<id>.json ... for the others). A call without a
+// profile means the one the current window shows; a call about a tab passes the tab's own.
+function D(pid) {
+  pid = pid || C.profile();
+  let d = pdata.get(pid);
+  if (!d) { d = { pid, history: load(profiles.fileOf('history.json', pid), []), bookmarks: load(profiles.fileOf('bookmarks.json', pid), []) }; pdata.set(pid, d); }
+  return d;
+}
+const saveHistory = (d) => saveSoon(profiles.fileOf('history.json', d.pid), () => d.history);
+const saveBookmarks = (d) => saveSoon(profiles.fileOf('bookmarks.json', d.pid), () => d.bookmarks);
 
 const TRACKERS = /^(utm_[a-z]+|fbclid|gclid|dclid|msclkid|mc_eid|mc_cid|igshid|yclid|_hsenc|_hsmi|ref_src|ref_url|si|spm|vero_id)$/i;
 const cleanUrl = (u) => { try { const x = new URL(u); for (const k of [...x.searchParams.keys()]) if (TRACKERS.test(k)) x.searchParams.delete(k); return x.href; } catch { return u; } };
 
 // ---------- history & bookmarks ----------
-function recordVisit(url, title) {
+function recordVisit(url, title, pid, space) {
   if (!C.settings().keepHistory) return;
   if (!/^https?:/i.test(url)) return;
-  let h = history.find((x) => x.url === url);
-  if (!h) { h = { url, title: title || '', n: 0, t: 0 }; history.unshift(h); if (history.length > 6000) history.length = 6000; }
+  const d = D(pid), history = d.history, sp = +space || 0; // every space keeps its own entry for a page; entries from before (no space) belong to all of them
+  let h = history.find((x) => x.url === url && (x.sp || 0) === sp);
+  if (!h) { h = { url, title: title || '', n: 0, t: 0, sp }; history.unshift(h); if (history.length > 6000) history.length = 6000; }
   h.n++; h.t = Date.now(); if (title) h.title = title;
-  saveSoon('history.json', () => history);
+  saveHistory(d);
 }
-const isBookmarked = (url) => bookmarks.some((b) => b.url === url);
+const isBookmarked = (url, pid) => D(pid).bookmarks.some((b) => b.url === url);
 function toggleBookmark(t) {
   if (!t || !/^https?:/i.test(t.url)) return C.toast('Only web pages can be bookmarked.');
-  const i = bookmarks.findIndex((b) => b.url === t.url);
+  const d = D(t.pid), bookmarks = d.bookmarks, i = bookmarks.findIndex((b) => b.url === t.url);
   if (i >= 0) { bookmarks.splice(i, 1); C.toast('Bookmark removed'); } else { bookmarks.unshift({ url: t.url, title: t.title, t: Date.now() }); C.toast('Bookmarked. Find it any time with Ctrl+K.'); }
-  saveSoon('bookmarks.json', () => bookmarks);
+  saveBookmarks(d);
 }
 const score = (q, ...f) => { const hay = f.join(' ').toLowerCase(); let s = 0; for (const w of q.toLowerCase().split(/\s+/).filter(Boolean)) { const i = hay.indexOf(w); if (i < 0) return -1; s += 100 - Math.min(i, 99); } return s; };
 function query(text) {
+  const { history, bookmarks } = D();
   const q = (text || '').trim();
   if (!q) return { bookmarks: [], history: [], downloads: downloads.slice(0, 3), snapshots: [] };
   const b = bookmarks.map((x) => ({ x, s: score(q, x.title, x.url) })).filter((r) => r.s >= 0).sort((a, c) => c.s - a.s).slice(0, 4).map((r) => r.x);
-  const h = history.map((x) => ({ x, s: score(q, x.title, x.url) })).filter((r) => r.s >= 0).sort((a, c) => (c.s + Math.log(1 + c.x.n) * 10) - (a.s + Math.log(1 + a.x.n) * 10)).slice(0, 5).map((r) => r.x).filter((x) => !b.some((y) => y.url === x.url));
+  const seenUrl = new Set(), once1 = (x) => (seenUrl.has(x.url) ? false : (seenUrl.add(x.url), true));
+  const h = history.filter(once1).map((x) => ({ x, s: score(q, x.title, x.url) })).filter((r) => r.s >= 0).sort((a, c) => (c.s + Math.log(1 + c.x.n) * 10) - (a.s + Math.log(1 + a.x.n) * 10)).slice(0, 5).map((r) => r.x).filter((x) => !b.some((y) => y.url === x.url));
   const wantsSnap = /rewind|restore|session|undo/i.test(q);
   const d = /down|file/i.test(q) ? downloads.slice(0, 5) : [];
   return { bookmarks: b.map(withIcon), history: h.map(withIcon), downloads: d, snapshots: wantsSnap && C.settings().features.rewind ? snapshots.slice(0, 8).map((s) => ({ t: s.t, n: s.tabs.length })) : [] };
@@ -84,7 +99,7 @@ function wakeSnoozed() {
 // ---------- tab tools ----------
 async function searchTabs(text) {
   const q = (text || '').trim().toLowerCase(); if (q.length < 2) return [];
-  const jobs = [...C.tabs.values()].filter((t) => t.view && !t.view.webContents.isDestroyed()).map(async (t) => {
+  const jobs = [...C.tabs.values()].filter((t) => t.view && !t.view.webContents.isDestroyed() && t.pid === C.profile()).map(async (t) => { // the pages of the profile in use only
     try {
       if (t.frozen) await C.thawTab(t); // a frozen page cannot answer
       const r = await Promise.race([t.view.webContents.executeJavaScript(`(()=>{const q=${JSON.stringify(q)};const x=(document.body&&document.body.innerText)||'';const i=x.toLowerCase().indexOf(q);return i<0?null:x.slice(Math.max(0,i-60),i+110).replace(/\\s+/g,' ')})()`), new Promise((r) => setTimeout(() => r(null), 1800))]);
@@ -119,7 +134,8 @@ function onAudio(t) { // "one sound at a time"
 // Big files are handed to the accelerated downloader: Chromium's own download starts first (so the file name and the URL are known), is held
 // for a moment while the server is asked what it supports, and is either handed over or simply let go on, so nothing is lost when a server
 // cannot do ranges.
-let fast = null, dlRev = 0, dlSeen = 0, dlDoneAt = 0, liveSeq = 0;
+const fast = new Map(); // profile id -> its accelerated downloader (a download runs in the session of the profile that started it)
+let dlRev = 0, dlSeen = 0, dlDoneAt = 0, liveSeq = 0;
 const liveNormal = new Map(); // id -> { item, rec, samples, probing, handedOver, last }
 const finishedFast = new Set();
 const bumpDl = () => { dlRev++; C.push(); };
@@ -127,23 +143,25 @@ const saveDownloads = () => { downloads.length = Math.min(downloads.length, 60);
 const remember = (rec, priv) => { dlDoneAt = Date.now(); if (!priv) { downloads.unshift(rec); saveDownloads(); } bumpDl(); };
 const dlCfg = () => ({ fast: true, connections: 8, limitMBs: 0, minMB: 8, panel: false, ...(C.settings().downloads || {}) });
 const dlOptions = () => { const c = dlCfg(); return { connections: Math.max(1, Math.min(32, +c.connections || 8)), minSplitMB: Math.max(1, +c.minMB || 8), limitBps: Math.max(0, +c.limitMBs || 0) * 1048576 }; };
-function fastDownloader() {
-  if (fast) return fast;
-  fast = createDownloader({
-    fetch: (u, i) => C.ses.fetch(u, { credentials: 'include', ...i }),
-    stateFile: file('downloads-active.json'),
+function fastDownloader(pid) {
+  pid = pid || C.profile();
+  if (fast.has(pid)) return fast.get(pid);
+  const dl = createDownloader({
+    fetch: (u, i) => C.sessionOf(pid).fetch(u, { credentials: 'include', ...i }),
+    stateFile: file(profiles.fileOf('downloads-active.json', pid)),
     options: dlOptions(),
     onChange: (s) => {
       if ((s.state === 'done' || s.state === 'error') && !finishedFast.has(s.id)) {
         finishedFast.add(s.id);
         remember({ name: s.name, path: s.path, url: s.url, size: s.size, state: s.state === 'done' ? 'completed' : 'interrupted', t: Date.now(), accel: true });
       }
-      if (['done', 'error', 'cancelled'].includes(s.state)) setTimeout(() => fast && fast.remove(s.id), 0);
+      if (['done', 'error', 'cancelled'].includes(s.state)) setTimeout(() => dl.remove(s.id), 0);
       C.push();
     },
   });
-  fast.restore();
-  return fast;
+  fast.set(pid, dl);
+  dl.restore();
+  return dl;
 }
 const liveSpeed = (v) => {
   const now = Date.now(); v.samples.push([now, v.rec.received]);
@@ -153,7 +171,7 @@ const liveSpeed = (v) => {
 };
 const downloadsLive = () => {
   const out = [];
-  if (fast) { fast.setOptions(dlOptions()); for (const j of fast.list()) if (['downloading', 'paused', 'queued'].includes(j.state)) out.push({ ...j, id: 'f' + j.id, accel: true }); }
+  for (const f of fast.values()) { f.setOptions(dlOptions()); for (const j of f.list()) if (['downloading', 'paused', 'queued'].includes(j.state)) out.push({ ...j, id: 'f' + j.id, accel: true }); }
   for (const v of liveNormal.values()) if (!v.probing && !v.handedOver) out.push(v.rec);
   return out;
 };
@@ -190,13 +208,15 @@ function dlControl(op, id) {
     if (op === 'pause') { v.rec.state = 'paused'; v.rec.speed = 0; v.rec.eta = 0; } else if (op === 'resume') v.rec.state = 'downloading';
     return C.push();
   }
-  const f = fastDownloader(), n = +id.slice(1);
+  const n = +id.slice(1), f = [...fast.values()].find((x) => x.list().some((j) => j.id === n));
+  if (!f) return;
   if (op === 'pause') f.pause(n); else if (op === 'resume') f.resume(n); else f.cancel(n);
   C.push();
 }
-function initDownloads(ses, priv) {
+function initDownloads(ses, pid, priv) {
   ses.on('will-download', (_e, item, wc) => {
     dlSeen++;
+    try { if (C.dlStart) C.dlStart(); } catch { /* only a little animation */ }
     const dir = app.getPath('downloads'); let name = item.getFilename(), p = path.join(dir, name), i = 1;
     const ext = path.extname(name), base = path.basename(name, ext);
     while (fs.existsSync(p)) p = path.join(dir, `${base} (${i++})${ext}`);
@@ -207,7 +227,7 @@ function initDownloads(ses, priv) {
     try { item.pause(); v.probing = true; } catch { return shown(); }
     (async () => {
       try {
-        const f = fastDownloader(); f.setOptions(dlOptions());
+        const f = fastDownloader(pid); f.setOptions(dlOptions());
         let ref = ''; try { ref = wc && !wc.isDestroyed() ? wc.getURL() : ''; } catch { /* page gone */ }
         const headers = /^https?:/i.test(ref) ? { Referer: ref } : {};
         const info = await f.probe(url, headers);
@@ -233,10 +253,10 @@ const openPopup = (id) => extmgr.openPopup(id);
 // ---------- Move in: movein.js reads the other browsers, this adds what it found to Nova ----------
 const movein = require('./movein');
 const installedExtIds = () => extmgr.installedIds();
-function addBookmarks(list) {
-  let n = 0;
-  for (const b of list) { if (!b.url || isBookmarked(b.url)) continue; bookmarks.push({ url: b.url, title: b.title || '', t: Date.now() }); n++; }
-  saveSoon('bookmarks.json', () => bookmarks); return n;
+function addBookmarks(list) { // into the profile the window shows
+  const d = D(); let n = 0;
+  for (const b of list) { if (!b.url || isBookmarked(b.url, d.pid)) continue; d.bookmarks.push({ url: b.url, title: b.title || '', t: Date.now() }); n++; }
+  saveBookmarks(d); return n;
 }
 const scanBrowsers = () => movein.scan(installedExtIds);
 const importBookmarksFrom = (id) => addBookmarks(movein.bookmarksOf(id));
@@ -245,13 +265,13 @@ function importBookmarks(name) { // every profile of one browser
 }
 function importHistoryFrom(id) {
   try {
-    const rows = movein.historyOf(id), known = new Map(history.map((h) => [h.url, h])); let n = 0;
+    const d = D(), history = d.history, rows = movein.historyOf(id), known = new Map(history.map((h) => [h.url, h])); let n = 0;
     for (const r of rows) {
       const ex = known.get(r.url);
       if (ex) { ex.n = Math.max(ex.n, r.n); continue; }
       const h = { url: r.url, title: r.title || '', n: r.n, t: r.t > 0 ? r.t : Date.now() }; history.push(h); known.set(r.url, h); n++;
     }
-    history.sort((a, b) => b.t - a.t); history.length = Math.min(history.length, 6000); saveSoon('history.json', () => history);
+    history.sort((a, b) => b.t - a.t); history.length = Math.min(history.length, 6000); saveHistory(d);
     // give the most visited sites their real icons (one small request per site you already use every day)
     const seen = new Set();
     for (const h of rows.slice(0, 40)) { const host = hostOf(h.url); if (host && !icons[host] && !seen.has(host) && seen.size < 12) { seen.add(host); setIcon(h.url, `https://${host}/favicon.ico`); } }
@@ -274,7 +294,7 @@ async function importBookmarkFile() { // any browser's export: .html, or a Chrom
 function peekBounds() { const [w, h] = C.win().getContentSize(); return { x: Math.round(w * 0.1), y: 76, width: Math.round(w * 0.8), height: h - 100 }; }
 function openPeek(url) {
   closePeek();
-  const view = new WebContentsView({ webPreferences: { partition: 'persist:nova', sandbox: true, contextIsolation: true } });
+  const view = new WebContentsView({ webPreferences: { session: C.ses, sandbox: true, contextIsolation: true } }); // the profile of the window
   view.setBackgroundColor('#ffffff'); try { view.setBorderRadius(14); } catch {}
   peek = { view, url };
   view.webContents.on('before-input-event', (e, i) => { if (i.type === 'keyDown' && i.key === 'Escape') { e.preventDefault(); C.closeOverlay(); } });
@@ -291,13 +311,22 @@ function relayoutPeek() { if (peek) peek.view.setBounds(peekBounds()); }
 
 function init(ctx) {
   C = ctx;
-  extmgr.init({ ses: ctx.ses, settings: ctx.settings, saveSettings: ctx.saveSettings, push: ctx.push, toast: ctx.toast, userAgent: ctx.userAgent, win: ctx.win, fetch: (u, o) => net.fetch(u, o), sesFetch: (u, o) => ctx.ses.fetch(u, o) });
-  history = load('history.json', []); bookmarks = load('bookmarks.json', []); snapshots = load('snapshots.json', []); icons = load('icons.json', {});
+  // ses is the session of the profile the current window shows, so it is read when needed, never kept
+  extmgr.init({ get ses() { return ctx.ses; }, sessions: () => ctx.sessions(), settings: ctx.settings, saveSettings: ctx.saveSettings, push: ctx.push, toast: ctx.toast, userAgent: ctx.userAgent, win: ctx.win, fetch: (u, o) => net.fetch(u, o), sesFetch: (u, o) => ctx.ses.fetch(u, o) });
+  snapshots = load('snapshots.json', []); icons = load('icons.json', {});
   setInterval(snapshot, 5 * 60e3); setTimeout(snapshot, 60e3);
   setInterval(wakeSnoozed, 30e3);
   downloads = load('downloads.json', []);
-  initDownloads(ctx.ses, false); if (ctx.privSes) initDownloads(ctx.privSes, true);
   setTimeout(cacheGuard, 45e3); setInterval(cacheGuard, 30 * 60e3);
+}
+
+// every session that appears (a profile is opened for the first time, or its private tabs) gets the download handler; main.js calls this
+const attachSession = (s, pid, priv) => initDownloads(s, pid, priv);
+// a profile was deleted: what it remembered goes with it
+function dropProfile(pid) {
+  pdata.delete(pid);
+  for (const n of ['history.json', 'bookmarks.json', 'downloads-active.json']) { const f = profiles.fileOf(n, pid); clearTimeout(saveTimers[f]); try { fs.rmSync(file(f), { force: true }); } catch { /* already gone */ } }
+  const f = fast.get(pid); if (f) { for (const j of f.list()) f.cancel(j.id); fast.delete(pid); }
 }
 
 // IPC commands that return data or are purely feature-driven
@@ -316,12 +345,13 @@ async function handle(name, a, t) {
     case 'bookmark': if (t?.private) return C.toast('Private tabs cannot be bookmarked.'); toggleBookmark(t); return;
     case 'bookmarkAdd': { // the star: saved at once, named afterwards in the card
       if (!t || t.private || !/^https?:/i.test(t.url || '')) { C.toast(t?.private ? 'Private tabs cannot be bookmarked.' : 'Only web pages can be bookmarked.'); return false; }
-      if (!isBookmarked(t.url)) { bookmarks.unshift({ url: t.url, title: t.title, t: Date.now() }); saveSoon('bookmarks.json', () => bookmarks); }
+      const d = D(t.pid);
+      if (!isBookmarked(t.url, t.pid)) { d.bookmarks.unshift({ url: t.url, title: t.title, t: Date.now() }); saveBookmarks(d); }
       C.push(); return true;
     }
-    case 'bookmarkInfo': { const b = t && bookmarks.find((x) => x.url === t.url); return { url: (t && t.url) || '', title: b ? b.title : (t && t.title) || '', saved: !!b }; }
-    case 'bookmarkSet': { const b = t && bookmarks.find((x) => x.url === t.url); const name = String(a.title || '').trim().slice(0, 200); if (b && name) { b.title = name; saveSoon('bookmarks.json', () => bookmarks); C.push(); } return; }
-    case 'bookmarkRemove': { const i = t ? bookmarks.findIndex((x) => x.url === t.url) : -1; if (i >= 0) { bookmarks.splice(i, 1); saveSoon('bookmarks.json', () => bookmarks); C.push(); } return; }
+    case 'bookmarkInfo': { const b = t && D(t.pid).bookmarks.find((x) => x.url === t.url); return { url: (t && t.url) || '', title: b ? b.title : (t && t.title) || '', saved: !!b }; }
+    case 'bookmarkSet': { const d = D(t && t.pid), b = t && d.bookmarks.find((x) => x.url === t.url); const name = String(a.title || '').trim().slice(0, 200); if (b && name) { b.title = name; saveBookmarks(d); C.push(); } return; }
+    case 'bookmarkRemove': { const d = D(t && t.pid), i = t ? d.bookmarks.findIndex((x) => x.url === t.url) : -1; if (i >= 0) { d.bookmarks.splice(i, 1); saveBookmarks(d); C.push(); } return; }
     case 'screenshot': { const wc = t?.view?.webContents; if (!wc) return; let img = await (C.native ? C.native(wc, wc.capturePage()) : wc.capturePage()).catch(() => null); if (!img || img.isEmpty()) { C.win().focus(); await new Promise((r) => setTimeout(r, 300)); img = await (C.native ? C.native(wc, wc.capturePage()) : wc.capturePage()).catch(() => null); } if (!img || img.isEmpty()) return C.toast('Could not capture the page. Bring Nova to the front and try again.'); const dir = path.join(app.getPath('pictures'), 'Nova'); fs.mkdirSync(dir, { recursive: true }); const f = path.join(dir, `Nova ${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`); fs.writeFileSync(f, img.toPNG()); clipboard.writeImage(img); C.toast('Screenshot saved to Pictures/Nova and copied.'); return; }
     case 'pip': { const wc = t?.view?.webContents; if (!wc) return; const r = await wc.executeJavaScript("(()=>{const v=[...document.querySelectorAll('video')].sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0];if(!v)return 'none';if(document.pictureInPictureElement){document.exitPictureInPicture();return 'exit'}v.requestPictureInPicture();return 'ok'})()", true).catch(() => 'none'); if (r === 'none') C.toast('No video on this page.'); return; }
     case 'savePdf': { const wc = t?.view?.webContents; if (!wc) return; const data = await wc.printToPDF({ printBackground: true }); const name = (t.title || 'page').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'page'; const f = path.join(app.getPath('downloads'), name + '.pdf'); fs.writeFileSync(f, data); C.toast(`Saved ${name}.pdf to Downloads.`); return; }
@@ -353,9 +383,18 @@ async function handle(name, a, t) {
     case 'extPopup': openPopup(a.id); return;
     case 'detectBrowsers': return [...new Set(scanBrowsers().profiles.map((p) => p.browser))];
     case 'scanBrowsers': return scanBrowsers();
-    case 'library': return library(a.kind, a.q);
-    case 'removeBookmark': bookmarks = bookmarks.filter((b) => b.url !== a.url); saveSoon('bookmarks.json', () => bookmarks); C.push(); return;
-    case 'removeHistory': history = history.filter((h) => h.url !== a.url); saveSoon('history.json', () => history); return;
+    case 'library': return library(a.kind, a.q, +a.space || 0);
+    case 'removeBookmark': { const d = D(); d.bookmarks = d.bookmarks.filter((b) => b.url !== a.url); saveBookmarks(d); C.push(); return; }
+    case 'removeHistory': { const d = D(), sp = +a.space || 0; d.history = d.history.filter((h) => !(h.url === a.url && (!sp || !h.sp || h.sp === sp))); saveHistory(d); return; }
+    case 'removeHistorySite': { // everything from one website (www. does not matter), in one space or in all of them
+      const d = D(), sp = +a.space || 0, host = String(a.host || '').toLowerCase().replace(/^www\./, ''), before = d.history.length; if (!host) return 0;
+      d.history = d.history.filter((h) => !(hostOf(h.url) === host && (!sp || !h.sp || h.sp === sp))); saveHistory(d); C.push(); return before - d.history.length;
+    }
+    case 'removeHistoryMatching': { // every page the search text finds
+      const d = D(), sp = +a.space || 0, q = String(a.q || '').trim(), before = d.history.length; if (!q) return 0;
+      d.history = d.history.filter((h) => !((!sp || !h.sp || h.sp === sp) && score(q, h.title, h.url) >= 0)); saveHistory(d); C.push(); return before - d.history.length;
+    }
+    case 'clearHistory': { const d = D(), sp = +a.space || 0, before = d.history.length; d.history = sp ? d.history.filter((h) => h.sp && h.sp !== sp) : []; saveHistory(d); C.forgetRevisits && !sp && C.forgetRevisits(); C.push(); return before - d.history.length; }
     case 'clearData': return clearData(a.what || {}, a.range);
     case 'cacheInfo': { let size = 0; try { size = await C.ses.getCacheSize(); } catch { /* not readable right now */ } return { size, limit: cacheCfg().limitMB * 1048576 }; }
     case 'cacheClean': { await emptyCache(); let size = 0; try { size = await C.ses.getCacheSize(); } catch { /* ignore */ } return { size }; }
@@ -383,7 +422,7 @@ async function setIcon(pageUrl, iconUrl) {
     let data;
     if (iconUrl.startsWith('data:')) data = iconUrl;
     else {
-      const r = await C.ses.fetch(iconUrl, { signal: AbortSignal.timeout(5000) });
+      const r = await C.ses.fetch(iconUrl, { credentials: 'omit', signal: AbortSignal.timeout(5000) });
       if (!r.ok) return;
       const ct = (r.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
       if (!/^image\//.test(ct) && !(/octet-stream/.test(ct) && /\.ico(\?|$)/i.test(iconUrl))) return;
@@ -418,7 +457,7 @@ const isLocalName = (h) => !h.includes('.') || /^(127\.|10\.|192\.168\.|169\.254
 async function discoverIcon(host) {
   const base = `https://${host}/`, urls = [];
   try {
-    const r = await C.ses.fetch(base, { signal: AbortSignal.timeout(7000), headers: { Accept: 'text/html' } });
+    const r = await C.ses.fetch(base, { credentials: 'omit', signal: AbortSignal.timeout(7000), headers: { Accept: 'text/html' } });
     if (r.ok && /html/i.test(r.headers.get('content-type') || '')) urls.push(...iconCandidates(await r.text(), r.url || base));
   } catch { /* the site is unreachable or slow: fall through to the plain locations */ }
   urls.push(`${base}favicon.ico`);
@@ -440,31 +479,32 @@ function pumpIcons() {
   }
 }
 const withIcon = (x) => ({ ...x, icon: icons[hostOf(x.url)] || '' });
-const barBookmarks = () => queueIcons(bookmarks.slice(0, 80)) || [...bookmarks].reverse().slice(0, 60).map((b) => ({ url: b.url, title: b.title, icon: icons[hostOf(b.url)] || '' })); // oldest first, like a bar you fill from the left
+const barBookmarks = (pid) => { const { bookmarks } = D(pid); return queueIcons(bookmarks.slice(0, 80)) || [...bookmarks].reverse().slice(0, 60).map((b) => ({ url: b.url, title: b.title, icon: icons[hostOf(b.url)] || '' })); }; // oldest first, like a bar you fill from the left
 
-function hostVisits(host) { let n = 0; for (const h of history) if (hostOf(h.url) === host) n += h.n; return n; } // page loads of a site, for smart sleep's first guess
-function topSites(n = 8) { // bookmarks first, then the most visited hosts
-  const seen = new Set(), out = [];
+function hostVisits(host) { let n = 0; D(); for (const d of pdata.values()) for (const h of d.history) if (hostOf(h.url) === host) n += h.n; return n; } // page loads of a site in the profiles in use, for smart sleep's first guess
+function topSites(n = 8, pid) { // bookmarks first, then the most visited hosts
+  const { bookmarks, history } = D(pid), seen = new Set(), out = [];
   const add = (x) => { let host; try { host = new URL(x.url).hostname.replace(/^www\./, ''); } catch { return; } if (seen.has(host) || out.length >= n) return; seen.add(host); out.push({ url: x.url, host, title: x.title, icon: icons[host] || '' }); };
   bookmarks.slice(0, 4).forEach(add);
   [...history].sort((a, b) => b.n - a.n || b.t - a.t).forEach(add);
   return out;
 }
 // ---------- library: browse and clean up what Nova remembers ----------
-function library(kind, q = '') {
+function library(kind, q = '', space = 0) {
+  const { history, bookmarks } = D();
   const f = (list) => (q ? list.filter((x) => score(q, x.title, x.url) >= 0) : list);
   if (kind === 'bookmarks') return f(bookmarks).slice(0, 500).map(withIcon);
-  if (kind === 'history') return f(history).slice(0, 400).map(withIcon);
+  if (kind === 'history') return f(space ? history.filter((h) => !h.sp || h.sp === space) : history).slice(0, 600).map(withIcon);
   if (kind === 'downloads') return downloads.slice(0, 100).map((x) => ({ ...x, exists: fs.existsSync(x.path) }));
   return [];
 }
 // The page cache on disk. Chromium keeps it under the limit by itself (the disk-cache-size switch set at start); this is the safety net
 // that empties it if it ever grows well past the limit, checked half an hour at a time and once shortly after start.
 const cacheCfg = () => ({ limitMB: 500, auto: true, ...(C.settings().cache || {}) });
-async function emptyCache() { try { await C.ses.clearCache(); await C.ses.clearCodeCaches({ urls: [] }); } catch { /* cache busy */ } }
-async function cacheGuard() {
+async function emptyCache(s = C.ses) { try { await s.clearCache(); await s.clearCodeCaches({ urls: [] }); } catch { /* cache busy */ } }
+async function cacheGuard() { // every profile in use has a cache of its own
   const c = cacheCfg(); if (!c.auto || !(c.limitMB > 0)) return;
-  try { if ((await C.ses.getCacheSize()) > c.limitMB * 1048576 * 1.25) await emptyCache(); } catch { /* ignore */ }
+  for (const s of C.sessions()) { try { if ((await s.getCacheSize()) > c.limitMB * 1048576 * 1.25) await emptyCache(s); } catch { /* ignore */ } }
 }
 // Floating video: leaving a tab that is playing a video pops the video out, coming back puts it back.
 // The request is sent before the tab is hidden, as if you had clicked the button yourself.
@@ -480,8 +520,8 @@ function onArrive(t) {
   const wc = t.view.webContents; if (!wc.isDestroyed()) wc.executeJavaScript('document.pictureInPictureElement&&document.exitPictureInPicture().catch(()=>{})', true).catch(() => { /* page gone */ });
 }
 async function clearData(what, range) {
-  const since = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity }[range] ?? Infinity, cut = Date.now() - since, ses = C.ses;
-  if (what.history) { C.forgetRevisits(); history = since === Infinity ? [] : history.filter((h) => h.t < cut); C.writeJson('history.json', history); if (since === Infinity) { icons = {}; C.writeJson('icons.json', icons); } }
+  const since = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity }[range] ?? Infinity, cut = Date.now() - since, ses = C.ses, d = D(); // the profile the window shows
+  if (what.history) { C.forgetRevisits(); d.history = since === Infinity ? [] : d.history.filter((h) => h.t < cut); C.writeJson(profiles.fileOf('history.json', d.pid), d.history); if (since === Infinity) { icons = {}; C.writeJson('icons.json', icons); } }
   if (what.downloads) { downloads = []; saveDownloads(); dlRev++; }
   if (what.cookies) await ses.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] });
   if (what.cache) await ses.clearCache();
@@ -492,4 +532,4 @@ async function suggest(q) {
   const tpl = C.settings().searchEngine, e = ENGINE_SUGGEST.find(([h]) => tpl.includes(h)); if (!e || !C.settings().suggestions || !q || q.length < 2) return [];
   try { const r = await C.ses.fetch(e[1](encodeURIComponent(q)), { signal: AbortSignal.timeout(1800) }); const j = await r.json(); return (Array.isArray(j[1]) ? j[1] : []).slice(0, 5).map(String); } catch { return []; }
 }
-module.exports = { init, onLeave, onArrive, downloadsLive, dlInfo, shutdown: () => { if (fast) fast.shutdown(); }, hostVisits, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: () => bookmarks, barBookmarks, isBookmarked };
+module.exports = { init, attachSession, dropProfile, onLeave, onArrive, downloadsLive, dlInfo, shutdown: () => { for (const f of fast.values()) f.shutdown(); }, hostVisits, topSites, setIcon, handle, recordVisit, cleanUrl, applyDark, onAudio, closePeek, relayoutPeek, isPeek: () => !!peek, listExtensions, bookmarks: (pid) => D(pid).bookmarks, barBookmarks, isBookmarked };

@@ -1,5 +1,19 @@
 [
   {
+    "version": "26.10.19",
+    "date": "2026-10-17",
+    "headline": {
+      "title": "Profiles with their own logins",
+      "text": "a work and a private profile, each with its own cookies, history, bookmarks and saved passwords, switched from the profile button."
+    },
+    "notes": [
+      "The tab bar is redrawn: the open tab grows out of the toolbar with a fading outline and symmetric curves, the other tabs rest flat on it.",
+      "The password saver works in sign-in windows (the Google sign-in that TikTok or Instagram open) and in two-step sign-ins; Windows no longer asks for a passkey PIN unless you switch passkeys on.",
+      "Ctrl and the mouse wheel zoom in steps, the mouse side buttons go back and forward, many more shortcuts known from other browsers, and the Shortcuts page records wheel and mouse buttons too.",
+      "Downloads: the folder fills while a file comes down and a chip flies into it when a download starts. History: one list per space, search it, remove a page, a whole website or everything a search found."
+    ]
+  },
+  {
     "version": "26.10.18",
     "date": "2026-10-17",
     "headline": {

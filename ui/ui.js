@@ -74,6 +74,8 @@ const ACTIONS = {
   overview: 'Tab overview', reload: 'Reload', back: 'Back', forward: 'Forward', toggleSidebar: 'Toggle sidebar', focusMode: 'Focus mode',
   find: 'Find in page', settings: 'Settings', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Reset zoom', devtools: 'Developer tools', pinTab: 'Pin or unpin tab',
   hub: 'Extension hub', history: 'History', downloads: 'Downloads', bookmarks: 'Bookmarks', cleanUp: 'Clean up tabs', screenshot: 'Take screenshot', privateTab: 'New private tab', space1: 'Space 1', space2: 'Space 2', space3: 'Space 3', space4: 'Space 4', space5: 'Space 5',
+  hardReload: 'Reload, ignoring the cache', viewSource: 'View page source', savePage: 'Save page as…', clearData: 'Clear browsing data', findNext: 'Find next', findPrev: 'Find previous', homePage: 'Go to the start page', bookmarksBarToggle: 'Show or hide the bookmarks bar', closeWindow: 'Close window', moveTabLeft: 'Move tab left', moveTabRight: 'Move tab right',
+  tab1: 'Go to tab 1', tab2: 'Go to tab 2', tab3: 'Go to tab 3', tab4: 'Go to tab 4', tab5: 'Go to tab 5', tab6: 'Go to tab 6', tab7: 'Go to tab 7', tab8: 'Go to tab 8', tabLast: 'Go to the last tab',
 };
 const FEATURES = [
   ['tabSearch', 'Search inside open tabs', 'Start a Ctrl+K query with ? to find text on any open page.'],
@@ -111,9 +113,8 @@ function arrangeChrome(top) {
   c.dataset.top = top ? '1' : '0';
   const g = (id) => document.getElementById(id), mk = (id) => g(id) || Object.assign(document.createElement('div'), { id });
   if (top) {
-    const rt = mk('rowtabs'), rb = mk('rowbar'), rm = mk('rowbm'), bl = mk('barl'), br = mk('barr'), ub = mk('urlbox'), ld = mk('lead');
-    ld.dataset.do = 'spacemenu'; ld.setAttribute('role', 'button');
-    rt.append(ld, g('pins'), g('tabs'), g('winctl')); c.append(g('spaces')); // the tab row: the lead button (Nova and the space you are in), then the tabs; the spaces list sits in a menu (hidden here)
+    const rt = mk('rowtabs'), rb = mk('rowbar'), rm = mk('rowbm'), bl = mk('barl'), br = mk('barr'), ub = mk('urlbox');
+    rt.append(g('pins'), g('tabs'), g('winctl')); c.append(g('spaces')); // the tab row belongs to the tabs; the spaces are in the profile menu (the list itself is hidden here)
     bl.append(g('nav')); ub.append(g('urlbar'), g('bmstar')); br.append(g('stats'), g('tools'));
     rb.append(bl, ub, br); rm.append(g('bmbar'));
     c.append(rt, rb, rm);
@@ -162,18 +163,24 @@ document.addEventListener('error', (e) => { const el = e.target; if (el.tagName 
 const fmtBytes = (n) => (n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(n >= 1.0e8 ? 0 : 1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
 const fmtEta = (s) => (s >= 3600 ? Math.floor(s / 3600) + ' h ' + Math.round((s % 3600) / 60) + ' min' : s >= 60 ? Math.round(s / 60) + ' min' : s + ' s');
 const extMenuButton = (top) => `<button class="ibtn extbtn" data-do="extmenu" title="Extensions">${ic(top ? 't-puzzle' : 'box')}</button>`;
-const profileButton = () => `<button class="ibtn profbtn" data-do="profilemenu" title="Profile and privacy">${ic('t-user')}</button>`;
+// the profiles (settings.profiles; an older state has none, then there is just one) and the colour of text that reads on a profile's colour
+const profileList = () => { const l = (S && S.settings && S.settings.profiles) || []; return l.length ? l : [{ id: 'main', name: 'Personal', color: '#8b7dff' }]; };
+const inkOn = (hex) => { const h = String(hex || '').replace('#', ''); if (!/^[0-9a-f]{6}$/i.test(h)) return '#ffffff'; return (0.299 * parseInt(h.slice(0, 2), 16) + 0.587 * parseInt(h.slice(2, 4), 16) + 0.114 * parseInt(h.slice(4, 6), 16)) / 255 > 0.62 ? '#111118' : '#ffffff'; };
+// with one profile the plain person icon; with several, a disc in the colour of the profile you are in, with its initial
+const profileButton = () => { const l = profileList(), cur = l.find((x) => x.id === S.profile) || l[0]; return l.length > 1 ? `<button class="ibtn profbtn" data-do="profilemenu" title="Profile: ${esc(cur.name)}"><span class="pfdot" style="background:${esc(cur.color)};color:${inkOn(cur.color)}">${esc((cur.name[0] || '?').toUpperCase())}</span></button>` : `<button class="ibtn profbtn" data-do="profilemenu" title="Profile and privacy">${ic('t-user')}</button>`; };
 const menuButton = () => `<button class="ibtn menubtn" data-do="mainmenu" title="Menu">${ic('t-menu')}</button>`;
 const spaceButton = () => { const sp = (S.spaces || []).find((x) => x.id === S.activeSpace); return S.spaces && S.spaces.length > 1 && sp ? `<button class="spacebtn" data-do="spacemenu" title="Spaces: ${esc(sp.name)}"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>` : ''; };
 const hubButton = () => `<button class="ibtn hubbtn" data-do="hub" title="Extension hub: add extensions in one click">${ic('box')}</button>`;
-// the download button next to reload: a ring that fills while files come down, a check for a minute after the last one
+// the download button: the folder fills from the bottom while files come down, and a dot marks a download that finished a moment ago
+const FOLDER = 'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z';
 function dlButton(top) {
   const jobs = (S && S.dl) || [], info = (S && S.dlInfo) || {};
   if (!top && !jobs.length && !info.seen) return ''; // the tabs-on-top bar always has its folder
   const run = jobs.filter((j) => j.state === 'downloading' || j.state === 'queued'), size = jobs.reduce((n, j) => n + j.size, 0), got = jobs.reduce((n, j) => n + j.received, 0), speed = run.reduce((n, j) => n + j.speed, 0);
   const pct = size ? Math.min(1, got / size) : 0, busy = jobs.length > 0, fresh = !busy && Date.now() - (info.doneAt || 0) < 60000;
   const title = busy ? `${jobs.length} download${jobs.length > 1 ? 's' : ''}${speed ? ' · ' + fmtBytes(speed) + '/s' : ''}: click for details` : 'Downloads';
-  return `<button class="ibtn dlbtn ${busy ? 'busy' : ''} ${fresh ? 'fresh' : ''}" data-do="downloads" title="${title}"><svg class="dring" viewBox="0 0 32 32"><circle class="track" cx="16" cy="16" r="14"/>${busy ? `<circle class="val" cx="16" cy="16" r="14" stroke-dasharray="${(pct * 87.96).toFixed(1)} 100"/>` : ''}</svg>${top ? ic(fresh ? 't-check' : 't-folder') : ic(fresh ? 'check' : 'download')}</button>`;
+  const fill = busy ? Math.max(0.1, pct) : 0;
+  return `<button class="ibtn dlbtn ${busy ? 'busy' : ''} ${fresh ? 'fresh' : ''} ${size ? '' : 'ind'}" data-do="downloads" title="${title}"><svg class="dlf" viewBox="0 0 24 24"><defs><clipPath id="dlclip"><rect x="0" y="${(24 - 24 * fill).toFixed(2)}" width="24" height="24"/></clipPath></defs><path class="dlfill" d="${FOLDER}" clip-path="url(#dlclip)"/><path class="dlline" d="${FOLDER}"/><path class="dlarr" d="M12 9.5v6M9.2 12.8l2.8 2.8 2.8-2.8"/></svg></button>`;
 }
 function render() {
   if (!S) return;
@@ -181,7 +188,6 @@ function render() {
   applySettings();
   const cur = S.tabs.find((t) => t.id === S.activeTab), top = S.settings.layout === 'top';
   $('#nav').innerHTML = (top ? '' : `<img id="mark" src="mark.svg" alt="">`) + ibtn(top ? 't-back' : 'back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn(top ? 't-fwd' : 'fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn(top ? 't-reload' : 'reload', 'Reload (Ctrl+R)', 'reload') + (top ? '' : dlButton());
-  { const ld = document.getElementById('lead'); if (ld) { const sp = (S.spaces || []).find((x) => x.id === S.activeSpace) || (S.spaces || [])[0] || { name: 'Main', color: 'var(--accent)' }; ld.title = `Spaces: ${sp.name}`; ld.innerHTML = `<img src="mark.svg" alt=""><span><i style="background:${sp.color}"></i><b>${esc(sp.name)}</b></span>`; } }
   $('#winctl').innerHTML = ibtn('min', 'Minimize', 'min') + ibtn('max', 'Maximize', 'max') + ibtn('x', 'Close', 'wclose', 'close');
   let label = '<span>Search or enter address</span>', icon = 'search';
   if (cur && cur.url !== HOME) {
@@ -288,6 +294,8 @@ function ask(el, d) {
   if (input) { input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); }); input.focus(); input.select(); } else $('#ask-ok').focus();
 }
 async function newSpaceFlow() { const r = await askDialog({ title: 'New space', text: 'Spaces keep different parts of your life apart: work, school, projects.', input: true, placeholder: 'Name, for example Work', ok: 'Create', colors: SPACE_COLORS }); if (r) nova.cmd('addSpace', { name: r.value, color: r.color }); }
+async function newProfileFlow() { const r = await askDialog({ title: 'New profile', text: 'A profile has its own logins, cookies, history, bookmarks and saved passwords. Use one for work and one for private browsing.', input: true, placeholder: 'Name, for example Work', ok: 'Create', colors: SPACE_COLORS }); if (r) nova.cmd('addProfile', { name: r.value, color: r.color }); }
+async function deleteProfileFlow(p) { const r = await askDialog({ title: 'Delete this profile?', text: `“${p.name}” and everything in it will be removed from this PC: its tabs, logins, cookies, history, bookmarks and saved passwords. This cannot be undone.`, ok: 'Delete', danger: true }); if (r) nova.cmd('deleteProfile', { id: p.id }); }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 4500); }
 
 // ---------- overlay plumbing ----------
@@ -359,6 +367,8 @@ function commands() {
     { t: 'Check for updates', run: () => { nova.cmd('closeOverlay'); nova.cmd('checkUpdate'); } },
     ...Object.keys(PRESETS).map((n) => ({ t: 'Theme: ' + n, run: set({ theme: PRESETS[n], wallpaper: S.settings.wallpaper.mode === 'theme' ? { ...S.settings.wallpaper, preset: WALL_OF[n] || '' } : S.settings.wallpaper }) })),
     ...S.spaces.map((sp) => ({ t: 'Go to space: ' + sp.name, run: () => { nova.cmd('closeOverlay'); nova.cmd('switchSpace', { id: sp.id }); } })),
+    ...profileList().filter((x) => x.id !== S.profile).map((x) => ({ t: 'Switch to profile: ' + x.name, run: () => { nova.cmd('closeOverlay'); nova.cmd('switchProfile', { id: x.id }); } })),
+    { t: 'New profile', s: 'Its own logins, cookies, history and passwords', run: () => setTimeout(newProfileFlow, 80) },
   ];
 }
 const looksLikeUrl = (q) => /^(https?|file|about):/i.test(q) || (!/\s/.test(q) && (/^localhost/i.test(q) || /^[^\s/]+\.[a-z]{2,}([:/?#]|$)/i.test(q)));

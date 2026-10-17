@@ -7,7 +7,7 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 
 const hooks = { installed: null }; // extbridge.js tells the extension it was installed
-let C; // context from features.js: ses, settings, saveSettings, push, toast, userAgent, win
+let C; // context from features.js: ses (the session of the profile in use), sessions (every profile session that exists), settings, saveSettings, push, toast, userAgent, win
 const extDir = () => path.join(app.getPath('userData'), 'extensions');
 const UA_CHROME = () => process.versions.chrome;
 
@@ -41,6 +41,16 @@ function crxKey(buf, wantId) {
   return null;
 }
 
+// ---------- profiles: an extension is installed once and loaded into the session of every profile in use ----------
+// (a profile opened later loads them when its session starts, main.js loadExtensions). Each profile's session has its own extension storage and logins.
+const sessionsOf = () => (C.sessions ? C.sessions() : [C.ses]);
+async function loadEverywhere(dir) {
+  const here = C.ses, ext = await here.extensions.loadExtension(dir, { allowFileAccess: true }); // the profile in use first: if this fails, the install failed
+  for (const s of sessionsOf()) if (s !== here) { try { await s.extensions.loadExtension(dir, { allowFileAccess: true }); } catch (e) { console.error('[extmgr] not loaded in another profile:', e.message); } }
+  return ext;
+}
+async function removeEverywhere(id) { for (const s of sessionsOf()) { try { await s.extensions.removeExtension(id); } catch { /* not loaded there */ } } }
+
 // ---------- download ----------
 async function fetchCrx(id) {
   const url = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=${UA_CHROME()}&acceptformat=crx2,crx3&x=${encodeURIComponent(`id=${id}&installsource=ondemand&uc`)}`;
@@ -59,12 +69,13 @@ function health(ext, ms = 6000) {
     const m = ext.manifest || {};
     if (!(m.background && m.background.service_worker)) return resolve({ ok: true, note: '' });
     const errors = []; let running = false;
+    const ses = C.ses; // the profile it was loaded for: the same one is listened to and let go of again
     const scope = `chrome-extension://${ext.id}/`;
     const onMsg = (_e, d) => { if (d.level >= 3 && String(d.sourceUrl || '').startsWith('chrome-extension://' + ext.id) && !/Content-Security-Policy|favicon|not signed in|Login is required/i.test(d.message)) errors.push(String(d.message).slice(0, 160)); };
     const onStatus = (d) => { if (d.runningStatus === 'running') running = true; };
-    C.ses.serviceWorkers.on('console-message', onMsg); C.ses.serviceWorkers.on('running-status-changed', onStatus);
+    ses.serviceWorkers.on('console-message', onMsg); ses.serviceWorkers.on('running-status-changed', onStatus);
     setTimeout(() => {
-      C.ses.serviceWorkers.off('console-message', onMsg); C.ses.serviceWorkers.off('running-status-changed', onStatus);
+      ses.serviceWorkers.off('console-message', onMsg); ses.serviceWorkers.off('running-status-changed', onStatus);
       resolve(!running ? { ok: false, note: 'Its background worker did not start.' } : errors.length ? { ok: true, note: 'It started, but reported a problem: ' + errors[0] } : { ok: true, note: '' });
     }, ms);
     void scope;
@@ -78,14 +89,14 @@ async function install(input) {
     const buf = await fetchCrx(id);
     const dir = path.join(extDir(), id);
     let was = null;
-    try { was = list().find((e) => e.id === id || path.basename(e.path) === id) || null; if (was) await C.ses.extensions.removeExtension(was.id); } catch { /* not loaded */ }
+    try { was = list().find((e) => e.id === id || path.basename(e.path) === id) || null; if (was) await removeEverywhere(was.id); } catch { /* not loaded */ }
     fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
     new AdmZip(buf.subarray(zipStart(buf))).extractAllTo(dir, true);
     const mf = path.join(dir, 'manifest.json');
     const manifest = JSON.parse(fs.readFileSync(mf, 'utf8').replace(/^﻿/, ''));
     const key = crxKey(buf, id);
     if (key && !manifest.key) { manifest.key = key; fs.writeFileSync(mf, JSON.stringify(manifest, null, 2)); }
-    const ext = await C.ses.extensions.loadExtension(dir, { allowFileAccess: true });
+    const ext = await loadEverywhere(dir);
     const s = C.settings(); s.extensions = [...new Set([...(s.extensions || []), dir])]; C.saveSettings(); C.push();
     const h = await health(ext);
     try { if (hooks.installed) hooks.installed(ext.id, was ? 'update' : 'install', was && was.version); } catch { /* no bridge */ }
@@ -110,7 +121,7 @@ async function upgradeLegacy() {
 
 async function remove(id) {
   const hit = list().find((e) => e.id === id || path.basename(e.path) === id);
-  if (hit) { try { await C.ses.extensions.removeExtension(hit.id); } catch { /* already gone */ } }
+  if (hit) await removeEverywhere(hit.id);
   const s = C.settings();
   s.extensions = (s.extensions || []).filter((p) => !(hit && p === hit.path) && !p.includes(id) && !p.endsWith(id));
   if (hit) { try { fs.rmSync(hit.path, { recursive: true, force: true }); } catch { /* in use */ } }

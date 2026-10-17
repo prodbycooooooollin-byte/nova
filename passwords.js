@@ -9,15 +9,16 @@
 //  - A login is filled only after the user clicked it in Nova's own card, which a page cannot see, move or click. Only visible fields are filled.
 //  - Private tabs never save. Secrets are never logged and never sent to the card; a submitted password is sealed at once, so no plaintext
 //    is kept while the offer waits for the next page.
-const { app, ipcMain, safeStorage, WebContentsView, dialog, clipboard } = require('electron');
+const { app, ipcMain, safeStorage, WebContentsView, BrowserWindow, dialog, clipboard } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { createStore, originOf, labelOf, LIMITS } = require('./pwstore');
 const csv = require('./pwcsv');
+const profiles = require('./profiles');
 
-let C; // context from main.js: sessions, privateSession, settings, tabs, activeTab, overlayOpen, win, ui, userFile, toast, openOverlay
-let store = null; // opened on first use, dropped again when the feature is off and nothing needs it
+let C; // context from main.js: sessions, isPrivate, profileOf, profile, profileName, settings, tabs, activeTab, overlayOpen, win, ui, userFile, toast, openOverlay
+const stores = new Map(); // profile id -> its store, opened on first use, dropped again when the feature is off and nothing needs it
 const preloadIds = new Map(); // session -> id of the registered frame preload
 const pending = new Map(); // webContents id -> a login that was just submitted and waits for the page that follows: { origin, user, blob, id, update, timer }
 let card = null; // { view, ready, cur, idle }: the card view, kept for a little while after use; cur is what it shows right now
@@ -31,18 +32,38 @@ const L = (m) => { try { if (C.log) C.log('pw: ' + m); } catch { /* the log is a
 const featureOn = () => !!(C.settings().features || {}).passwords;
 const cfg = () => ({ save: true, fill: true, ...(C.settings().passwords || {}) });
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
-function getStore() {
-  if (!store) store = createStore({ safeStorage, fs, file: C.userFile('passwords.json') });
-  return store;
+// Passwords belong to a profile (passwords.json for the first one, passwords-<id>.json for the others): a login saved while working is not offered in the
+// private profile. The profile of a page is the one of its session, which the browser knows; a page cannot name another.
+const curPid = () => (C.profile ? C.profile() : profiles.MAIN);
+const pidOf = (wc) => (C.profileOf ? C.profileOf(wc) : profiles.MAIN);
+function getStore(pid) {
+  pid = pid || curPid();
+  let s = stores.get(pid);
+  if (!s) { s = createStore({ safeStorage, fs, file: C.userFile(profiles.fileOf('passwords.json', pid)) }); stores.set(pid, s); }
+  return s;
+}
+function dropProfile(pid) { // the profile was deleted: its passwords go with it
+  const s = stores.get(pid); if (s) { s.unload(); stores.delete(pid); }
+  try { fs.rmSync(C.userFile(profiles.fileOf('passwords.json', pid)), { force: true }); } catch { /* already gone */ }
 }
 // With the feature off the store is only needed while the Settings page is open: let go of it a minute after the last use.
 function touch() {
   clearTimeout(unloadTimer);
-  if (!featureOn()) unloadTimer = setTimeout(() => { if (!featureOn() && store) { store.unload(); store = null; } }, 60000);
+  if (!featureOn()) unloadTimer = setTimeout(() => { if (!featureOn()) { for (const s of stores.values()) s.unload(); stores.clear(); } }, 60000);
 }
 const isTabSession = (wc) => C.sessions().includes(wc.session);
-const isPrivate = (wc) => wc.session === C.privateSession();
-const tabOf = (wc) => { for (const t of C.tabs.values()) if (t.view && t.view.webContents === wc) return t; return null; };
+const isPrivate = (wc) => (C.isPrivate ? C.isPrivate(wc) : wc.session === C.privateSession());
+// A page is either a tab or a sign-in pop-up (window.open from a tab, which sites like TikTok use for "continue with Google"). A pop-up gets a stand-in that
+// looks like a tab to the code below: its page fills the pop-up window and the card is shown in that window.
+function tabOf(wc) {
+  for (const t of C.tabs.values()) if (t.view && t.view.webContents === wc) return t;
+  try {
+    const bw = BrowserWindow.fromWebContents(wc);
+    if (bw && !bw.isDestroyed() && bw.webContents === wc && isTabSession(wc)) return { popup: bw, view: { webContents: wc, getBounds: () => { const [w, h] = bw.getContentSize(); return { x: 0, y: 0, width: w, height: h }; } } };
+  } catch { /* not a window */ }
+  return null;
+}
+const shownTab = (tab) => !!tab && (tab.popup ? !tab.popup.isDestroyed() : tab === C.activeTab() && !C.overlayOpen()); // the page the person is looking at
 // The top frame of a page tab and its origin, as the browser knows them. A page cannot influence either.
 function topOf(e) {
   const f = e.senderFrame;
@@ -84,7 +105,8 @@ function place() {
   }
   card.view.setBounds({ x, y, width: w, height: cur.h });
   try { card.view.setBorderRadius(Math.max(0, Math.min(+C.settings().radius || 0, 18))); } catch { /* older shell */ }
-  C.win().contentView.addChildView(card.view); // adding again moves it to the top, above any page view added since
+  card.host = cur.tab.popup || C.win();
+  card.host.contentView.addChildView(card.view); // adding again moves it to the top, above any page view added since
 }
 function present(cur) {
   hide();
@@ -118,7 +140,7 @@ function hide() {
   clearTimeout(cur.timer);
   try { if (cur.kb) cur.wc.removeListener('before-input-event', cur.kb); if (cur.nav) cur.wc.removeListener('did-navigate', cur.nav); } catch { /* page gone */ }
   try { if (card.view.webContents.isFocused() && !cur.wc.isDestroyed()) cur.wc.focus(); } catch { /* ignore */ } // the click on the card took the keyboard: give it back
-  try { C.win().contentView.removeChildView(card.view); } catch { /* not attached */ }
+  try { (card.host || C.win()).contentView.removeChildView(card.view); } catch { /* not attached */ }
   clearTimeout(card.idle);
   card.idle = setTimeout(destroyCard, 30000); // a second login within half a minute finds the card ready; after that it is gone and costs nothing
 }
@@ -131,7 +153,7 @@ function destroyCard() {
 function relayout() {
   if (!card || !card.cur) return;
   const cur = card.cur, v = cur.tab && cur.tab.view;
-  if (!v || v.webContents.isDestroyed() || C.activeTab() !== cur.tab || C.overlayOpen()) return hide();
+  if (!v || v.webContents.isDestroyed() || !shownTab(cur.tab)) return hide();
   place();
 }
 
@@ -140,19 +162,19 @@ function showSave(tab, p) {
   present({ mode: p.update ? 'update' : 'save', tab, wc: tab.view.webContents, offer: p, h: secure ? H_SAVE : H_SAVE_PLAIN, model: { mode: p.update ? 'update' : 'save', site: labelOf(p.origin), secure, user: p.user } });
 }
 function showPick(tab, t, list, rect, userOnly) {
-  present({ mode: 'pick', userOnly: !!userOnly, tab, wc: tab.view.webContents, frame: t.frame, origin: t.origin, entries: list, sel: -1, rect, h: H_PICK + ROW * list.length, model: { mode: 'pick', entries: list.map((e) => ({ user: e.user })) } });
+  present({ mode: 'pick', userOnly: !!userOnly, pid: pidOf(tab.view.webContents), tab, wc: tab.view.webContents, frame: t.frame, origin: t.origin, entries: list, sel: -1, rect, h: H_PICK + ROW * list.length, model: { mode: 'pick', entries: list.map((e) => ({ user: e.user })) } });
 }
 
 function doSave() {
   const cur = card && card.cur, o = cur && cur.offer; if (!o) return;
   hide();
-  try { const r = getStore().put(o.origin, o.user, o.blob, o.id); C.toast(r.status === 'updated' ? `Password updated for ${labelOf(o.origin)}.` : `Password saved for ${labelOf(o.origin)}. Manage it under Settings › Passwords.`); }
+  try { const r = getStore(o.pid).put(o.origin, o.user, o.blob, o.id); C.toast(r.status === 'updated' ? `Password updated for ${labelOf(o.origin)}.` : `Password saved for ${labelOf(o.origin)}. Manage it under Settings › Passwords.`); }
   catch (err) { C.toast(err.user ? err.message : 'Nova could not save the password.'); console.error('passwords save', err.message); }
 }
 function doNever() {
   const cur = card && card.cur, o = cur && cur.offer; if (!o) return;
   hide();
-  try { getStore().addNever(o.origin); C.toast(`Nova will not offer to save passwords for ${labelOf(o.origin)}. Undo it under Settings › Passwords.`); } catch (err) { console.error('passwords never', err.message); }
+  try { getStore(o.pid).addNever(o.origin); C.toast(`Nova will not offer to save passwords for ${labelOf(o.origin)}. Undo it under Settings › Passwords.`); } catch (err) { console.error('passwords never', err.message); }
 }
 // The user clicked a login in the list: re-check that the page is still the same origin, then (and only then) the password leaves the store.
 function pick(i) {
@@ -161,7 +183,7 @@ function pick(i) {
   hide();
   try {
     if (originOf(cur.frame.url) !== cur.origin) return; // the page moved on
-    const s = getStore();
+    const s = getStore(cur.pid);
     if (s.originOfId(entry.id) !== cur.origin) return;
     if (cur.userOnly) { cur.frame.send('nova:pw-fill', { user: entry.user, userOnly: true }); carried.set(cur.wc.id, { origin: cur.origin, user: entry.user, t: Date.now() }); return; } // the user name step: the password is not touched
     cur.frame.send('nova:pw-fill', { user: entry.user, pass: s.reveal(entry.id) });
@@ -176,7 +198,7 @@ function install() {
     try {
       const t = featureOn() && topOf(e);
       if (t) {
-        const s = getStore(), c = cfg(), ok = s.available();
+        const s = getStore(pidOf(e.sender)), c = cfg(), ok = s.available();
         const cy = carryFor(e.sender.id, t.origin);
         r = { on: true, save: ok && c.save && !isPrivate(e.sender) && !s.isNever(t.origin), fill: ok && c.fill && s.countFor(t.origin) > 0, pending: pending.has(e.sender.id), carried: ok && c.save && cy ? cy.user : '' };
       }
@@ -189,7 +211,7 @@ function install() {
       const t = featureOn() && cfg().save && !isPrivate(e.sender) && topOf(e);
       if (!t || !d || typeof d.user !== 'string') return;
       const user = d.user.trim(); if (!user || user.length > LIMITS.user) return;
-      const s = getStore(); if (!s.available() || s.isNever(t.origin)) return;
+      const s = getStore(pidOf(e.sender)); if (!s.available() || s.isNever(t.origin)) return;
       carried.set(e.sender.id, { origin: t.origin, user, t: Date.now() });
     } catch (err) { console.error('passwords user', err.message); }
   });
@@ -199,14 +221,17 @@ function install() {
     try {
       const t = featureOn() && cfg().save && !isPrivate(e.sender) && topOf(e);
       if (t && d && typeof d.user === 'string' && typeof d.pass === 'string') {
-        const s = getStore(), user = d.user.trim();
+        const s = getStore(pidOf(e.sender)), user = d.user.trim();
         if (s.available() && !s.isNever(t.origin) && user && user.length <= LIMITS.user && d.pass && d.pass.length <= LIMITS.password) {
           const st = s.check(t.origin, user, d.pass);
           drop(e.sender.id);
           if (st.state !== 'same') {
-            const id = e.sender.id, p = { origin: t.origin, user, blob: s.seal(d.pass), id: st.id, update: st.state === 'update' };
+            const id = e.sender.id, p = { origin: t.origin, user, blob: s.seal(d.pass), id: st.id, update: st.state === 'update', pid: pidOf(e.sender) };
             p.timer = setTimeout(() => pending.delete(id), 120000);
             pending.set(id, p); ok = true; carried.delete(id);
+            if (e.sender.getType && !tabOf(e.sender)?.view?.webContents?.isDestroyed?.() && BrowserWindow.fromWebContents(e.sender) && ![...C.tabs.values()].some((x) => x.view && x.view.webContents === e.sender)) {
+              e.sender.once('destroyed', () => { const q = pending.get(id); if (!q) return; drop(id); const t2 = C.activeTab(); if (t2 && t2.view && !t2.view.webContents.isDestroyed() && !C.overlayOpen()) showSave(t2, q); L('sign-in window closed: offering to save in the tab behind it'); });
+            }
           }
         }
       }
@@ -223,7 +248,7 @@ function install() {
       if (!d || d.hasForm) { if (!e.sender.isLoading()) drop(id); return; } // still loading: the page that follows will answer
       drop(id);
       const tab = tabOf(e.sender);
-      if (tab && tab === C.activeTab() && !C.overlayOpen()) showSave(tab, p);
+      if (shownTab(tab)) showSave(tab, p);
     } catch (err) { console.error('passwords landed', err.message); }
   });
   // the user clicked into a login field: list the logins saved for exactly this origin
@@ -232,8 +257,8 @@ function install() {
       const t = featureOn() && cfg().fill && rc && topOf(e);
       if (!t) return;
       const tab = tabOf(e.sender);
-      if (!tab || tab !== C.activeTab() || C.overlayOpen()) return;
-      let list = getStore().matches(t.origin);
+      if (!shownTab(tab)) return;
+      let list = getStore(pidOf(e.sender)).matches(t.origin);
       const cy = !rc.userOnly && carryFor(e.sender.id, t.origin);
       if (cy) { const only = list.filter((x) => x.user.toLowerCase() === cy.user.toLowerCase()); if (only.length) list = only; } // the password step lists the user name that was just given
       list = list.slice(0, 5);
@@ -290,10 +315,10 @@ async function cmd(e, a) {
   const ui = C.ui();
   if (!e || !ui || e.sender !== ui.webContents) return { error: 'denied' };
   touch();
-  const s = getStore();
+  const pid = curPid(), s = getStore(pid); // the settings page shows the passwords of the profile the window shows
   try {
     switch (a.op) {
-      case 'status': return { available: s.available(), problem: s.error(), count: s.count() };
+      case 'status': return { available: s.available(), problem: s.error(), count: s.count(), profile: C.profileName ? C.profileName(pid) : '', several: (((C.settings() || {}).profiles) || []).length > 1 };
       case 'list': return { items: s.list(), never: s.neverList() };
       case 'reveal': return { password: s.reveal(String(a.id)) };
       case 'copy': return copy(s, a);
@@ -318,4 +343,4 @@ function sync() {
 }
 
 function init(ctx) { C = ctx; install(); sync(); }
-module.exports = { init, sync, relayout, cmd };
+module.exports = { init, sync, relayout, cmd, dropProfile };

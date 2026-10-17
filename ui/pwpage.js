@@ -54,7 +54,7 @@ function pwPageBind(body, h) {
       const host = pwLabel(x.origin), plain = x.origin.startsWith('http:');
       return `<div class="lrow pwrow" data-id="${esc(x.id)}"><span class="pwfav" style="background:hsl(${hue(host)} 42% 40%)">${esc((host.replace(/^http:\/\//, '')[0] || '?').toUpperCase())}</span><div class="lt"><b title="${esc(x.origin)}">${esc(host.replace(/^http:\/\//, ''))}${plain ? ' <i class="pwplain" title="Not encrypted in transit">http</i>' : ''}</b><span>${x.user ? esc(x.user) : 'No user name'}${x.t ? ' · ' + esc(when(x.t)) : ''}</span></div><span class="pwpass" data-pass>••••••••</span><button class="ibtn sm" data-pw="show" title="Show password">${ic('eye')}</button><button class="ibtn sm" data-pw="copy" title="Copy password (it leaves the clipboard after 30 seconds)">${ic('copy')}</button><button class="ibtn sm" data-pw="del" title="Delete">${ic('trash')}</button></div>`;
     }).join('');
-    q('#pwrows').innerHTML = out;
+    q('#pwrows').innerHTML = (status.several && status.profile ? `<div class="pfnote">These are the passwords of the profile <b>${esc(status.profile)}</b>. Every profile keeps its own.</div>` : '') + out;
     const nv = q('#pwnever');
     nv.innerHTML = never.length ? h.sect('Never saved', 'Sites you chose “Never” for.') + `<div class="group">${never.map((o) => h.row(esc(pwLabel(o)), `<button class="btn" data-unnever="${esc(o)}">Ask again</button>`, '', 'lock')).join('')}</div>` : '';
     nv.querySelectorAll('[data-unnever]').forEach((b) => (b.onclick = async () => { await cmd('unnever', { origin: b.dataset.unnever }); load(); }));

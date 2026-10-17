@@ -4,6 +4,7 @@
 nova.onState((s) => { if (S) for (const k of ['bar', 'settings', 'extensions', 'archive']) if (s[k] === null) s[k] = S[k]; S = s; render(); if (overlay?.kind === 'overview' && overview.redraw) overview.redraw(); if ((overlay?.kind === 'library' || overlay?.kind === 'downloads') && window.updateDownloadsLive) window.updateDownloadsLive(); if (overlay?.kind === 'settings') { updateBudgetLive(); updateUpdateLive(); } });
 nova.onOverlay((o) => { if (!o) return clearOverlay(); if (S) setOverlay(o.kind, o.data); });
 nova.onToast(toast);
+if (nova.onDlFly) nova.onDlFly((d) => dlFly(d));
 nova.state().then((s) => { S = s; render(); });
 
 // ---------- window dragging (frameless window: done by hand so it works across monitors) ----------

@@ -164,3 +164,16 @@ function dlTrayDraw() {
     });
   }
 }
+
+// A download started: a small chip rises from where the person clicked (held inside the bar) to the folder button, which catches it.
+function dlFly(d) {
+  const btn = document.querySelector('.dlbtn'); if (!btn || !S || !S.settings.effects || document.hidden) return;
+  const r = btn.getBoundingClientRect(), tx = r.left + r.width / 2, ty = r.top + r.height / 2, chrome = document.getElementById('chrome');
+  const y0 = S.settings.layout === 'top' && chrome ? chrome.getBoundingClientRect().bottom - 6 : Math.min(innerHeight - 20, ty + 90);
+  const x0 = Math.max(24, Math.min(innerWidth - 24, (d && d.x) || tx));
+  const wrap = document.createElement('div'); wrap.className = 'dlfly'; wrap.innerHTML = `<div class="dlchip">${ic('t-folder')}</div>`; document.body.appendChild(wrap);
+  const chip = wrap.firstChild, T = 780;
+  wrap.animate([{ transform: `translateX(${x0}px)` }, { transform: `translateX(${tx}px)` }], { duration: T, easing: 'cubic-bezier(.5,0,.35,1)', fill: 'forwards' });
+  const a = chip.animate([{ transform: `translateY(${y0}px) scale(.55)`, opacity: 0 }, { transform: `translateY(${y0 - 26}px) scale(1)`, opacity: 1, offset: 0.2 }, { transform: `translateY(${ty + 3}px) scale(.9)`, opacity: 1, offset: 0.86 }, { transform: `translateY(${ty}px) scale(.35)`, opacity: 0 }], { duration: T, easing: 'cubic-bezier(.3,.6,.3,1)', fill: 'forwards' });
+  a.onfinish = () => { wrap.remove(); const b = document.querySelector('.dlbtn'); if (b) { b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); setTimeout(() => b.classList.remove('pop'), 650); } };
+}
