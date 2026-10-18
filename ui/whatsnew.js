@@ -10,14 +10,16 @@ function whatsNew(o, d) {
   const odo = [...ver].map((c) => (/\d/.test(c) ? `<span class="odo"><i data-d="${c}">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<b>${n}</b>`).join('')}</i></span>` : `<span class="odc">${esc(c)}</span>`)).join('');
   o.innerHTML = `<div class="wn"><canvas id="wnsky"></canvas><div class="wnc">
     <div class="wnleft"><div class="wnmk"><span class="wnring"></span><img src="logo.svg" alt=""></div><div class="wnver" id="wnver" aria-label="${esc(ver)}">${odo}</div><div class="wnsub">Nova is up to date${when ? ' · ' + esc(when) : ''}</div></div>
-    <div class="wnright">
+    <div class="wnright"><div class="wnbody">
       ${head ? `<div class="wnhero"><span class="wnico">${ic('zap')}</span><h2>${esc(head.title)}</h2>${head.text ? `<p>${esc(head.text)}</p>` : ''}</div>` : ''}
       ${more.length ? `<div class="wnmore"><h3>Also new</h3><ul>${more.map((n, i) => `<li style="--i:${i}">${ic('check')}<span>${esc(n)}</span></li>`).join('')}</ul></div>` : ''}
       ${!head && !more.length ? '<p class="wnnone">This version brings small fixes and improvements.</p>' : ''}
+      </div>
       <button class="btn primary big" id="wnok"><span>Continue</span><span class="arr">${ic('fwd')}</span></button>
     </div></div></div>`;
   if (S.settings.effects) NovaSky($('#wnsky'), { fps: 30, burst: false }); // only the quiet field of stars
   requestAnimationFrame(() => requestAnimationFrame(() => $('#wnver').querySelectorAll('.odo i').forEach((el, k) => { el.style.transitionDelay = (k * 110 + 450) + 'ms'; el.style.transform = `translateY(-${el.dataset.d}em)`; })));
   $('#wnok').onclick = () => nova.cmd('closeOverlay');
+  $('#wnok').scrollIntoView({ block: 'nearest' }); // a long list never pushes the button out of the window: the list scrolls by itself above it
   $('#wnok').focus({ preventScroll: true });
 }

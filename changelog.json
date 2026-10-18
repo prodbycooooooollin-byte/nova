@@ -1,5 +1,16 @@
 [
   {
+    "version": "26.10.25",
+    "date": "2026-10-18",
+    "headline": {
+      "title": "Patch notes that always fit",
+      "text": "after a big update the Continue button stays in view however long the list of new things is."
+    },
+    "notes": [
+      "Update screen: the list of new things scrolls on its own, and the Continue button stays at the bottom of the window in every window size."
+    ]
+  },
+  {
     "version": "26.10.24",
     "date": "2026-10-18",
     "headline": {

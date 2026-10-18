@@ -831,3 +831,9 @@ details.more { margin:14px 0 0; } details.more summary { padding:8px 2px; color:
 .src img, .src .nothumb { width:100%; aspect-ratio:16/10; object-fit:cover; border-radius:8px; background:#0b0b10; display:block; }
 .src span { font-size:12px; font-weight:540; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .saud { display:flex; align-items:center; gap:8px; font-size:12.5px; margin-top:4px; }
+
+/* the patch notes of a big update: the list scrolls inside its own area and the Continue button always stays in the window */
+.wnright { max-height:calc(100vh - 60px); min-height:0; }
+.wnbody { display:flex; flex-direction:column; gap:22px; min-height:0; flex:1 1 auto; overflow-y:auto; overflow-x:hidden; padding:4px 10px 4px 0; margin-right:-10px; scrollbar-width:thin; scrollbar-color:color-mix(in srgb,var(--text) 22%,transparent) transparent; }
+#wnok { flex:none; animation-delay:1.3s; }
+@media (max-width:800px) { .wnright { max-height:none; } .wnbody { overflow:visible; padding:0; margin:0; } #wnok { position:sticky; bottom:14px; z-index:3; box-shadow:0 0 0 10px #07070d, 0 -18px 22px 10px #07070d; } .wnc { overflow-x:hidden; } }
