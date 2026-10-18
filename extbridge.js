@@ -41,7 +41,7 @@ const matchesAny = (list, url) => (list || []).some((p) => { const r = pattern(p
 
 // ---------- tabs as extensions see them ----------
 const synth = (t) => 100000 + t.id; // a tab without a page (asleep) still has an ID
-const wcOf = (t) => (t && t.view && !t.view.webContents.isDestroyed() ? t.view.webContents : null);
+const wcOf = (t) => { const w = t && t.view && t.view.webContents; return w && !w.isDestroyed() ? w : null; }; // a view whose page is gone has no webContents any more (this threw in the log of 18 October)
 const extTabId = (t) => { const wc = wcOf(t); return wc ? wc.id : synth(t); };
 const byExtId = (id, pid) => { id = +id; for (const t of C.tabs.values()) if (extTabId(t) === id && (pid == null || t.pid === pid)) return t; return null; };
 const tabOfWc = (wc) => { if (!wc) return null; for (const t of C.tabs.values()) { const w = wcOf(t); if (w && w.id === wc.id) return t; } return null; };

@@ -189,6 +189,10 @@ function dlButton(top) {
 // After a click on "+" or on a tab's x the tabs keep their place while the pointer stays on the tab row (like Chrome does): a new tab shares the room the row
 // had, so the plus stays under the pointer; a closed tab leaves its width behind, so the next x lands under the pointer. Leaving the row lets the tabs relax.
 const strip = { on: false, mode: '', avail: 0, w: 0, t: 0 };
+const closeClock = new Map(); // tab id -> when its x was clicked: the log gets a note when a closed tab takes long to leave the row
+let hintT = 0, hintId = 0; // the pointer rests on an x: Nova loads the page that opens next in the background
+document.addEventListener('mouseover', (e) => { const c = e.target.closest && e.target.closest('[data-close]'); if (!c) return; const id = +c.dataset.close; if (id === hintId) return; clearTimeout(hintT); hintT = setTimeout(() => { hintId = id; nova.cmd('closeHint', { id }); }, 220); }, { passive: true });
+document.addEventListener('mouseout', (e) => { const c = e.target.closest && e.target.closest('[data-close]'); if (!c) return; clearTimeout(hintT); if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest('[data-close]')) hintId = 0; }, { passive: true });
 function freezeStrip(mode, tab) {
   const row = document.getElementById('tabs'), nr = row && row.querySelector('.newrow'); if (!nr || !S || S.settings.layout !== 'top') return;
   if (mode === 'add') { if (!strip.on || strip.mode !== 'add') strip.avail = nr.getBoundingClientRect().left - row.getBoundingClientRect().left - (parseFloat(getComputedStyle(row).paddingLeft) || 0) - 6; }
@@ -205,6 +209,7 @@ function tabAnim(e, name, fn, ms) {
   setTimeout(end, ms);
 }
 function leaveTab(e) {
+  { const cid = +e.dataset.tab, at = closeClock.get(cid); if (at !== undefined) { closeClock.delete(cid); const ms = performance.now() - at; if (ms > 700) nova.cmd('uiNote', { m: `a closed tab left the row ${Math.round(ms)} ms after the click` }); } }
   if (!S.settings.effects) { e.remove(); return; }
   e.classList.add('leaving'); e.classList.remove('active', 'enter');
   tabAnim(e, 'tabOut', () => { if (e.parentNode) e.remove(); }, 450);
@@ -308,7 +313,7 @@ document.addEventListener('click', (e) => {
   const bm = e.target.closest('[data-bm]'); if (bm) return nova.cmd('open', { text: bm.dataset.bm, newTab: e.ctrlKey || e.metaKey });
   const xp = e.target.closest('[data-extpop]'); if (xp) return nova.cmd('extPopup', { id: xp.dataset.extpop });
   const mu = e.target.closest('[data-mute]'); if (mu) return nova.cmd('mute', { id: +mu.dataset.mute });
-  const c = e.target.closest('[data-close]'); if (c) { const tb = c.closest('#tabs .tab'); if (tb) freezeStrip('close', tb); return nova.cmd('close', { id: +c.dataset.close }); }
+  const c = e.target.closest('[data-close]'); if (c) { const tb = c.closest('#tabs .tab'); if (tb) freezeStrip('close', tb); closeClock.set(+c.dataset.close, performance.now()); return nova.cmd('close', { id: +c.dataset.close }); }
   const gh = e.target.closest('[data-group]'); if (gh) { const g = (S.groups || []).find((x) => x.id === gh.dataset.group); return g && nova.cmd('groupSet', { id: g.id, collapsed: !g.collapsed }); }
   const t = e.target.closest('[data-tab]'); if (t && !overlay) return nova.cmd('activate', { id: +t.dataset.tab });
   const sp = e.target.closest('[data-space]'); if (sp) return nova.cmd('switchSpace', { id: +sp.dataset.space });

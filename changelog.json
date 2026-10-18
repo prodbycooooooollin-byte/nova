@@ -1,5 +1,19 @@
 [
   {
+    "version": "26.10.24",
+    "date": "2026-10-18",
+    "headline": {
+      "title": "Faster closing of tabs",
+      "text": "a closed tab is silent at once, the page that opens next is loaded while the pointer rests on the x, and slow closes are written to the log."
+    },
+    "notes": [
+      "Closing a tab: the page is muted and stopped the moment you close it, so a stream no longer plays on for a few seconds. Closing waits at most 2.5 seconds instead of 5 for work that is still on its way.",
+      "Next tab ready: when the pointer rests on the x of the open tab, the page that opens after the close is loaded in the background.",
+      "Log: a close that hangs, and a closed tab that takes long to leave the row, are written to nova.log in the Nova folder with the reason, so it can be traced.",
+      "Fix: the helper for extensions no longer throws an error for a tab whose page is already gone."
+    ]
+  },
+  {
     "version": "26.10.23",
     "date": "2026-10-17",
     "headline": {

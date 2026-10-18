@@ -120,7 +120,7 @@ const writeJson = (f, v) => { try { fs.writeFileSync(userFile(f), JSON.stringify
 try { crashReporter.start({ uploadToServer: false, compress: true, productName: 'Nova', companyName: 'Nova' }); } catch { /* not available */ }
 const dlog = (m) => { try { fs.appendFileSync(userFile('nova.log'), `${new Date().toISOString()} ${m}\n`); } catch { /* disk full or locked */ } };
 // A short trail of what Nova was doing (pages opened, processes that ended) is kept in a small file and removed when Nova closes properly; after a crash the next start copies it into the log.
-const trailBuf = []; let trailTimer = null;
+const trailBuf = []; let trailTimer = null, uiNoteAt = 0;
 const trail = (m) => {
   trailBuf.push(new Date().toISOString().slice(11, 19) + ' ' + m); if (trailBuf.length > 30) trailBuf.shift();
   if (!trailTimer) trailTimer = setTimeout(() => { trailTimer = null; try { fs.writeFileSync(userFile('trail.txt'), trailBuf.join('\n')); } catch { /* the trail is a help only */ } }, 3000);
@@ -585,16 +585,18 @@ function dominantColor(img) { // the page's own background: the most common colo
 // browser down (crash dumps of 16 October: the promise of capturePage, DevToolsAgentHostImpl, both in CrBrowserMain). Such work is counted per page here, and
 // closePage() closes the page only when the count is zero.
 const nativeOps = new WeakMap();
-function nat(wc, p) {
-  nativeOps.set(wc, (nativeOps.get(wc) || 0) + 1);
+const nativeWhat = new WeakMap(); // what the pending work is, for the log
+function nat(wc, p, what) {
+  nativeOps.set(wc, (nativeOps.get(wc) || 0) + 1); if (what) nativeWhat.set(wc, what);
   return Promise.resolve(p).finally(() => nativeOps.set(wc, Math.max(0, (nativeOps.get(wc) || 1) - 1)));
 }
 function closePage(wc) {
   const t0 = Date.now();
+  try { wc.setAudioMuted(true); wc.stop(); } catch { /* gone */ } // the page is closed for the person from this moment: no sound and no loading while closing waits for work that is still on its way (it used to play on for up to 5 seconds)
   const go = () => { try { if (wc.isDestroyed()) return; try { if (wc.debugger.isAttached()) wc.debugger.detach(); } catch { /* closing */ } wc.close(); } catch { /* gone */ } };
   const wait = () => {
     if (!(nativeOps.get(wc) > 0)) return go();
-    if (Date.now() - t0 > 5000) { dlog('page closed with native work still pending'); return go(); }
+    if (Date.now() - t0 > 2500) { dlog('page closed with native work still pending (' + (nativeWhat.get(wc) || 'unknown') + ')'); return go(); }
     setTimeout(wait, 40);
   };
   wait();
@@ -606,7 +608,7 @@ async function capture(t, soft) { // soft: after a page finished loading. A page
   if (!t.view || !t.attached || t.view.webContents.isDestroyed()) return;
   const W = wins.get(t.wid); if (!W || W.closed || W.win.isDestroyed() || W.win.isMinimized() || !W.win.isVisible()) return;
   try {
-    const img = await nat(t.view.webContents, t.view.webContents.capturePage());
+    const img = await nat(t.view.webContents, t.view.webContents.capturePage(), 'a picture of the page');
     if (img.isEmpty()) { if (ghost) t.ghost = ''; return; } // no picture is better than one of a different scroll position
     t.capAt = Date.now();
     if (thumbs) t.thumb = 'data:image/jpeg;base64,' + img.resize({ width: 360 }).toJPEG(55).toString('base64');
@@ -1345,7 +1347,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   features.init({
     app, get ses() { return curSes(); }, sessions: () => persistentSessions(), profile: () => curProfile(), tabs, userFile, readJson, writeJson, userAgent: UA,
     state: () => state, settings: () => settings, saveSettings, win: () => win, ui: () => ui,
-    toast: (m) => toast(m), push: () => push(), native: (wc, p) => nat(wc, p), dlStart: () => dlFlyStart(), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(), overlayBusy: () => overlayOpen,
+    toast: (m) => toast(m), push: () => push(), native: (wc, p) => nat(wc, p, 'a screenshot'), dlStart: () => dlFlyStart(), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(), overlayBusy: () => overlayOpen,
     newPrivateTab: () => { const t = newTabObj({ private: true }); activate(t.id); return t; },
     unsafeUrl: (u, pid) => unsafeFor(pid, u), openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
     addBackgroundTab: (o) => { const t = newTabObj({ url: o.url, title: o.title, favicon: o.favicon, spaceId: state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace, pinned: o.pinned }); push(); return t; },
@@ -1372,7 +1374,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
 
   initAdblock(sessions);
   budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => allVisibleIds(), toast: (m) => toast(m), push: () => push(), watching: () => anyOverlay() });
-  sleeper.init({ tabs, settings: () => settings, visibleIds: () => allVisibleIds(), native: (wc, p) => nat(wc, p), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
+  sleeper.init({ tabs, settings: () => settings, visibleIds: () => allVisibleIds(), native: (wc, p) => nat(wc, p, 'freezing or waking'), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
   app.on('before-quit', () => { detachDebuggers(); persist(true); quitting = true; sleeper.flush(); perms.flush(); features.shutdown(); });
   updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. Restart to finish the update.`); push(); } else if (e.type === 'status') push(); });
   ui.webContents.once('did-finish-load', () => setTimeout(() => { try { global.__novaBoot && global.__novaBoot.good(); } catch {} }, 8000)); // started fine: the update bundle is trusted from now on
@@ -1397,7 +1399,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   });
   const startUrl = process.argv.slice(1).find((a) => /^https?:\/\//i.test(a));
   if (startUrl) ui.webContents.once('did-finish-load', () => setTimeout(() => openUrl(startUrl, { forceNew: true }), 300));
-  extbridge.init({ native: (wc, p) => nat(wc, p), get ses() { return curSes(); }, sessions: () => sessions, extSessions: () => persistentSessions(), profileOf: (s) => (sesInfo.get(s) || {}).pid || settings.profiles[0].id, tabs, state: () => state, settings: () => settings, win: () => win, openUrl: (u, o) => openUrl(u, o), activate: (id) => activate(id), wake: (t) => wake(t), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), push: () => push(), toast: (m) => toast(m), normalize: (u) => normalizeInput(u), activeTab: () => activeTab(), userDir: () => app.getPath('userData') });
+  extbridge.init({ native: (wc, p) => nat(wc, p, 'a picture for an extension'), get ses() { return curSes(); }, sessions: () => sessions, extSessions: () => persistentSessions(), profileOf: (s) => (sesInfo.get(s) || {}).pid || settings.profiles[0].id, tabs, state: () => state, settings: () => settings, win: () => win, openUrl: (u, o) => openUrl(u, o), activate: (id) => activate(id), wake: (t) => wake(t), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), push: () => push(), toast: (m) => toast(m), normalize: (u) => normalizeInput(u), activeTab: () => activeTab(), userDir: () => app.getPath('userData') });
   sesReady.delete(sessionFor(curProfile(), false)); // the profile the first window opens in gets its session now, its extensions load while the interface starts and its first page does not wait for them (as always); the others get theirs when first opened and their first page waits (see wake)
   setInterval(idlePolicy, 30000);
   layout();
@@ -1427,7 +1429,17 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         else { const c = activeTab(); if (c.view) c.view.webContents.loadURL(url).catch(() => {}); else { c.url = url; wake(c); } c.url = url; }
         push();
       } break;
-      case 'close': closeTab(a.id); break;
+      case 'close': { // timed: if closing ever feels slow again, the log says whether the main thread or the interface held it up
+        const c0 = Date.now(); closeTab(a.id); const took = Date.now() - c0;
+        if (took > 300) dlog(`closing a tab took ${took} ms on the main thread`);
+        setTimeout(() => { const late = Date.now() - c0 - 1000; if (late > 400) dlog(`the main thread was stuck for about ${late} ms after a tab was closed`); }, 1000);
+      } break;
+      case 'closeHint': { // the pointer rests on the x of the open tab: the page that would open after the close is loaded in the background now
+        const x = tabs.get(a.id); if (!x || state.activeTab !== x.id) break;
+        const own = [...tabs.values()].filter((y) => y.wid === curW.id && y.spaceId === x.spaceId), i = own.indexOf(x), rest = own.filter((y) => y !== x), next = rest[Math.min(i, rest.length - 1)];
+        if (next && !next.view) prewake(next.id);
+      } break;
+      case 'uiNote': { const n = Date.now(); if (n - uiNoteAt > 1000) { uiNoteAt = n; dlog('interface: ' + String(a.m || '').slice(0, 200)); } } break;
       case 'adblockRetry': if (!blocker) initAdblock(sessions); else refreshAdblock(); break;
       case 'archive': if (t) archiveTab(t); break;
       case 'pin': if (t) { t.pinned = !t.pinned; push(); } break;
