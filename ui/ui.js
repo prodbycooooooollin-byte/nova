@@ -73,7 +73,7 @@ const ACTIONS = {
   newTab: 'New tab', newWindow: 'New window', go: 'Address and search bar', closeTab: 'Close tab', reopenTab: 'Reopen closed tab', nextTab: 'Next tab', prevTab: 'Previous tab',
   overview: 'Tab overview', reload: 'Reload', back: 'Back', forward: 'Forward', toggleSidebar: 'Toggle sidebar', focusMode: 'Focus mode',
   find: 'Find in page', settings: 'Settings', zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomReset: 'Reset zoom', devtools: 'Developer tools', pinTab: 'Pin or unpin tab',
-  hub: 'Extension hub', history: 'History', downloads: 'Downloads', bookmarks: 'Bookmarks', cleanUp: 'Clean up tabs', screenshot: 'Take screenshot', privateTab: 'New private tab', space1: 'Space 1', space2: 'Space 2', space3: 'Space 3', space4: 'Space 4', space5: 'Space 5',
+  hub: 'Extension hub', history: 'History', downloads: 'Downloads', bookmarks: 'Bookmarks', cleanUp: 'Clean up tabs', screenshot: 'Take screenshot', privateTab: 'New incognito window', space1: 'Space 1', space2: 'Space 2', space3: 'Space 3', space4: 'Space 4', space5: 'Space 5',
   hardReload: 'Reload, ignoring the cache', viewSource: 'View page source', savePage: 'Save page as…', clearData: 'Clear browsing data', findNext: 'Find next', findPrev: 'Find previous', homePage: 'Go to the start page', bookmarksBarToggle: 'Show or hide the bookmarks bar', closeWindow: 'Close window', moveTabLeft: 'Move tab left', moveTabRight: 'Move tab right',
   tab1: 'Go to tab 1', tab2: 'Go to tab 2', tab3: 'Go to tab 3', tab4: 'Go to tab 4', tab5: 'Go to tab 5', tab6: 'Go to tab 6', tab7: 'Go to tab 7', tab8: 'Go to tab 8', tabLast: 'Go to the last tab',
 };
@@ -114,12 +114,12 @@ function arrangeChrome(top) {
   const g = (id) => document.getElementById(id), mk = (id) => g(id) || Object.assign(document.createElement('div'), { id });
   if (top) {
     const rt = mk('rowtabs'), rb = mk('rowbar'), rm = mk('rowbm'), bl = mk('barl'), br = mk('barr'), ub = mk('urlbox');
-    rt.append(g('tabopen'), g('pins'), g('tabs'), g('winctl')); c.append(g('spaces')); // the tab row belongs to the tabs; the spaces are in the profile menu (the list itself is hidden here)
+    rt.append(g('tabopen'), g('pins'), g('tabs'), g('incbadge'), g('winctl')); c.append(g('spaces')); // the tab row belongs to the tabs; the spaces are in the profile menu (the list itself is hidden here)
     bl.append(g('nav'), g('bmstar')); ub.append(g('urlbar')); br.append(g('stats'), g('tools'));
     rb.append(bl, ub, br); rm.append(g('bmbar'));
     c.append(rt, rb, rm);
   } else {
-    const head = g('head'); head.append(g('nav'), g('winctl'));
+    const head = g('head'); head.append(g('nav'), g('incbadge'), g('winctl'));
     c.append(head, g('urlbar'), g('bmstar'), g('tabopen'), g('bmbar'), g('pins'), g('tabhead'), g('tabs'), g('spaces'), g('dltray'), g('stats'), g('tools'));
     for (const id of ['rowtabs', 'rowbar', 'rowbm', 'barl', 'barr', 'urlbox', 'lead']) { const e = g(id); if (e) e.remove(); }
   }
@@ -127,17 +127,17 @@ function arrangeChrome(top) {
 
 // ---------- settings -> DOM ----------
 function applySettings() {
-  const s = S.settings, r = document.documentElement.style;
-  for (const [k, v] of Object.entries(s.theme)) r.setProperty('--' + k, v);
-  { const h = s.theme.accent.replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; const L = (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255; r.setProperty('--on-accent', L > 0.62 ? '#111118' : '#ffffff'); }
-  { const h = (s.theme.bg || '#000000').replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; const L = (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255; r.setProperty('color-scheme', L < 0.5 ? 'dark' : 'light'); } // form controls and scrollbars follow the theme, not Windows
+  const s = S.settings, r = document.documentElement.style, th = S.incognito && S.inc ? { ...s.theme, ...S.inc } : s.theme; // an incognito window has its own palette
+  for (const [k, v] of Object.entries(th)) r.setProperty('--' + k, v);
+  { const h = th.accent.replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; const L = (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255; r.setProperty('--on-accent', L > 0.62 ? '#111118' : '#ffffff'); }
+  { const h = (th.bg || '#000000').replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; const L = (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255; r.setProperty('color-scheme', L < 0.5 ? 'dark' : 'light'); } // form controls and scrollbars follow the theme, not Windows
   r.setProperty('--tab-h', { compact: '32px', comfortable: '38px', spacious: '45px' }[s.density] || '38px');
   r.setProperty('--radius', s.radius + 'px'); r.setProperty('--gap', s.gap + 'px'); r.setProperty('--side', (s.compact ? 56 : s.sidebarWidth) + 'px');
   r.setProperty('--fs', s.fontSize + 'px'); r.setProperty('--font', `${s.font || "'Inter'"}, 'Inter', system-ui, sans-serif`);
   { const ord = blockOrder(s); BLOCKS.forEach((b) => r.setProperty('--o-' + b[0], ord.indexOf(b[0]) + 1)); }
   arrangeChrome(s.layout === 'top');
-  const lightBg = (() => { const h = (s.theme.bg || '#000000').replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; return (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255 >= 0.5; })();
-  $('#app').className = `layout-${s.layout}` + (S.spaces && S.spaces.length < 2 ? ' one-space' : '') + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '') + (s.bookmarksPos === 'above' ? ' bm-above' : '') + (s.topHide || []).map((h) => ' th-' + h).join('') + (lightBg ? ' light' : '');
+  const lightBg = (() => { const h = (th.bg || '#000000').replace('#', ''), v = h.length === 3 ? h.split('').map((x) => x + x).join('') : h; return (0.299 * parseInt(v.slice(0, 2), 16) + 0.587 * parseInt(v.slice(2, 4), 16) + 0.114 * parseInt(v.slice(4, 6), 16)) / 255 >= 0.5; })();
+  $('#app').className = `layout-${s.layout}` + (S.spaces && S.spaces.length < 2 ? ' one-space' : '') + ((s.layoutBlocks || {}).hidden || []).map((h) => ' hide-' + h).join('') + (s.compact ? ' compact' : '') + (S.bar && S.bar.length ? ' has-bar' : '') + (S.hidden ? ' hidden' : '') + (overlay ? ' ov' : '') + (s.effects ? '' : ' noeffects') + (s.bookmarkNames === false ? ' bm-icons' : '') + (s.bookmarksPos === 'above' ? ' bm-above' : '') + (s.topHide || []).map((h) => ' th-' + h).join('') + (lightBg ? ' light' : '') + (s.profile === 'complete' && s.effects ? ' fx-full' : '') + (S.incognito ? ' incognito' : '');
   $('#user-css').textContent = s.customCss || '';
   dockOverlay();
   if (s.customJs !== customJsApplied) {
@@ -189,6 +189,15 @@ function dlButton(top) {
 // After a click on "+" or on a tab's x the tabs keep their place while the pointer stays on the tab row (like Chrome does): a new tab shares the room the row
 // had, so the plus stays under the pointer; a closed tab leaves its width behind, so the next x lands under the pointer. Leaving the row lets the tabs relax.
 const strip = { on: false, mode: '', avail: 0, w: 0, t: 0 };
+const closing = new Map(); // tab id -> when its x was clicked: such a tab is gone from the row at once while the browser closes it behind the scenes
+function closeTabNow(id, tb) {
+  if (closing.has(id)) return;
+  if (tb) freezeStrip('close', tb);
+  closeClock.set(id, performance.now()); closing.set(id, performance.now());
+  if (S && S.activeTab === id) { const own = spaceTabs(), i = own.findIndex((t) => t.id === id), rest = own.filter((t) => t.id !== id && !closing.has(t.id)), next = rest[Math.min(i, rest.length - 1)]; if (next) S.activeTab = next.id; } // the same choice the browser makes
+  render();
+  nova.cmd('close', { id });
+}
 const closeClock = new Map(); // tab id -> when its x was clicked: the log gets a note when a closed tab takes long to leave the row
 let hintT = 0, hintId = 0; // the pointer rests on an x: Nova loads the page that opens next in the background
 document.addEventListener('mouseover', (e) => { const c = e.target.closest && e.target.closest('[data-close]'); if (!c) return; const id = +c.dataset.close; if (id === hintId) return; clearTimeout(hintT); hintT = setTimeout(() => { hintId = id; nova.cmd('closeHint', { id }); }, 220); }, { passive: true });
@@ -209,10 +218,11 @@ function tabAnim(e, name, fn, ms) {
   setTimeout(end, ms);
 }
 function leaveTab(e) {
+  if (e.classList.contains('leaving')) return;
   { const cid = +e.dataset.tab, at = closeClock.get(cid); if (at !== undefined) { closeClock.delete(cid); const ms = performance.now() - at; if (ms > 700) nova.cmd('uiNote', { m: `a closed tab left the row ${Math.round(ms)} ms after the click` }); } }
   if (!S.settings.effects) { e.remove(); return; }
-  e.classList.add('leaving'); e.classList.remove('active', 'enter');
-  tabAnim(e, 'tabOut', () => { if (e.parentNode) e.remove(); }, 450);
+  e.classList.add('leaving'); e.classList.remove('active', 'enter', 'pre');
+  setTimeout(() => { if (e.parentNode) e.remove(); }, 240);
 }
 // a long row of tabs scrolls with the wheel and keeps the open tab in view
 document.addEventListener('wheel', (e) => { const row = e.target.closest && e.target.closest('#tabs'); if (!row || !S || S.settings.layout !== 'top' || row.scrollWidth <= row.clientWidth || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return; row.scrollLeft += e.deltaY; e.preventDefault(); }, { passive: false });
@@ -234,7 +244,7 @@ function morphTabs(el, html) {
     const id = keyOf(n); let cur = id ? byId.get(id) : el.querySelector(':scope > .newrow');
     if (cur) {
       if (id) {
-        const keep = cur.classList.contains('enter') ? ' enter' : '';
+        const keep = (cur.classList.contains('enter') ? ' enter' : '') + (cur.classList.contains('pre') ? ' pre' : '');
         if (cur.className !== n.className + keep) cur.className = n.className + keep;
         const st = n.getAttribute('style') || ''; if ((cur.getAttribute('style') || '') !== st) cur.setAttribute('style', st);
         if (cur.title !== n.title) cur.title = n.title;
@@ -242,7 +252,7 @@ function morphTabs(el, html) {
       }
     } else {
       cur = n;
-      if (!first && id && fx && cur.classList.contains('tab')) { const e = cur; e.classList.add('enter'); tabAnim(e, 'tabIn', () => e.classList.remove('enter'), 450); }
+      if (!first && id && fx && cur.classList.contains('tab')) { const e = cur; if (S.settings.layout === 'top') { e.classList.add('pre'); requestAnimationFrame(() => requestAnimationFrame(() => e.classList.remove('pre'))); } else { e.classList.add('enter'); tabAnim(e, 'tabIn', () => e.classList.remove('enter'), 450); } }
     }
     while (ref && ref.classList && ref.classList.contains('leaving')) ref = ref.nextSibling;
     if (cur === ref) ref = ref.nextSibling; else el.insertBefore(cur, ref);
@@ -265,6 +275,7 @@ function render() {
   applySettings();
   const cur = S.tabs.find((t) => t.id === S.activeTab), top = S.settings.layout === 'top';
   $('#nav').innerHTML = (top ? '' : `<img id="mark" src="mark.svg" alt="">`) + ibtn(top ? 't-back' : 'back', 'Back (Alt+←)', 'back', cur?.canBack ? '' : 'off') + ibtn(top ? 't-fwd' : 'fwd', 'Forward (Alt+→)', 'forward', cur?.canForward ? '' : 'off') + ibtn(top ? 't-reload' : 'reload', 'Reload (Ctrl+R)', 'reload') + (S.settings.homeButton ? ibtn('t-home', 'Home', 'home') : '') + (top ? '' : dlButton());
+  { const ib = document.getElementById('incbadge'); if (ib) { ib.hidden = !S.incognito; ib.title = 'Incognito window: nothing you do here is saved'; ib.innerHTML = S.incognito ? ic('t-incog') + '<span>Incognito</span>' : ''; } }
   $('#winctl').innerHTML = ibtn('min', 'Minimize', 'min') + ibtn('max', 'Maximize', 'max') + ibtn('x', 'Close', 'wclose', 'close');
   let label = '<span>Search or enter address</span>', icon = 'search';
   if (cur && cur.url !== HOME) {
@@ -274,7 +285,8 @@ function render() {
   { const star = document.getElementById('bmstar'), page = !!(cur && /^https?:/i.test(cur.url || '')); star.innerHTML = ic(top ? 't-star' : cur?.bookmarked ? 'starf' : 'star'); star.classList.toggle('on', !!cur?.bookmarked); star.classList.toggle('off', !page); star.title = cur?.bookmarked ? 'Edit this bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)'; }
 
   $('#bmbar').innerHTML = (S.bar || []).length ? S.bar.map((b) => `<button class="bmk" data-bm="${esc(b.url)}" title="${esc(b.title || b.url)}">${siteFav(b.url, b.icon)}<span>${esc(b.title || hostOf(b.url))}</span></button>`).join('') + `<button class="bmk more" data-do="bookmarks" title="All bookmarks (Ctrl+Shift+O)">${ic('fwd')}</button>` : '';
-  const tabs = spaceTabs(), maxAge = (S.settings.archiveAfterHours || 24) * 3600e3;
+  for (const [cid, at] of [...closing]) if (!S.tabs.some((x) => x.id === cid) || performance.now() - at > 2500) closing.delete(cid); // the browser has confirmed it, or it did not close after all
+  const tabs = spaceTabs().filter((t) => !closing.has(t.id)), maxAge = (S.settings.archiveAfterHours || 24) * 3600e3;
   $('#pins').innerHTML = tabs.filter((t) => t.pinned).map((t) => `<div class="pin ${t.id === S.activeTab ? 'active' : ''}" data-tab="${t.id}" title="${esc(t.title)}">${favHtml(t)}<button class="pinx" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`).join('');
   const plain = tabs.filter((t) => !t.pinned), total = S.tabs.length, max = S.settings.maxTabs;
   $('#tabhead').innerHTML = `<span class="lbl">Tabs</span><span class="count ${max && total >= max - 3 ? 'hot' : ''}" title="Open tabs / tab budget">${total}${max ? ' / ' + max : ''}</span><button class="ibtn sm" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}</button>`;
@@ -284,7 +296,7 @@ function render() {
     if (gg && gg.collapsed && t.id !== S.activeTab) return [head];
     const idle = t.id === S.activeTab ? 0 : Math.min(1, (S.now - t.lastActive) / maxAge);
     return [head, `<div draggable="true" class="tab ${t.id === S.activeTab ? 'active' : ''} ${t.asleep ? 'asleep' : ''} ${t.id === S.split ? 'split' : ''} ${t.private ? 'private' : ''} ${gg ? 'grouped' : ''}" data-tab="${t.id}" style="--idle:${(1 - idle * 0.45).toFixed(2)}${gg ? ';--gc:' + gg.color : ''}" title="${esc(t.title)}${t.url === HOME ? '' : '\n' + esc(t.url)}">
-      ${favHtml(t)}<span class="t">${esc(t.title || 'New tab')}</span>${t.asleep ? `<span class="zz" title="Asleep: reloads when opened">${ic('moon')}</span>` : ''}${t.audible || t.muted ? `<button class="aud" data-mute="${t.id}" title="${t.muted ? 'Unmute' : 'Mute'}">${ic(t.muted ? 'mute' : 'vol')}</button>` : ''}<button class="x" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`].filter(Boolean);
+      ${favHtml(t)}<span class="t">${esc(t.title || (t.url !== HOME && hostOf(t.url)) || 'New tab')}</span>${t.asleep ? `<span class="zz" title="Asleep: reloads when opened">${ic('moon')}</span>` : ''}${t.audible || t.muted ? `<button class="aud" data-mute="${t.id}" title="${t.muted ? 'Unmute' : 'Mute'}">${ic(t.muted ? 'mute' : 'vol')}</button>` : ''}<button class="x" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`].filter(Boolean);
   }).join('') + `<button class="newrow" data-do="newTab" title="New tab (Ctrl+T)">${ic('plus')}<span>New tab</span></button>`);
   { const row = $('#tabs'), act = row.querySelector && row.querySelector('.tab.active'); if (act && row.__act !== S.activeTab) { row.__act = S.activeTab; if (act.scrollIntoView) act.scrollIntoView({ inline: 'nearest', block: 'nearest' }); } }
   $('#spaces').innerHTML = S.spaces.map((sp, i) => `<button class="space ${sp.id === S.activeSpace ? 'active' : ''}" data-space="${sp.id}" title="${esc(sp.name)} (Alt+${i + 1})"><i style="background:${sp.color}"></i><span>${esc(sp.name)}</span></button>`).join('') + `<button class="space add" data-do="addSpace" title="New space">${ic('plus')}</button>`;
@@ -303,7 +315,6 @@ document.addEventListener('click', (e) => {
   if (menuOpen && e.target.closest('#menu')) return;
   hideMenu();
   const d = e.target.closest('[data-do]')?.dataset.do;
-  if (d === 'newTab' && e.target.closest('.newrow')) freezeStrip('add');
   if (d) {
     const A = (name) => () => nova.cmd('action', { name });
     const m = { back: () => nova.cmd('back'), forward: () => nova.cmd('forward'), reload: () => nova.cmd('reload'), min: () => nova.cmd('win', { op: 'min' }), max: () => nova.cmd('win', { op: 'max' }), wclose: () => nova.cmd('win', { op: 'close' }), overview: A('overview'), library: A('history'), bookmarks: A('bookmarks'), downloads: () => dlToggle(), hub: A('hub'), bookmark: A('bookmark'), extmenu: () => nova.cmd('overlay', { kind: 'extmenu' }), spacemenu: () => nova.cmd('overlay', { kind: 'spacemenu' }), profilemenu: () => nova.cmd('overlay', { kind: 'profilemenu' }), mainmenu: () => nova.cmd('overlay', { kind: 'mainmenu' }), sitepanel: () => nova.cmd('overlay', { kind: 'sitepanel' }), home: () => nova.cmd('open', { text: S.settings.homePage || '' }), settings: A('settings'), budget: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }), newTab: A('newTab'), update: () => nova.cmd('applyUpdate'), addSpace: newSpaceFlow };
@@ -313,12 +324,12 @@ document.addEventListener('click', (e) => {
   const bm = e.target.closest('[data-bm]'); if (bm) return nova.cmd('open', { text: bm.dataset.bm, newTab: e.ctrlKey || e.metaKey });
   const xp = e.target.closest('[data-extpop]'); if (xp) return nova.cmd('extPopup', { id: xp.dataset.extpop });
   const mu = e.target.closest('[data-mute]'); if (mu) return nova.cmd('mute', { id: +mu.dataset.mute });
-  const c = e.target.closest('[data-close]'); if (c) { const tb = c.closest('#tabs .tab'); if (tb) freezeStrip('close', tb); closeClock.set(+c.dataset.close, performance.now()); return nova.cmd('close', { id: +c.dataset.close }); }
+  const c = e.target.closest('[data-close]'); if (c) return closeTabNow(+c.dataset.close, c.closest('#tabs .tab'));
   const gh = e.target.closest('[data-group]'); if (gh) { const g = (S.groups || []).find((x) => x.id === gh.dataset.group); return g && nova.cmd('groupSet', { id: g.id, collapsed: !g.collapsed }); }
-  const t = e.target.closest('[data-tab]'); if (t && !overlay) return nova.cmd('activate', { id: +t.dataset.tab });
+  const t = e.target.closest('[data-tab]'); if (t && !overlay) { const id = +t.dataset.tab; if (S && S.activeTab !== id && S.tabs.some((x) => x.id === id)) { S.activeTab = id; render(); } return nova.cmd('activate', { id }); }
   const sp = e.target.closest('[data-space]'); if (sp) return nova.cmd('switchSpace', { id: +sp.dataset.space });
 });
-document.addEventListener('auxclick', (e) => { const b = e.target.closest('[data-bm]'); if (b && e.button === 1) return nova.cmd('open', { text: b.dataset.bm, newTab: true }); const t = e.target.closest('[data-tab]'); if (t && e.button === 1) nova.cmd('close', { id: +t.dataset.tab }); });
+document.addEventListener('auxclick', (e) => { const b = e.target.closest('[data-bm]'); if (b && e.button === 1) return nova.cmd('open', { text: b.dataset.bm, newTab: true }); const t = e.target.closest('[data-tab]'); if (t && e.button === 1) closeTabNow(+t.dataset.tab, t.closest('#tabs .tab')); });
 document.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const t = e.target.closest('[data-tab]'), sp = e.target.closest('[data-space]'), bmk = e.target.closest('[data-bm]');
@@ -396,8 +407,8 @@ function setOverlay(kind, data) {
   if (kind === 'menu') return;
   const o = $('#overlay'); o.hidden = false; o.innerHTML = '';
   o.onmousedown = (e) => { if (e.target === o && kind !== 'wizard') nova.cmd('closeOverlay'); };
-  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' || kind === 'perm' || kind === 'login' || kind === 'screen' || kind === 'sitepanel' || kind === 'extmenu' || kind === 'bookmark' || kind === 'spacemenu' || kind === 'profilemenu' || kind === 'mainmenu' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
-  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew, extmenu: extMenu, bookmark: bookmarkPop, spacemenu: spacePop, profilemenu: profilePop, mainmenu: mainMenu, perm: permPop, login: loginPop, screen: screenPop, sitepanel: sitePop })[kind](o, data || {});
+  o.className = kind === 'settings' || kind === 'hub' ? 'docked' : kind === 'downloads' || kind === 'perm' || kind === 'login' || kind === 'screen' || kind === 'openapp' || kind === 'sitepanel' || kind === 'extmenu' || kind === 'bookmark' || kind === 'spacemenu' || kind === 'profilemenu' || kind === 'mainmenu' ? 'pop' : kind === 'whatsnew' ? 'cine' : ''; dockOverlay();
+  ({ palette, overview, settings, wizard, peek, ask, library, hub: extHub, downloads: dlPanel, whatsnew: whatsNew, extmenu: extMenu, bookmark: bookmarkPop, spacemenu: spacePop, profilemenu: profilePop, mainmenu: mainMenu, perm: permPop, login: loginPop, screen: screenPop, openapp: openappPop, sitepanel: sitePop })[kind](o, data || {});
 }
 function clearOverlay() { if (askResolve && askShown) { const r = askResolve; askResolve = null; askShown = false; r(null); } overlay = null; $('#app').classList.remove('ov'); $('#menu').hidden = true; menuOpen = false; const o = $('#overlay'); o.hidden = true; o.innerHTML = ''; o.className = ''; }
 // Settings and the hub sit beside the browser, not over it: the sidebar (or the top bar) stays sharp and live while you change things
@@ -438,7 +449,7 @@ function commands() {
     ...(F.savePdf ? [{ t: 'Save page as PDF', run: () => { nova.cmd('closeOverlay'); nova.cmd('savePdf'); } }] : []),
     ...(F.translate ? [{ t: 'Translate this page', run: () => { nova.cmd('closeOverlay'); nova.cmd('translate'); } }] : []),
     ...(F.passwords ? [{ t: 'Saved passwords', s: 'Manage, import or export what Nova has saved', run: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Passwords' } }) }] : []),
-    ...(F.privateTabs ? [{ t: 'New private tab', s: 'Keeps no history, cookies or cache', k: 'Ctrl ⇧ N', run: A('privateTab') }] : []),
+    { t: 'New incognito window', s: 'Nothing is saved: no history, cookies or cache', k: 'Ctrl ⇧ N', run: A('incognito') },
     ...(F.cleanLinks ? [{ t: 'Copy link without tracking junk', k: 'Ctrl ⇧ C', run: A('copyClean') }] : []),
     { t: 'Resource budget', s: 'Set how much memory Nova may use', run: () => nova.cmd('overlay', { kind: 'settings', data: { tab: 'Resource budget' } }) },
     { t: 'Clean up: archive tabs idle for 1 hour', run: clean('hour') }, { t: 'Clean up: archive all unpinned tabs', run: clean('all') }, { t: 'Clean up: close duplicate tabs', run: clean('duplicates') },

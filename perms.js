@@ -48,7 +48,7 @@ function decide(pid, origin, kinds) {
   return v.every((x) => x === 'allow') ? 'allow' : 'ask';
 }
 function set(pid, origin, kind, value) { // value: 'allow' | 'block' | null (ask again)
-  if (!origin || !KINDS[kind]) return;
+  if (!origin || !(KINDS[kind] || /^app:[a-z][a-z0-9+.-]{1,31}$/.test(kind))) return; // app:<scheme> is a site that may open an app (riotclient, steam, zoommtg ...)
   const s = store(pid), o = s.data[origin] || (s.data[origin] = {});
   if (value === 'allow' || value === 'block') o[kind] = value; else delete o[kind];
   if (!Object.keys(o).length) delete s.data[origin];

@@ -67,6 +67,10 @@ const AUMID = 'app.nova.browser.v2'; // the taskbar groups windows and picks the
 const HOME = 'nova://home';
 const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
 const isHome = (u) => u === HOME || (u || '').startsWith(HOME_FILE);
+// an incognito window has its own look: a deeper, violet-tinted dark that stays the same whatever theme the person chose, so it is known at a glance
+const INC = { bg: '#0d0a17', page: '#15111f', surface: '#181326', surface2: '#211a35', text: '#ece8f7', dim: '#9d93b8', accent: '#b48cff', danger: '#ff6b8a' };
+const themeOf = (W) => (W && W.incognito ? { ...settings.theme, ...INC } : settings.theme);
+const incOf = (t) => { const W = t && wins.get(t.wid); return !!(W && W.incognito); };
 // ---------- warning pages: connection errors, certificate errors and known dangerous sites (ui/interstitial.html) ----------
 const INTER_FILE = pathToFileURL(path.join(__dirname, 'ui', 'interstitial.html')).href;
 const isInter = (u) => (u || '').startsWith(INTER_FILE);
@@ -82,7 +86,7 @@ function showInterstitial(t, wc, info) { // t.inter remembers what was asked for
 function interAction(t, wc, action) {
   const info = t.inter; if (!info || wc.isDestroyed()) return;
   if (action === 'retry') { wc.loadURL(info.url).catch(() => {}); return; }
-  if (action === 'back') { if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); else { t.inter = null; t.url = HOME; wc.loadURL(homeUrl()).catch(() => {}); } return; }
+  if (action === 'back') { if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); else { t.inter = null; t.url = HOME; wc.loadURL(homeUrl(incOf(t))).catch(() => {}); } return; }
   if (action === 'proceed' && info.kind !== 'conn') {
     const host = hostOfUrl(info.url);
     if (info.kind === 'cert') certAllow.add(`${t.pid}|${host}|${info.cert ? info.cert.fp : ''}`); else sbAllow.add(`${t.pid}|${host}`);
@@ -95,7 +99,7 @@ function reloadWc(wc, hard) { // reloading a warning page tries the address agai
   if (t && t.inter && isInter(wc.getURL())) wc.loadURL(t.inter.url).catch(() => {}); else if (hard) wc.reloadIgnoringCache(); else wc.reload();
 }
 const unsafeFor = (pid, url) => { const r = settings.features.safeBrowsing ? safebrowsing.check(url) : null; return r && !sbAllow.has(`${pid}|${hostOfUrl(url)}`) && !sbAllow.has(`${pid}|${r.host}`) ? r : null; };
-const homeUrl = () => HOME_FILE + '?' + new URLSearchParams({ bg: settings.theme.page, chrome: settings.theme.bg, accent: settings.theme.accent, text: settings.theme.text, dim: settings.theme.dim, engine: settings.searchEngine, kw: settings.searchKeywords || '', prof: settings.profile, fx: settings.effects ? 1 : 0, wall: settings.wallpaper.mode === 'none' ? '' : settings.wallpaper.preset });
+const homeUrl = (inc) => HOME_FILE + '?' + new URLSearchParams({ ...(inc ? { inc: 1 } : {}), bg: (inc ? INC : settings.theme).page, chrome: (inc ? INC : settings.theme).bg, accent: (inc ? INC : settings.theme).accent, text: (inc ? INC : settings.theme).text, dim: (inc ? INC : settings.theme).dim, engine: settings.searchEngine, kw: settings.searchKeywords || '', prof: settings.profile, fx: settings.effects ? 1 : 0, wall: settings.wallpaper.mode === 'none' ? '' : settings.wallpaper.preset });
 // Profiles: one switch that decides how much Nova does.
 const FEATURE_KEYS = ['tabSearch', 'snooze', 'rewind', 'peek', 'darkPage', 'darkSite', 'cleanLinks', 'soloAudio', 'screenshot', 'pip', 'autoPip', 'savePdf', 'translate', 'privateTabs', 'videoSpeed', 'sponsorBlock', 'ytDislike', 'cookieBanners', 'passwords', 'safeBrowsing'];
 const featureSet = (on, extra = {}) => ({ ...Object.fromEntries(FEATURE_KEYS.map((k) => [k, on])), ...extra });
@@ -321,7 +325,7 @@ function bindState(st) { for (const k of ['activeTab', 'activeSpace', 'split', '
 // ---------- layout ----------
 // Windows draws a 1 px border around the window: in the colour of the tab strip (or of the sidebar) it disappears into the interface
 function borderColor() {
-  const bg = /^#[0-9a-f]{6}$/i.test(settings.theme.bg) ? settings.theme.bg : '#0b0b12';
+  const tb = themeOf(curW).bg, bg = /^#[0-9a-f]{6}$/i.test(tb) ? tb : '#0b0b12';
   if (settings.layout !== 'top') return bg;
   const n = parseInt(bg.slice(1), 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255], p = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 > 0.5 ? 0.09 : 0.44; // as --strip in ui.css
   return '#' + c.map((v) => Math.round(v * (1 - p)).toString(16).padStart(2, '0')).join('');
@@ -354,7 +358,7 @@ function layout() {
     t.view.setBounds({ x: c.x + i * (each + gapIn), y: c.y, width: each, height: c.height });
     try { const r = hidden ? 0 : settings.radius; if (t.radius !== r) { t.view.setBorderRadius(r); t.radius = r; } } catch { /* view is going away */ } // only when the value really changes
   });
-  win.setBackgroundColor(settings.theme.bg);
+  win.setBackgroundColor(themeOf(curW).bg);
   { const ac = borderColor(); if (curW.accent !== ac) { curW.accent = ac; try { win.setAccentColor(ac); } catch { /* older Windows: no border colour */ } } }
   features.relayoutPeek();
   passwords.relayout();
@@ -376,18 +380,19 @@ function sync() { // attach visible views, keep ui on top
 }
 
 // ---------- state push ----------
-let pushTimer = null;
-function push() {
-  if (pushTimer) return;
+let pushTimer = null, pushUrgent = false;
+function push(urgent) { // urgent: the person just did something (closed or opened a tab): the interface hears about it in the same moment, not 50 ms later
+  if (pushTimer && !(urgent && !pushUrgent)) return;
+  clearTimeout(pushTimer); pushUrgent = !!urgent;
   pushTimer = setTimeout(() => {
-    pushTimer = null;
+    pushTimer = null; pushUrgent = false;
     eachWin(() => {
       if (!ui || ui.webContents.isDestroyed()) return;
       const bh = barHeight(); if (bh !== lastBar) { lastBar = bh; layout(); } // the bookmarks bar appears with the first bookmark
       ui.webContents.send('state', publicState(false));
     });
     persistSoon();
-  }, 50);
+  }, urgent ? 0 : 50);
 }
 let lastBarKey = '';
 function barForState(full) {
@@ -414,6 +419,7 @@ function publicState(full = true) {
     spaces: profSpaces(pid), groups: state.groups.filter((g) => inProfile(g.spaceId, pid)), profile: pid, activeSpace: state.activeSpace, activeTab: state.activeTab, split: state.split,
     windows: [...wins.values()].filter((W) => W !== curW && !W.closed).map((W) => ({ id: W.id, title: (tabs.get(W.activeTab) || {}).title || 'Nova window' })),
     archive: partOf('archive', pid + ':' + state.archive.length + ':' + (state.archive[0] ? state.archive[0].closedAt : 0), () => state.archive.filter((x) => inProfile(x.spaceId, pid)).slice(0, 80), full), bar: barForState(full), dl: features.downloadsLive(), dlInfo: features.dlInfo(), settings: partOf('settings', JSON.stringify(settings), () => settings, full), hidden: sidebarHidden || focusMode, focusMode, now: Date.now(),
+    incognito: !!curW.incognito, inc: curW.incognito ? INC : null,
     adblock: adblockStatus, blockedCount: blockedCount, budget: (() => { try { return budget.get(); } catch { return { used: 0, tabs: {}, cap: 0, enabled: false }; } })(), version: updater.version, updateReady: updater.hasPending(), update: updater.status(),
   };
 }
@@ -442,7 +448,7 @@ function newTabObj(o) {
   const id = o.id != null && !tabs.has(o.id) ? o.id : nextId++;
   nextId = Math.max(nextId, id + 1);
   const spaceId = state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace;
-  const t = { id, wid: o.wid || (curW ? curW.id : 0), spaceId, pid: spaceProfile(spaceId), url: o.url || HOME, title: o.title || (!o.url || o.url === HOME ? 'New tab' : ''), favicon: o.favicon || '', pinned: !!o.pinned, private: !!o.private, lastActive: o.lastActive || Date.now(), view: null, attached: false, loading: false, audible: false, canBack: false, canForward: false, thumb: '' };
+  const t = { id, wid: o.wid || (curW ? curW.id : 0), spaceId, pid: spaceProfile(spaceId), url: o.url || HOME, title: o.title || (!o.url || o.url === HOME ? 'New tab' : ''), favicon: o.favicon || '', pinned: !!o.pinned, private: !!o.private || !!(wins.get(o.wid || (curW ? curW.id : 0)) || {}).incognito, lastActive: o.lastActive || Date.now(), view: null, attached: false, loading: false, audible: false, canBack: false, canForward: false, thumb: '' };
   if (o.group && state.groups.some((g) => g.id === o.group)) t.group = o.group;
   tabs.set(t.id, t);
   return t;
@@ -453,7 +459,7 @@ function wake(t) {
   const ses = sessionFor(t.pid, t.private); // the session of the tab's profile (its private one for private tabs)
   const view = new WebContentsView({ webPreferences: { ...(String(t.url).startsWith('chrome-extension:') ? { preload: extmgr.shimPath() } : pw ? { preload: path.join(__dirname, 'wake-preload.js') } : {}), session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: !!settings.features.darkSite, spellcheck: settings.profile !== 'ultra', autoplayPolicy: settings.blockAutoplay ? 'document-user-activation-required' : 'no-user-gesture-required' } });
   t.view = view; t.pendingWake = pw; t.frozen = false; t.mediaAt = 0;
-  view.setBackgroundColor((pw && pw.bg) || settings.theme.page);
+  view.setBackgroundColor((pw && pw.bg) || themeOf(wins.get(t.wid) || curW).page);
   const wc = view.webContents;
   const on = (ev, fn) => wc.on(ev, (...a) => { if (t.view !== view) return; useWinOf(t); return fn(...a); }); // the window that shows this page is the current one while its event runs; a page that went to sleep is ignored
   extbridge.watch(t);
@@ -516,7 +522,7 @@ function wake(t) {
   });
   // the page loads once the identity is in place and the profile's extensions are loaded (waiting at most 3 s), so their content scripts meet the very first page
   const extsReady = sesReady.has(ses) ? new Promise((res) => { const to = setTimeout(res, 3000), done = () => { clearTimeout(to); res(); }; sesReady.get(ses).then(done, done); }) : null;
-  Promise.all([persona.ready(wc), extsReady]).then(() => { if (!wc.isDestroyed()) wc.loadURL(isHome(t.url) ? homeUrl() : t.url).catch(() => {}); });
+  Promise.all([persona.ready(wc), extsReady]).then(() => { if (!wc.isDestroyed()) wc.loadURL(isHome(t.url) ? homeUrl(incOf(t)) : t.url).catch(() => {}); });
 }
 // ---- start page theme: colours, wallpaper and switches are pushed into every open start page ----
 let wallData = null;
@@ -534,7 +540,7 @@ function homeStats() {
 setInterval(() => { // every 15 seconds: one more point for the line, and the start pages that are on screen get fresh numbers
   try { const u = budget.get().used; if (u) { memHist.push(u); if (memHist.length > 40) memHist.shift(); } } catch { /* not ready */ }
   const js = `window.novaStats && window.novaStats(${JSON.stringify(homeStats())})`;
-  for (const id of allVisibleIds()) { const t = tabs.get(id); if (t && t.view && isHome(t.url) && !t.view.webContents.isDestroyed()) t.view.webContents.executeJavaScript(js).catch(() => {}); }
+  for (const id of allVisibleIds()) { const t = tabs.get(id); if (t && t.view && isHome(t.url) && !incOf(t) && !t.view.webContents.isDestroyed()) t.view.webContents.executeJavaScript(js).catch(() => {}); }
 }, 15000);
 function homeTheme() {
   const w = settings.wallpaper, t = settings.theme;
@@ -542,15 +548,15 @@ function homeTheme() {
 }
 function pushHome(wc) {
   const js = `window.novaTheme && window.novaTheme(${JSON.stringify(homeTheme())})`;
-  const targets = wc ? [wc] : [...tabs.values()].filter((t) => t.view && isHome(t.url) && !t.view.webContents.isDestroyed()).map((t) => t.view.webContents);
-  for (const w of targets) w.executeJavaScript(js).catch(() => {});
+  const targets = wc ? [wc] : [...tabs.values()].filter((t) => t.view && isHome(t.url) && !incOf(t) && !t.view.webContents.isDestroyed()).map((t) => t.view.webContents);
+  for (const w of targets) { const tb = tabOfWc(w); if (tb && incOf(tb)) continue; w.executeJavaScript(js).catch(() => {}); }
 }
 // Nova's whole colour set from the start-page picture: the hue that carries the image tints the surfaces and gives the accent.
 function wallColors() {
   try {
     const img = nativeImage.createFromPath(userFile('wallpaper.jpg')); if (img.isEmpty()) return false;
     settings.theme = { ...settings.theme, ...wallpalette.paletteFromBitmap(img.resize({ width: 48 }).toBitmap()) };
-    for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(settings.theme.page);
+    for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(themeOf(wins.get(x.wid)).page);
     saveSettings(); layoutAll(); pushHome(); push(); return true;
   } catch (e) { console.error('wallColors', e.message); return false; }
 }
@@ -655,7 +661,7 @@ function activate(id, fromFocus) {
   if (t.frozen) sleeper.thaw(t);
   sync();
   if (!fromFocus && !overlayOpen) t.view.webContents.focus();
-  push();
+  push(true);
 }
 function openUrl(url, o = {}) {
   url = normalizeInput(url);
@@ -696,8 +702,8 @@ function closeTab(id) {
   if (t.private && ![...tabs.values()].some((x) => x.private && x.pid === t.pid)) { const ps = profSes.get(t.pid + '!'); if (ps) ps.clearStorageData().catch(() => {}); } // last private tab of this profile gone: forget everything
   if (!mine().length) {
     state.activeTab = null; state.split = null;
-    if (wins.size > 1) { const W = curW; setTimeout(() => { try { if (!W.closed) W.win.close(); } catch { /* gone */ } }, 0); push(); return; } // the last tab of a second window: the window goes with it
-    const n = newTabObj({ spaceId: state.spaces.some((sp) => sp.id === t.spaceId) ? t.spaceId : state.activeSpace }); activate(n.id); push(); return; // the last tab closed: back to the start page, the browser stays open (the window's own close button still quits)
+    if (wins.size > 1) { const W = curW; setTimeout(() => { try { if (!W.closed) W.win.close(); } catch { /* gone */ } }, 0); push(true); return; } // the last tab of a second window: the window goes with it
+    const n = newTabObj({ spaceId: state.spaces.some((sp) => sp.id === t.spaceId) ? t.spaceId : state.activeSpace }); activate(n.id); push(true); return; // the last tab closed: back to the start page, the browser stays open (the window's own close button still quits)
   }
   if (wasActive) {
     const rest = mine().filter((x) => x.spaceId === t.spaceId);
@@ -705,7 +711,7 @@ function closeTab(id) {
     if (next) activate(next.id);
     else { state.activeTab = null; const n = newTabObj({ spaceId: t.spaceId }); activate(n.id); }
   }
-  push();
+  push(true);
 }
 function enforceLimit(keepId) {
   const max = settings.maxTabs;
@@ -750,10 +756,10 @@ function idlePolicy() {
 // A new window is a whole Nova: the same tab row, bars, settings and shortcuts. A tab keeps its session, history and scroll when it moves.
 // The last tab of a second window closes the window; closing a window puts its tabs into the archive (Ctrl+K); closing the last window ends Nova.
 function createWindow(o = {}) {
-  const W = { id: nextWid++, closed: false, activeTab: null, activeSpace: state.spaces.some((sp) => sp.id === o.activeSpace) ? o.activeSpace : state.spaces[0].id, split: null, prevTab: null, overlayKind: '', overlayOpen: false, sidebarHidden: false, focusMode: false, pageFullscreen: false, uiLowered: null, lastBar: 0, lastBarKey: '', fill: null };
+  const W = { id: nextWid++, closed: false, activeTab: null, activeSpace: state.spaces.some((sp) => sp.id === o.activeSpace) ? o.activeSpace : state.spaces[0].id, split: null, prevTab: null, overlayKind: '', overlayOpen: false, sidebarHidden: false, focusMode: false, pageFullscreen: false, uiLowered: null, lastBar: 0, lastBarKey: '', fill: null, incognito: !!o.incognito };
   const b = { width: o.width || 1360, height: o.height || 860 };
   if (o.x != null && o.y != null) { b.x = Math.round(o.x); b.y = Math.round(o.y); }
-  W.win = new BaseWindow({ ...b, minWidth: 640, minHeight: 420, frame: false, backgroundColor: settings.theme.bg, title: 'Nova', icon: appIcon() });
+  W.win = new BaseWindow({ ...b, minWidth: 640, minHeight: 420, frame: false, backgroundColor: o.incognito ? INC.bg : settings.theme.bg, title: o.incognito ? 'Nova Incognito' : 'Nova', icon: appIcon() });
   if (b.x != null) W.win.setBounds(b); // once more: on a screen with another scaling the size given at creation can come out different
   W.ui = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true } });
   W.ui.setBackgroundColor('#00000000');
@@ -793,6 +799,7 @@ function windowClosed(W) {
     if (t.url && !isHome(t.url) && !t.private) state.archive.unshift({ url: t.url, title: t.title, favicon: t.favicon, spaceId: t.spaceId, closedAt: Date.now() });
     destroyTab(t);
   }
+  if (W.incognito) for (const [key, ps] of profSes) if (key.endsWith('!') && ![...tabs.values()].some((x) => x.private && x.pid + '!' === key)) { ps.clearStorageData().catch(() => {}); ps.clearCache().catch(() => {}); } // the last incognito tab of a profile is gone: its cookies and everything else with it
   state.archive = state.archive.slice(0, 300);
   persist(); push();
 }
@@ -830,6 +837,13 @@ function detachTab(id, force) {
   const x = force ? b.x + 40 : cur.x - 130, y = force ? b.y + 40 : cur.y - 18;
   const W = createWindow({ x: Math.max(wa.x, Math.min(x, wa.x + wa.width - w)), y: Math.max(wa.y, Math.min(y, wa.y + wa.height - h)), width: w, height: h, activeSpace: t.spaceId });
   transferTab(t, W);
+}
+function newIncognito() { // a window of its own: every tab in it is private, nothing is saved, and everything is forgotten when the last incognito window closes
+  const max = !!curW.fill || win.isMaximized(), b = curW.fill ? curW.fill.normal : win.getBounds(), wa = screen.getDisplayMatching(b).workArea;
+  const o = { width: b.width, height: b.height, maximize: max, activeSpace: state.activeSpace, incognito: true };
+  if (!max) { o.x = Math.max(wa.x, Math.min(b.x + 36, wa.x + wa.width - b.width)); o.y = Math.max(wa.y, Math.min(b.y + 36, wa.y + wa.height - b.height)); }
+  createWindow(o);
+  const t = newTabObj({ private: true }); activate(t.id);
 }
 function newWindow(url) {
   const max = !!curW.fill || win.isMaximized(), b = curW.fill ? curW.fill.normal : win.getBounds(), wa = screen.getDisplayMatching(b).workArea;
@@ -993,7 +1007,7 @@ function runAction(action, arg) {
     case 'bookmarks': openOverlay('library', { tab: 'Bookmarks' }); break;
     case 'hub': openOverlay('hub'); break;
     case 'screenshot': features.handle('screenshot', {}, t); break;
-    case 'privateTab': features.handle('newPrivate', {}, t); break;
+    case 'privateTab': case 'incognito': newIncognito(); break;
     case 'print': wc?.print(); break;
     case 'fullscreen': win.setFullScreen(!win.isFullScreen()); break;
     case 'lastTab': if (state.prevTab && tabs.has(state.prevTab)) activate(state.prevTab); break;
@@ -1007,7 +1021,7 @@ function runAction(action, arg) {
     case 'viewSource': if (t && /^https?:/i.test(t.url)) openUrl('view-source:' + t.url, { forceNew: true }); break;
     case 'clearData': openOverlay('library', { tab: 'Clear data' }); break;
     case 'findNext': case 'findPrev': if (wc) { if (!lastFind) openOverlay('palette', { mode: 'find', text: '' }); else wc.findInPage(lastFind, { forward: action === 'findNext', findNext: true }); } break;
-    case 'homePage': if (t && t.view) { t.view.webContents.loadURL(homeUrl()).catch(() => {}); push(); } break;
+    case 'homePage': if (t && t.view) { t.view.webContents.loadURL(homeUrl(incOf(t))).catch(() => {}); push(); } break;
     case 'bookmarksBarToggle': settings.bookmarksBar = !settings.bookmarksBar; saveSettings(); layoutAll(); push(); break;
     case 'closeWindow': win.close(); break;
     case 'savePage': if (wc && t) dialog.showSaveDialog(win, { title: 'Save page', defaultPath: (t.title || 'page').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) + '.html', filters: [{ name: 'Web page', extensions: ['html'] }] }).then((r) => { if (!r.canceled && r.filePath && !wc.isDestroyed()) wc.savePage(r.filePath, 'HTMLComplete').catch(() => toast('Nova could not save the page.')); }); break;
@@ -1208,11 +1222,12 @@ const curSes = () => sessionFor(curProfile(), false);
 // ---------- site permissions: location, camera, microphone, notifications, clipboard. The question is a small card under the address bar, the answer is remembered
 // per site and profile (perms.js), changed from the shield in the address bar, and forgotten for private tabs ----------
 let permSeq = 1; const permQueue = []; // { id, key, t, wcr, origin, kinds, cb, shown, done, tries }; a login or a screen choice carries ov ('login', 'screen') and data instead
-const askKind = (k) => k === 'perm' || k === 'login' || k === 'screen'; // the overlays that are one question at a time
+const askKind = (k) => k === 'perm' || k === 'login' || k === 'screen' || k === 'openapp'; // the overlays that are one question at a time
 const permMemo = new WeakMap(); // per page: the "Allow this time" answers and the questions that were dismissed a moment ago
 const memoOf = (wc) => { let m = permMemo.get(wc); if (!m) { m = { once: new Set(), quiet: new Map() }; permMemo.set(wc, m); } return m; };
 function permRequest(pid, priv, wc, perm, cb, details) {
   if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock', 'display-capture'].includes(perm)) return cb(true); // sharing the screen is decided in the picker card, not here
+  if (perm === 'openExternal') return externalRequest(pid, priv, wc, cb, details);
   const kinds = perms.kindsOf(perm, details); if (!kinds) return cb(false);
   const origin = perms.originOf((details && details.requestingUrl) || wc.getURL()); if (!origin) return cb(false);
   const key = priv ? pid + '!' : pid, d = perms.decide(key, origin, kinds);
@@ -1224,6 +1239,31 @@ function permRequest(pid, priv, wc, perm, cb, details) {
   const t = tabOfWc(wc);
   if (!t || !shown(t)) return cb(false); // a page in the background does not get to ask; it can ask again when it is in front
   permQueue.push({ id: permSeq++, key, t, wcr: wc, origin, kinds, cb, shown: false, done: false, tries: 0 });
+  permNext();
+}
+// A page goes to an address of another program (riotclient:// at the end of the Riot sign-in, steam://, zoommtg://, mailto:): the browser asks whether that program may be opened,
+// as every browser does. Until now Nova refused such addresses without a word, so the page waited for a program that never started.
+const NO_EXTERNAL = new Set(['file', 'javascript', 'data', 'vbscript', 'blob', 'filesystem', 'about', 'chrome', 'chrome-extension', 'view-source', 'devtools', 'nova', 'nova-action', 'ms-msdt', 'msdt', 'search-ms', 'search', 'ms-officecmd', 'ms-appinstaller', 'ms-cxh', 'ms-cxh-full']);
+function externalRequest(pid, priv, wc, cb, details) {
+  let u; try { u = new URL(details && details.externalURL); } catch { return cb(false); }
+  const scheme = u.protocol.replace(/:$/, '').toLowerCase();
+  if (!/^[a-z][a-z0-9+.-]{1,31}$/.test(scheme) || /^https?$/.test(scheme) || NO_EXTERNAL.has(scheme)) return cb(false); // never: web addresses, local files, scripts, the Windows tools that were used in attacks
+  let program = ''; try { program = app.getApplicationNameForProtocol(u.href) || ''; } catch { /* unknown */ }
+  if (!program) return cb(false); // nothing on this computer opens it
+  const origin = perms.originOf((details && details.requestingUrl) || wc.getURL()); if (!origin) return cb(false);
+  const key = priv ? pid + '!' : pid, kind = 'app:' + scheme, d = perms.decide(key, origin, [kind]);
+  if (d === 'allow') return cb(true);
+  if (d === 'block') return cb(false);
+  const memo = memoOf(wc);
+  if ((memo.quiet.get(origin + '|' + kind) || 0) > Date.now()) return cb(false); // closed a moment ago: not asked again at once
+  const t = tabOfWc(wc);
+  if (!t || !shown(t)) return cb(false); // a page in the background does not get to open programs
+  let host = origin; try { host = new URL(origin).host; } catch { /* keep */ }
+  permQueue.push({ id: permSeq++, key, t, wcr: wc, origin, kinds: [], shown: false, done: false, tries: 0, ov: 'openapp',
+    data: { host, secure: /^https:/.test(origin), program: String(program).slice(0, 80), scheme },
+    cb: (dec, x) => {
+      if (dec === 'ok') { if (x && x.remember && !priv) perms.set(key, origin, kind, 'allow'); cb(true); } else { memo.quiet.set(origin + '|' + kind, Date.now() + 120000); cb(false); }
+    } });
   permNext();
 }
 function permFinish(p, decision, extra) { // decision: allow (remembered), once, block (remembered), dismiss (no answer: denied this time)
@@ -1479,7 +1519,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
         const prev = JSON.stringify([settings.layout, settings.compact, settings.gap, settings.radius, settings.theme.bg, settings.pageCss, settings.bookmarksBar]);
         delete a.patch.profiles; delete a.patch.purge; // profiles change only through their own commands
         Object.assign(settings, a.patch);
-        if (a.patch.theme) { settings.theme = { ...DEFAULTS.theme, ...a.patch.theme }; if (!a.patch.theme.page) settings.theme.page = a.patch.theme.surface || DEFAULTS.theme.page; for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(settings.theme.page); }
+        if (a.patch.theme) { settings.theme = { ...DEFAULTS.theme, ...a.patch.theme }; if (!a.patch.theme.page) settings.theme.page = a.patch.theme.surface || DEFAULTS.theme.page; for (const x of tabs.values()) if (x.view && !x.view.webContents.isDestroyed()) x.view.setBackgroundColor(themeOf(wins.get(x.wid)).page); }
         if (a.patch.keys) settings.keys = { ...DEFAULT_KEYS, ...a.patch.keys };
         if ('adblock' in a.patch) setAdblock(a.patch.adblock);
         if ('features' in a.patch) { darkmode.sync(); webtools.sync(); passwords.sync(); }
@@ -1497,7 +1537,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'pw': return passwords.cmd(_e, a);
       case 'extDebug': return process.env.NOVA_DEBUG_SW ? extbridge.debug(a, t) : undefined;
       case 'applyProfile': applyProfile(a.name); break;
-      case 'permAnswer': { const p = permQueue.find((x) => x.id === a.id && x.shown && !x.done); if (p) { if (p.ov) permFinish(p, a.decision === 'ok' ? 'ok' : 'dismiss', { user: a.user, pass: a.pass, source: a.source, audio: !!a.audio }); else permFinish(p, ['allow', 'once', 'block'].includes(a.decision) ? a.decision : 'dismiss'); closeOverlay(); setTimeout(permNext, 200); } break; }
+      case 'permAnswer': { const p = permQueue.find((x) => x.id === a.id && x.shown && !x.done); if (p) { if (p.ov) permFinish(p, a.decision === 'ok' ? 'ok' : 'dismiss', { user: a.user, pass: a.pass, source: a.source, audio: !!a.audio, remember: !!a.remember }); else permFinish(p, ['allow', 'once', 'block'].includes(a.decision) ? a.decision : 'dismiss'); closeOverlay(); setTimeout(permNext, 200); } break; }
       case 'drmStatus': return { ...drm, off: settings.drm === false };
       case 'siteInfo': { // what the shield in the address bar shows for the page in front
         if (!t) return null;

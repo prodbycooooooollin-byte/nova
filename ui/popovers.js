@@ -2,6 +2,15 @@
 // Both sit on the transparent "pop" overlay, so the browser behind them stays where it is and a click anywhere else closes them.
 // thin outline symbols for the tabs-on-top bar (Lucide, ISC licence), drawn on a 24 px grid
 Object.assign(PATHS, {
+  't-external': '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  't-plus': '<path d="M5 12h14"/><path d="M12 5v14"/>', 't-window': '<rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="M2 9h20"/><path d="M6 6.5h.01"/><path d="M9 6.5h.01"/>',
+  't-incog': '<path d="M3 11h18"/><path d="m5.5 11 1.6-5.3a1.4 1.4 0 0 1 1.7-.9L12 5.8l3.2-1a1.4 1.4 0 0 1 1.7.9L18.5 11"/><circle cx="7.5" cy="16.2" r="2.7"/><circle cx="16.5" cy="16.2" r="2.7"/><path d="M10.2 15.7c1.1-.6 2.5-.6 3.6 0"/>',
+  't-bookmark': '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>', 't-history': '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  't-download': '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>', 't-print': '<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
+  't-expand': '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+  't-sliders': '<path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/>',
+  't-refresh': '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  't-zoom': '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/><path d="M11 8v6"/>', 't-find': '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', 't-tabs': '<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M3 7l2-3.5h5L12 7"/>', 't-sparkle': '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>',
   't-back': '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>', 't-fwd': '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>', 't-reload': '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
   't-shield': '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
   't-globe': '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>', 't-search': '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
@@ -81,19 +90,20 @@ function spacePop(o) {
 // the shortcut written next to a menu row, taken from the user's own key settings
 const kbdOf = (action) => { const k = ((S.settings.keys || {})[action] || [])[0]; return k ? esc(k.replace(/Shift\+/g, '⇧ ').replace(/Control\+|Ctrl\+/g, 'Ctrl ').replace(/\+/g, ' ')) : ''; };
 
-// the menu behind the three lines: everything that is not on the bar, with its shortcut
+// the menu behind the three lines: three big starters on top (a tab, a window, an incognito window), then everything that is not on the bar, with its shortcut
 function mainMenu(o) {
-  const W = 290, p = popAt(document.querySelector('.menubtn'), W, true), F = S.settings.features || {};
-  const row = (act, label, key) => `<button class="mmrow" data-act="${act}"><span>${label}</span><kbd>${key === undefined ? kbdOf(act) : key}</kbd></button>`;
+  const W = 316, p = popAt(document.querySelector('.menubtn'), W, true);
+  const tile = (act, icon, label, cls = '') => `<button class="mmt ${cls}" data-act="${act}" style="--k:${cls ? 1 : 0}" title="${label}${kbdOf(act) ? ' (' + kbdOf(act) + ')' : ''}"><span class="mmi">${ic(icon)}</span><span>${label}</span></button>`;
+  const row = (act, icon, label, k) => `<button class="mmr" data-act="${act}"><span class="mmi">${ic(icon)}</span><span class="mml">${label}</span>${(k === undefined ? kbdOf(act) : k) ? `<kbd>${k === undefined ? kbdOf(act) : k}</kbd>` : ''}</button>`;
   const sep = '<div class="mmsep"></div>';
-  o.innerHTML = `<div class="pmenu mm box" style="left:${p.left}px;top:${p.top}px;width:${W}px"><div class="pmb">
-    ${row('newTab', 'New tab')}${row('newWindow', 'New window')}${F.privateTabs ? row('privateTab', 'New private tab') : ''}${sep}
-    ${row('bookmarks', 'Bookmarks')}${row('history', 'History')}${row('downloads', 'Downloads')}${row('hub', 'Extensions', '')}${sep}
-    ${row('overview', 'Tab overview')}${row('find', 'Find in page')}
-    <div class="mmrow zoom"><span>Zoom</span><span class="zb"><button data-act="zoomOut" title="Zoom out">−</button><button data-act="zoomReset" title="Back to 100%">Reset</button><button data-act="zoomIn" title="Zoom in">+</button></span></div>
-    ${row('print', 'Print')}${row('fullscreen', 'Full screen')}${sep}
-    ${row('settings', 'Settings')}<button class="mmrow" data-cmd="checkUpdate"><span>Check for updates</span><kbd></kbd></button><button class="mmrow" data-cmd="makeDefault" id="mmdef" hidden><span>Make Nova your default browser</span><kbd></kbd></button>
-    <div class="mmver">Nova ${esc(S.version || '')}</div></div></div>`;
+  o.innerHTML = `<div class="pmenu mm2 box" style="left:${p.left}px;top:${p.top}px;width:${W}px"><div class="pmb">
+    ${S.updateReady ? `<button class="mmr hot" data-cmd="applyUpdate"><span class="mmi">${ic('t-refresh')}</span><span class="mml">Restart to update Nova</span></button>` : ''}
+    <div class="mmtiles">${tile('newTab', 't-plus', 'New tab')}${tile('newWindow', 't-window', 'New window')}${tile('incognito', 't-incog', 'Incognito', 'inc')}</div>
+    ${row('bookmarks', 't-bookmark', 'Bookmarks')}${row('history', 't-history', 'History')}${row('downloads', 't-download', 'Downloads')}${row('hub', 't-puzzle', 'Extensions', '')}${sep}
+    ${row('overview', 't-grid', 'Tab overview')}${row('find', 't-find', 'Find in page')}${row('print', 't-print', 'Print')}
+    <div class="mmr zoom"><span class="mmi">${ic('t-zoom')}</span><span class="mml">Zoom</span><span class="zb"><button data-act="zoomOut" title="Zoom out">−</button><button data-act="zoomReset" title="Back to 100%">100%</button><button data-act="zoomIn" title="Zoom in">+</button><button data-act="fullscreen" title="Full screen" class="fs">${ic('t-expand')}</button></span></div>${sep}
+    ${row('settings', 't-sliders', 'Settings')}<button class="mmr" data-cmd="checkUpdate"><span class="mmi">${ic('t-refresh')}</span><span class="mml">Check for updates</span></button><button class="mmr" data-cmd="makeDefault" id="mmdef" hidden><span class="mmi">${ic('t-globe')}</span><span class="mml">Make Nova your default browser</span></button>
+    <div class="mmver"><span>Nova ${esc(S.version || '')}</span></div></div></div>`;
   o.querySelectorAll('[data-act]').forEach((b) => (b.onclick = () => nova.cmd('action', { name: b.dataset.act })));
   o.querySelectorAll('[data-cmd]').forEach((b) => (b.onclick = async () => { await nova.cmd('closeOverlay'); nova.cmd(b.dataset.cmd); }));
   nova.cmd('defaultBrowser').then((r) => { const b = o.querySelector('#mmdef'); if (b && r && !r.isDefault) b.hidden = false; }); // only offered while it is not the default
@@ -114,7 +124,7 @@ function profilePop(o) {
     <div class="pfrow"><span>Ad and tracker blocker<small>${s.adblock ? `${(S.blockedCount || 0).toLocaleString('en-US')} blocked so far` : 'Off'}</small></span>${sw('adblock', s.adblock)}</div>
     <div class="pfrow"><span>Keep browsing history<small>Used for suggestions and the start page</small></span>${sw('keepHistory', s.keepHistory)}</div>
     <button class="mmrow" data-pf="clear"><span>Clear browsing data…</span><kbd></kbd></button>
-    ${F.privateTabs ? '<button class="mmrow" data-pf="private"><span>New private tab</span><kbd></kbd></button>' : ''}
+    <button class="mmrow" data-pf="private"><span>New incognito window</span><kbd>${kbdOf('privateTab')}</kbd></button>
     <div class="pfs">Spaces</div>
     <div class="pfsp">${sp.map((x) => `<button class="mmrow" data-sp="${x.id}"><span class="spd"><i style="background:${x.color}"></i>${esc(x.name)}</span>${x.id === S.activeSpace ? ic('t-check') : ''}</button>`).join('')}<button class="mmrow" data-pf="newspace"><span>New space…</span><kbd></kbd></button></div>
     ${list.length > 1 && cur.id !== 'main' ? '<div class="mmsep"></div><button class="mmrow danger" data-pf="delprofile"><span>Delete this profile…</span><kbd></kbd></button>' : ''}
@@ -126,7 +136,7 @@ function profilePop(o) {
   const go = async (what) => {
     await nova.cmd('closeOverlay');
     if (what === 'clear') setTimeout(() => nova.cmd('overlay', { kind: 'library', data: { tab: 'Clear data' } }), 60);
-    else if (what === 'private') nova.cmd('action', { name: 'privateTab' });
+    else if (what === 'private') nova.cmd('action', { name: 'incognito' });
     else if (what === 'newspace') setTimeout(newSpaceFlow, 80);
     else if (what === 'newprofile') setTimeout(newProfileFlow, 80);
     else if (what === 'delprofile') setTimeout(() => deleteProfileFlow(cur), 80);
@@ -166,6 +176,17 @@ function loginPop(o, d) {
   o.querySelector('form').onsubmit = (e) => { e.preventDefault(); nova.cmd('permAnswer', { id: d.id, decision: 'ok', user: o.querySelector('#lu').value, pass: o.querySelector('#lp').value }); };
   o.querySelector('[data-no]').onclick = () => nova.cmd('permAnswer', { id: d.id, decision: 'no' });
   o.querySelector('#lu').focus();
+}
+// a page wants to open another program (the end of a sign-in in a launcher, a steam:// or zoommtg:// link)
+function openappPop(o, d) {
+  const W = 360, p = popAt(document.getElementById('urlbar'), W, false);
+  o.innerHTML = `<div class="pmenu perm openapp box" style="left:${p.left}px;top:${p.top}px;width:${W}px"><div class="pmh"><span class="plock">${ic(d.secure ? 't-lock' : 't-unlock')}</span><b>${esc(d.host)}</b></div>
+    <div class="ptxt">wants to open a program on this computer</div>
+    <div class="appline"><span class="appic">${ic('t-external')}</span><div><b>${esc(d.program)}</b><small>${esc(d.scheme)}: addresses</small></div></div>
+    <label class="sawake saud"><input type="checkbox" id="oaa"> Always let ${esc(d.host)} open ${esc(d.program)}</label>
+    <div class="pact"><button class="btn primary" data-oa="ok">Open ${esc(d.program)}</button><button class="btn ghost" data-oa="no">Cancel</button></div></div>`;
+  o.querySelectorAll('[data-oa]').forEach((b) => (b.onclick = () => nova.cmd('permAnswer', { id: d.id, decision: b.dataset.oa, remember: !!(o.querySelector('#oaa') || {}).checked })));
+  const f = o.querySelector('[data-oa=ok]'); if (f) f.focus();
 }
 // a page asks to share the screen or a window: what can be shared, as pictures
 function screenPop(o, d) {

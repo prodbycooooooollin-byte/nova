@@ -1,5 +1,21 @@
 [
   {
+    "version": "26.10.26",
+    "date": "2026-10-18",
+    "headline": {
+      "title": "Tabs, menu, incognito and start page",
+      "text": "closed tabs vanish at once, the menu is new, incognito is a window of its own, and the start page is polished."
+    },
+    "notes": [
+      "Tabs: a closed tab is gone the moment you click its x, new tabs grow in, and titles stay readable. Nova no longer switches its own animations off when Windows has them off.",
+      "Complete: small movements in menus, settings, buttons and tabs, only in the Complete profile.",
+      "Menu: the three-line menu has big buttons for tab, window and incognito, icons and a zoom bar.",
+      "Incognito: a window of its own with a violet look and its own start page. Nothing is saved, and everything is forgotten when the last incognito window closes.",
+      "Start page: nicer panels with a memory bar, a bigger search bar and a finer clock.",
+      "Open programs: a page that wants to open another program, such as the Riot sign-in, now asks first and can be remembered."
+    ]
+  },
+  {
     "version": "26.10.25",
     "date": "2026-10-18",
     "headline": {

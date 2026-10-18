@@ -220,7 +220,7 @@ function settings(o, d) {
       if (box) {
         const draw = async () => {
           const r = await nova.cmd('permList'), list = (r && r.list) || [];
-          box.innerHTML = list.length ? list.map((e) => `<div class="plrow"><b>${esc(e.origin.replace(/^https?:\/\//, ''))}</b><span>${Object.keys(r.kinds).filter((k) => e[k]).map((k) => r.kinds[k].short + ': ' + (e[k] === 'allow' ? 'allowed' : 'blocked')).join(' · ')}</span><button class="ibtn sm" data-pf="${esc(e.origin)}" title="Forget this site">${ic('x')}</button></div>`).join('') : '<div class="plempty">No site has been given or refused a permission yet.</div>';
+          box.innerHTML = list.length ? list.map((e) => `<div class="plrow"><b>${esc(e.origin.replace(/^https?:\/\//, ''))}</b><span>${[...Object.keys(r.kinds).filter((k) => e[k]).map((k) => r.kinds[k].short + ': ' + (e[k] === 'allow' ? 'allowed' : 'blocked')), ...Object.keys(e).filter((k) => /^app:/.test(k)).map((k) => 'Opens ' + k.slice(4) + ' links: ' + (e[k] === 'allow' ? 'allowed' : 'blocked'))].join(' · ')}</span><button class="ibtn sm" data-pf="${esc(e.origin)}" title="Forget this site">${ic('x')}</button></div>`).join('') : '<div class="plempty">No site has been given or refused a permission yet.</div>';
           box.querySelectorAll('[data-pf]').forEach((b) => (b.onclick = async () => { await nova.cmd('permForget', { origin: b.dataset.pf }); draw(); }));
         };
         draw(); const rb = body.querySelector('[data-permreset]'); if (rb) rb.onclick = async () => { await nova.cmd('permResetAll'); draw(); };

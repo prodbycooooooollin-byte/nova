@@ -52,8 +52,39 @@ form kbd { position:absolute; right:18px; top:16px; }
 #planets.flat { display:grid; grid-template-columns:repeat(4,96px); gap:14px 8px; width:max-content; } #planets.flat .pl { position:static; margin:0; width:96px; }
 .tips { position:absolute; left:0; right:0; bottom:26px; display:flex; justify-content:center; gap:22px; color:var(--dim); font-size:12.5px; animation:up .8s cubic-bezier(.2,.8,.2,1) .3s both; z-index:2; } .tips div { display:flex; align-items:center; gap:8px; }
 @media (max-height:700px) { .tips { display:none; } }
+/* incognito: no clock, no numbers, no most-visited sites (those would tell on you); what is said instead is what incognito does and does not do */
+.incintro, .incinfo { display:none; }
+.inc .incintro { display:flex; flex-direction:column; align-items:center; text-align:center; animation:up .8s cubic-bezier(.2,.8,.2,1) both; } .inc .incinfo { display:grid; }
+.inc .top, .inc .stats, .inc #planets, .inc .tips, .inc .wp, .inc .wp2, .inc .shade, .inc canvas { display:none !important; }
+html.inc, .inc body { background:radial-gradient(1100px 640px at 50% 6%,color-mix(in srgb,var(--accent) 17%,transparent),transparent 64%),radial-gradient(900px 520px at 50% 118%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 62%),var(--bg); }
+.incmark { width:86px; height:86px; border-radius:27px; display:grid; place-items:center; color:var(--accent); background:color-mix(in srgb,var(--accent) 14%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 34%,transparent),0 20px 54px color-mix(in srgb,var(--accent) 22%,transparent); } .incmark svg { width:48px; height:48px; fill:none; stroke:currentColor; stroke-width:1.45; stroke-linecap:round; stroke-linejoin:round; }
+.incintro h1 { margin-top:24px; font-size:clamp(28px,4.7vh,42px); font-weight:660; letter-spacing:-.035em; line-height:1.1; } .incintro p { margin-top:11px; max-width:540px; color:var(--dim); font-size:15px; line-height:1.55; }
+.incinfo { width:min(800px,100%); grid-template-columns:1fr 1fr; margin-top:clamp(22px,4vh,38px); border-radius:20px; background:color-mix(in srgb,var(--text) 3.5%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 9%,transparent); animation:up .8s cubic-bezier(.2,.8,.2,1) .16s both; }
+.incinfo .col { padding:20px 26px 22px; } .incinfo .col + .col { border-left:1px solid color-mix(in srgb,var(--text) 9%,transparent); }
+.incinfo h3 { font-size:12.5px; font-weight:620; letter-spacing:.02em; color:var(--dim); margin-bottom:13px; } .incinfo ul { list-style:none; padding:0; display:flex; flex-direction:column; gap:11px; }
+.incinfo li { display:flex; align-items:center; gap:11px; font-size:14px; } .incinfo li svg { width:17px; height:17px; flex:none; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; } .incinfo .col:first-child li svg { stroke:#5ee0a8; } .incinfo .col:last-child li svg { stroke:var(--dim); }
+.incnote { margin-top:16px; color:var(--dim); font-size:12.5px; text-align:center; } .incnote { display:none; } .inc .incnote { display:block; }
 @keyframes up { from { opacity:0; transform:translateY(14px); } }
 @keyframes pop { from { opacity:0; transform:scale(.55); } }
+/* ===== the polish: the clock, the search bar, the three panels, the sites ===== */
+#clock { font-weight:200; letter-spacing:-.05em; } .colon { display:inline-block; opacity:.5; transform:translateY(-.05em); margin:0 .01em; }
+#hi { font-weight:620; }
+form { width:min(800px,100%); }
+input { height:62px; border-radius:31px; font-size:17.5px; padding:0 112px 0 66px; background:linear-gradient(180deg,color-mix(in srgb,var(--text) 6.5%,transparent),color-mix(in srgb,var(--text) 3%,transparent)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 12%,transparent),inset 0 1px 0 color-mix(in srgb,var(--text) 9%,transparent),0 16px 46px rgba(0,0,0,.26); transition:box-shadow .2s,background .2s; }
+input:hover { background:linear-gradient(180deg,color-mix(in srgb,var(--text) 8%,transparent),color-mix(in srgb,var(--text) 4%,transparent)); }
+input:focus { box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 80%,transparent),0 0 0 6px color-mix(in srgb,var(--accent) 15%,transparent),0 16px 46px rgba(0,0,0,.3); }
+form svg { left:26px; top:20px; } form kbd { top:19px; right:22px; }
+.stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; width:min(800px,100%); }
+.card { min-width:0; height:80px; padding:0 14px 0 14px; border-radius:20px; gap:12px; background:linear-gradient(180deg,color-mix(in srgb,var(--text) 5.5%,transparent),color-mix(in srgb,var(--text) 2.5%,transparent)); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 10%,transparent),inset 0 1px 0 color-mix(in srgb,var(--text) 7%,transparent); transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s,background .2s; }
+.ctile { width:42px; height:42px; border-radius:13px; flex:none; display:grid; place-items:center; background:color-mix(in srgb,var(--accent) 15%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 26%,transparent); } .ctile .ci { width:22px; height:22px; stroke:color-mix(in srgb,var(--accent) 72%,var(--text)); }
+.card .tx { flex:1; min-width:0; } .card b { font-size:21px; font-weight:600; letter-spacing:-.02em; white-space:nowrap; } .card b i { font-style:normal; font-size:12.5px; font-weight:560; letter-spacing:0; color:var(--dim); margin-left:4px; } .card small { font-size:12.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .card .dc { padding-left:4px; } .card .dc .spark { width:42px; }
+.mbar { display:block; height:3px; width:100%; max-width:120px; margin-top:7px; border-radius:2px; overflow:hidden; background:color-mix(in srgb,var(--text) 11%,transparent); } .mbar i { display:block; height:100%; border-radius:2px; background:var(--accent); transition:width .6s cubic-bezier(.2,.8,.2,1); }
+@media (max-width:820px) { .stats { grid-template-columns:1fr; width:min(380px,100%); } .card { height:70px; } }
+.pl .ic { width:60px; height:60px; border-radius:20px; } .pl .ic img { border-radius:10px; }
+/* the Complete profile: a few small movements, nothing that runs all the time except the colon */
+.fxfull .colon { animation:colon 2.6s ease-in-out infinite; } @keyframes colon { 50% { opacity:.18; } }
+.fxfull .card:hover { transform:translateY(-3px); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 38%,transparent),inset 0 1px 0 color-mix(in srgb,var(--text) 8%,transparent),0 14px 34px rgba(0,0,0,.28); }
+.fxfull .card { animation:up .7s cubic-bezier(.2,.8,.2,1) both; } .fxfull .card:nth-child(1) { animation-delay:.22s; } .fxfull .card:nth-child(2) { animation-delay:.3s; } .fxfull .card:nth-child(3) { animation-delay:.38s; }
 .plain * { animation:none !important; transition:none !important; backdrop-filter:none !important; }
 </style>
 </head>
@@ -77,10 +108,13 @@ form kbd { position:absolute; right:18px; top:16px; }
 <canvas id="sky"></canvas><div id="shoot" aria-hidden="true"></div>
 <main>
   <div class="core">
+    <div class="incintro"><div class="incmark"><svg viewBox="0 0 24 24"><path d="M3 11h18"/><path d="m5.5 11 1.6-5.3a1.4 1.4 0 0 1 1.7-.9L12 5.8l3.2-1a1.4 1.4 0 0 1 1.7.9L18.5 11"/><circle cx="7.5" cy="16.2" r="2.7"/><circle cx="16.5" cy="16.2" r="2.7"/><path d="M10.2 15.7c1.1-.6 2.5-.6 3.6 0"/></svg></div><h1>You are incognito</h1><p>Nova does not save what you do in this window. When you close the last incognito window, everything from it is gone.</p></div>
     <div class="top"><div id="clock"></div><div id="hi"></div><div id="date"></div></div>
     <form id="f"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search or enter address" autocomplete="off" spellcheck="false" autofocus><kbd>Ctrl K</kbd></form>
     <div class="stats" id="stats"></div>
     <div id="planets"></div>
+    <div class="incinfo"><div class="col"><h3>Nova will not save</h3><ul><li><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Your browsing history</li><li><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Cookies and site data</li><li><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>What you type into forms</li></ul></div><div class="col"><h3>Still visible to</h3><ul><li><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>The websites you visit</li><li><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>Your employer or school</li><li><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>Your internet provider</li></ul></div></div>
+    <div class="incnote">Files you download and bookmarks you make stay on this computer.</div>
   </div>
   <div class="tips"><div><kbd>Ctrl</kbd><kbd>K</kbd>search anything</div><div><kbd>Ctrl</kbd><kbd>T</kbd>new tab</div><div><kbd>Ctrl</kbd><kbd>E</kbd>all tabs</div></div>
 </main>
@@ -96,13 +130,14 @@ const apply = (t) => {
 };
 apply(Object.fromEntries(['bg', 'chrome', 'accent', 'text', 'dim'].map((k) => [k, P.get(k)])));
 if (P.get('fx') === '0') root.classList.add('plain');
+if (P.get('inc')) root.classList.add('inc'); // incognito: its own page
 wp.dataset.wall = P.get('wall') || '';
 const engine = P.get('engine') || 'https://duckduckgo.com/?q=%s';
 const keywords = String(P.get('kw') || '').split(/\r?\n/).map((l) => l.trim().match(/^(\S+)\s+(https?:\/\/\S*%s\S*)/i)).filter(Boolean); // the address bar's keywords (yt cats)
 const clock = document.getElementById('clock');
 const clockTick = () => { // the time, the greeting and the date; the next update is due when the minute changes
   const d = new Date(), h = d.getHours();
-  clock.textContent = String(h).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  clock.innerHTML = String(h).padStart(2, '0') + '<span class="colon">:</span>' + String(d.getMinutes()).padStart(2, '0');
   document.getElementById('hi').textContent = h < 5 ? 'Still up?' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
   document.getElementById('date').textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   setTimeout(clockTick, (60 - d.getSeconds()) * 1000 + 60);
@@ -130,14 +165,15 @@ window.novaStats = (s) => {
     const pts = v.map((x, i) => [(i / (v.length - 1)) * (W - 6) + 3, H - 4 - ((x - lo) / span) * (H - 8)]);
     return `<svg class="spark ok" viewBox="0 0 ${W} ${H}"><polyline points="${pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')}" fill="none"/><circle cx="${pts[0][0].toFixed(1)}" cy="${pts[0][1].toFixed(1)}" r="2.2" fill="#34d399" stroke="none"/><circle cx="${pts[pts.length - 1][0].toFixed(1)}" cy="${pts[pts.length - 1][1].toFixed(1)}" r="2.2" fill="#34d399" stroke="none"/></svg>`;
   };
-  const card = (icon, val, label, deco) => `<div class="card"><svg class="ci" viewBox="0 0 24 24">${icon}</svg><div class="tx"><b>${val}</b><small>${label}</small></div><div class="dc">${deco}</div></div>`;
+  const card = (icon, val, label, deco, extra = '') => `<div class="card"><span class="ctile"><svg class="ci" viewBox="0 0 24 24">${icon}</svg></span><div class="tx"><b>${val}</b><small>${label}</small>${extra}</div><div class="dc">${deco}</div></div>`;
   const chip = '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/>';
   const shield = '<path d="M12 3 4.5 6v5.6c0 4.2 3 7.6 7.5 9.4 4.5-1.8 7.5-5.2 7.5-9.4V6Z"/>';
   const bolt = '<path d="M13 2 4 14h7l-1 8 9-12h-7Z"/>';
-  const n = s.asleep || 0;
-  el.innerHTML = card(chip, fmt(s.used), 'Memory usage', sp(s.hist))
+  const n = s.asleep || 0, num = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, '')}<i>GB</i>` : `${Math.round(v)}<i>MB</i>`);
+  const bar = s.cap > 0 ? `<span class="mbar" title="${Math.round(s.used)} of ${Math.round(s.cap)} MB budget"><i style="width:${Math.min(100, Math.round(s.used / s.cap * 100))}%"></i></span>` : '';
+  el.innerHTML = card(chip, num(s.used), 'Memory usage', sp(s.hist), bar)
     + card(shield, (s.blocked || 0).toLocaleString('en-US'), 'Ads &amp; trackers blocked', s.ads === false ? '<svg class="off" viewBox="0 0 24 24"><path d="M6 12h12"/></svg>' : '<svg class="ok" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>')
-    + card(bolt, n + ' tab' + (n === 1 ? '' : 's'), 'Sleeping tabs', '<svg class="moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></svg>');
+    + card(bolt, n + '<i>' + (n === 1 ? 'tab' : 'tabs') + '</i>', 'Sleeping tabs', '<svg class="moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></svg>');
 };
 // the most visited sites sit as a plain grid under the search box: four in a short window, eight in a tall one
 function placeSites() {
@@ -190,6 +226,7 @@ new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(refresh, 120); }).o
 window.novaTheme = (t) => {
   apply(t); wp.dataset.wall = t.wall || ''; if (t.prof) prof = t.prof;
   if (t.fx !== undefined) root.classList.toggle('plain', !t.fx);
+  root.classList.toggle('fxfull', complete());
   rs.setProperty('--dimv', (t.dim_amount ?? 25) / 100); rs.setProperty('--blurv', (t.blur ?? 0) + 'px');
   const img = document.getElementById('wp2'), shade = document.getElementById('shade');
   if (t.image) { img.style.backgroundImage = `url(${t.image})`; img.classList.add('on'); shade.classList.add('on'); wp.style.opacity = 0; } else { img.classList.remove('on'); shade.classList.remove('on'); wp.style.opacity = 1; }
@@ -198,6 +235,7 @@ window.novaTheme = (t) => {
   refresh();
 };
 if (!WALLS.includes(wp.dataset.wall)) root.classList.add('nostars');
+root.classList.toggle('fxfull', complete());
 </script>
 </body>
 </html>
