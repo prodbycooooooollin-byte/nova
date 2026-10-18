@@ -1,5 +1,16 @@
 [
   {
+    "version": "26.10.28",
+    "date": "2026-10-18",
+    "headline": {
+      "title": "A bigger, richer app icon",
+      "text": "the Nova star now sits on a deep indigo tile that fills the whole icon, so Nova looks like a proper app on the desktop, the taskbar and the Start menu."
+    },
+    "notes": [
+      "Icon: bigger and sharper in every size from 16 to 256 pixels. Shortcuts and the taskbar show it after the restart that finishes this update; the program file itself gets it with the next Setup."
+    ]
+  },
+  {
     "version": "26.10.27",
     "date": "2026-10-18",
     "headline": {

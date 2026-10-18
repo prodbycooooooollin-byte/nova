@@ -5,7 +5,7 @@ app.disableHardwareAcceleration();
 app.whenReady().then(async () => {
   // the small sizes get a simpler drawing (one bold star): the orbit ring would only blur at 16 or 32 pixels
   const svgBig = fs.readFileSync(path.join(__dirname, '../build/icon.svg'), 'utf8'), svgSmall = fs.readFileSync(path.join(__dirname, '../build/icon-small.svg'), 'utf8');
-  const sizes = [16, 24, 32, 48, 64, 128, 256];
+  const sizes = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256]; // the sizes Windows asks for at 100 to 250 percent scaling
   const win = new BrowserWindow({ show: false, width: 256, height: 256, transparent: true, frame: false, webPreferences: { offscreen: true } });
   const pngs = [];
   for (const s of sizes) {
