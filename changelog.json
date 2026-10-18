@@ -1,5 +1,17 @@
 [
   {
+    "version": "26.10.27",
+    "date": "2026-10-18",
+    "headline": {
+      "title": "Fewer leftovers",
+      "text": "Nova no longer leaves a hidden copy behind after a restart, and a second start no longer makes it drop a good update."
+    },
+    "notes": [
+      "Leftovers: if Nova has not ended 8 seconds after you close it or restart it for an update, it is ended for you, and a hidden copy left from earlier is ended about a minute after the next start. Such a copy kept over 100 MB for nothing.",
+      "Updates: a link opened from another program, such as the Riot sign-in, no longer counts as a failed start. Before, three of those made Nova drop a good update. This part needs the new Setup once."
+    ]
+  },
+  {
     "version": "26.10.26",
     "date": "2026-10-18",
     "headline": {

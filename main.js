@@ -21,7 +21,7 @@ const UA = persona.UA;
 const setup = require('./setup');
 const setupMode = setup.detectMode();
 const gotLock = setupMode ? true : app.requestSingleInstanceLock();
-if (!setupMode && !gotLock) app.exit(0); // the running Nova already has the address; this one used to stay behind without a window, 200 to 300 MB each time a link was opened from another program
+if (!setupMode && !gotLock) { try { global.__novaBoot && global.__novaBoot.good && global.__novaBoot.good(); } catch { /* an older launcher */ } app.exit(0); } // a second Nova is not a failed start of the update (the launcher counted it as one); the running Nova already has the address; this one used to stay behind without a window, 200 to 300 MB each time a link was opened from another program
 const fs = require('fs');
 
 const DEFAULT_KEYS = {
@@ -62,7 +62,7 @@ const DEFAULTS = {
   newTabPage: 'home', // what a new tab shows: the start page ('home') or the address bar to type into ('bar')
 };
 
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const AUMID = 'app.nova.browser.v2'; // the taskbar groups windows and picks their icon by this name; a new name starts without any old cached picture
 const HOME = 'nova://home';
 const HOME_FILE = pathToFileURL(path.join(__dirname, 'ui', 'home.html')).href;
@@ -131,6 +131,24 @@ const trail = (m) => {
 };
 // No page may carry a debugger session when Nova ends: Electron frees its debugger objects before it frees the hidden pages of extensions (a password manager's offscreen page, for example),
 // and such a page then calls one that is gone. Three crashes at exit, all in this one place, were this.
+// Safety nets against a Nova that does not end. Twice a windowless copy was found that had stayed behind after an update restart: it kept a main process, a graphics process and a
+// network process (over 100 MB) for nothing, and Windows then showed two Nova entries. (1) When Nova starts to quit, a tiny helper ends this process if it is still there 8 seconds
+// later (a hang inside the engine cannot be stopped from inside, the helper is a separate process). (2) Some time after a start, any other main Nova process of this program is
+// ended: this one holds the single-instance lock, so another one cannot be a working copy.
+let quitWatch = false;
+function quitWatchdog() {
+  if (process.platform !== 'win32' || quitWatch || !app.isPackaged) return; quitWatch = true;
+  try {
+    const exe = path.basename(process.execPath), c = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"ping -n 9 127.0.0.1 >nul & taskkill /F /T /PID ${process.pid} /FI "IMAGENAME eq ${exe}" >nul 2>&1"`], { detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true });
+    c.on('error', () => {}); c.unref();
+  } catch { /* no helper: the safety net is only a safety net */ }
+}
+function sweepStrays() {
+  if (process.platform !== 'win32' || !app.isPackaged || setupMode) return;
+  const name = path.basename(process.execPath), exe = process.execPath.replace(/'/g, "''");
+  const script = `$me = ${process.pid}; Get-CimInstance Win32_Process -Filter "Name='${name}'" | Where-Object { $_.ProcessId -ne $me -and $_.ExecutablePath -eq '${exe}' -and $_.CommandLine -notmatch '--type=' -and $_.CommandLine -notmatch '--(update|setup|uninstall|squirrel)' -and ((Get-Date) - $_.CreationDate).TotalSeconds -gt 45 } | ForEach-Object { & taskkill /F /T /PID $_.ProcessId | Out-Null; $_.ProcessId }`;
+  execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, timeout: 25000 }, (err, out) => { const ids = String(out || '').trim().split(/\s+/).filter(Boolean); if (ids.length) dlog('ended leftover Nova processes: ' + ids.join(', ')); });
+}
 const detachDebuggers = () => { try { for (const w of webContents.getAllWebContents()) { try { if (!w.isDestroyed() && w.debugger.isAttached()) w.debugger.detach(); } catch { /* closing */ } } } catch { /* nothing to detach */ } };
 try {
   const lp = userFile('nova.log'), flag = userFile('running.flag');
@@ -1381,6 +1399,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   bindState(state); // activeTab, activeSpace, split and prevTab live in each window's record
   Menu.setApplicationMenu(null);
   drmInit();
+  setTimeout(sweepStrays, 50000);
 
   // sessions are made by sessionFor() when a page of a profile first needs one; every page (tabs, sign-in popups) presents the same regular-Chrome identity
   if (!process.env.NOVA_NO_PERSONA) app.on('web-contents-created', (_e, wc) => { if (sessions.includes(wc.session)) persona.apply(wc); });
@@ -1415,7 +1434,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   initAdblock(sessions);
   budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => allVisibleIds(), toast: (m) => toast(m), push: () => push(), watching: () => anyOverlay() });
   sleeper.init({ tabs, settings: () => settings, visibleIds: () => allVisibleIds(), native: (wc, p) => nat(wc, p, 'freezing or waking'), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
-  app.on('before-quit', () => { detachDebuggers(); persist(true); quitting = true; sleeper.flush(); perms.flush(); features.shutdown(); });
+  app.on('before-quit', () => { quitWatchdog(); detachDebuggers(); persist(true); quitting = true; sleeper.flush(); perms.flush(); features.shutdown(); });
   updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. Restart to finish the update.`); push(); } else if (e.type === 'status') push(); });
   ui.webContents.once('did-finish-load', () => setTimeout(() => { try { global.__novaBoot && global.__novaBoot.good(); } catch {} }, 8000)); // started fine: the update bundle is trusted from now on
   const feed = () => settings.updateFeed || updater.defaultFeed;

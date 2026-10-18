@@ -35,8 +35,13 @@ function pick() {
   return { c, a };
 }
 
-let started = false;
-const sel = pick();
+// A second Nova (a link opened from another program, the restart of an update) ends at once and the running one carries on. That must not count as a start of the update
+// that did not finish: three of those in a row made Nova drop a perfectly good update and fall back to the old built-in version.
+const setupMode = (() => { try { return require('./setup').detectMode(); } catch { return null; } })();
+const gotLock = setupMode ? true : app.requestSingleInstanceLock();
+if (!gotLock) app.exit(0);
+let started = !gotLock;
+const sel = gotLock ? pick() : null;
 if (sel) {
   const { c, a } = sel;
   write({ ...c, active: { ...a, tries: (a.tries || 0) + 1 } });
