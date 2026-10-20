@@ -25,10 +25,10 @@ function pressure() {
   try { const m = process.getSystemMemoryInfo(); return m.total > 0 && m.free / m.total < 0.08; } catch { return false; }
 }
 
-function sleepable() { // background tabs only, never the ones in view, pinned or making sound
+function sleepable() { // background tabs only, never the ones in view, pinned or making sound, and never one that holds something not sent yet (text, an attachment, a call)
   const visible = new Set(C.visibleIds());
-  const now = Date.now(); // a tab woken by hovering its row is about to be opened: leave it alone for a while; tabs holding unrestorable input go last
-  return [...C.tabs.values()].filter((t) => t.view && !t.pinned && !t.audible && !visible.has(t.id) && !(t.warmAt && now - t.warmAt < 30000)).sort((a, b) => (!!a.dirty - !!b.dirty) || a.lastActive - b.lastActive);
+  const now = Date.now(); // a tab woken by hovering its row is about to be opened: leave it alone for a while
+  return [...C.tabs.values()].filter((t) => t.view && !t.pinned && !t.audible && !visible.has(t.id) && !(t.warmAt && now - t.warmAt < 30000) && !(C.holdsWork && C.holdsWork(t))).sort((a, b) => a.lastActive - b.lastActive);
 }
 
 function tick() {

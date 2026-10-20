@@ -139,7 +139,9 @@ let quitWatch = false;
 function quitWatchdog() {
   if (process.platform !== 'win32' || quitWatch || !app.isPackaged) return; quitWatch = true;
   try {
-    const exe = path.basename(process.execPath), c = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"ping -n 9 127.0.0.1 >nul & taskkill /F /T /PID ${process.pid} /FI "IMAGENAME eq ${exe}" >nul 2>&1"`], { detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true });
+    // Not `detached`: a detached helper has no console, so every program it runs (ping, taskkill) gets a console of its own, and where Windows Terminal is the default terminal that was a visible
+    // window with a ping in it. The helper starts hidden instead and `start /b` hands the real work to a copy that is not tied to this process (Node ends a child it started when it ends itself).
+    const exe = path.basename(process.execPath), c = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"start "" /b cmd /d /s /c "ping -n 9 127.0.0.1 >nul & taskkill /F /T /PID ${process.pid} /FI "IMAGENAME eq ${exe}" >nul 2>&1""`], { stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true });
     c.on('error', () => {}); c.unref();
   } catch { /* no helper: the safety net is only a safety net */ }
 }
@@ -476,7 +478,7 @@ function wake(t) {
   const pw = settings.budget.softWake ? sleeper.wakePayload(t) : null; // scroll, typed text and the last picture of the page, if Nova kept them
   const ses = sessionFor(t.pid, t.private); // the session of the tab's profile (its private one for private tabs)
   const view = new WebContentsView({ webPreferences: { ...(String(t.url).startsWith('chrome-extension:') ? { preload: extmgr.shimPath() } : pw ? { preload: path.join(__dirname, 'wake-preload.js') } : {}), session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: !!settings.features.darkSite, spellcheck: settings.profile !== 'ultra', autoplayPolicy: settings.blockAutoplay ? 'document-user-activation-required' : 'no-user-gesture-required' } });
-  t.view = view; t.pendingWake = pw; t.frozen = false; t.mediaAt = 0;
+  t.view = view; t.pendingWake = pw; t.frozen = false; t.mediaAt = 0; t.captureAt = 0; t.dirty = false; t.snapBad = 0;
   view.setBackgroundColor((pw && pw.bg) || themeOf(wins.get(t.wid) || curW).page);
   const wc = view.webContents;
   const on = (ev, fn) => wc.on(ev, (...a) => { if (t.view !== view) return; useWinOf(t); return fn(...a); }); // the window that shows this page is the current one while its event runs; a page that went to sleep is ignored
@@ -488,7 +490,7 @@ function wake(t) {
   on('render-process-gone', (_e, d) => { if (d.reason === 'clean-exit' || d.reason === 'killed') return; const now = Date.now(); if (now - (t.lastCrash || 0) < 30000) return; t.lastCrash = now; setTimeout(() => { if (!wc.isDestroyed()) wc.reload(); }, 400); });
   on('did-stop-loading', () => { t.loading = false; upd(); if (t.id === state.activeTab) setTimeout(() => capture(t, true), 1500); });
   on('did-navigate', () => {
-    t.mediaAt = 0; trail('open ' + (t.private ? 'a private page' : hostOfUrl(wc.getURL()) || 'a page'));
+    t.mediaAt = 0; t.captureAt = 0; trail('open ' + (t.private ? 'a private page' : hostOfUrl(wc.getURL()) || 'a page'));
     if (isInter(wc.getURL()) && t.inter) { try { const nh = wc.navigationHistory, i = nh.getActiveIndex(); if (i > 0) { const prev = nh.getEntryAtIndex(i - 1); if (prev && (prev.url === t.inter.url || /^chrome-error:/.test(prev.url || ''))) nh.removeEntryAtIndex(i - 1); } } catch { /* an older history API: the failed address stays one step back */ } } // "Back" from a warning page must not land on the failed address again
     upd(); applyZoom(wc); if (!t.private && !isInter(wc.getURL())) features.recordVisit(wc.getURL(), wc.getTitle(), t.pid, t.spaceId);
   });
@@ -766,7 +768,7 @@ function idlePolicy() {
   for (const t of [...tabs.values()]) {
     if (shown(t) || t.audible) continue;
     const idle = now - t.lastActive;
-    if (!t.pinned && settings.archiveAfterHours > 0 && idle > settings.archiveAfterHours * 3600e3) { archiveTab(t); continue; }
+    if (!t.pinned && settings.archiveAfterHours > 0 && idle > settings.archiveAfterHours * 3600e3 && !(t.view && sleeper.holdsWork(t))) { archiveTab(t); continue; } // a page with unsent text or an attachment is not archived (closed)
   }
 }
 
@@ -1244,6 +1246,7 @@ const askKind = (k) => k === 'perm' || k === 'login' || k === 'screen' || k === 
 const permMemo = new WeakMap(); // per page: the "Allow this time" answers and the questions that were dismissed a moment ago
 const memoOf = (wc) => { let m = permMemo.get(wc); if (!m) { m = { once: new Set(), quiet: new Map() }; permMemo.set(wc, m); } return m; };
 function permRequest(pid, priv, wc, perm, cb, details) {
+  if (perm === 'media') { const tc = tabOfWc(wc); if (tc) tc.captureAt = Date.now(); } // a page that opens the microphone or camera may be in a call or a voice chat: not frozen, not discarded (sleeper.js)
   if (['fullscreen', 'clipboard-sanitized-write', 'pointerLock', 'display-capture'].includes(perm)) return cb(true); // sharing the screen is decided in the picker card, not here
   if (perm === 'openExternal') return externalRequest(pid, priv, wc, cb, details);
   const kinds = perms.kindsOf(perm, details); if (!kinds) return cb(false);
@@ -1331,6 +1334,7 @@ async function displayRequest(request, cb) {
   const deny = () => { try { cb({}); } catch { /* the page is gone */ } };
   let wc = null; try { wc = request.frame ? webContents.fromFrame(request.frame) : null; } catch { /* the frame is gone */ }
   const t = wc ? tabOfWc(wc) : null;
+  if (t) t.captureAt = Date.now(); // a page that shares the screen is in a call: not frozen, not discarded
   if (!t || !shown(t) || !request.videoRequested) return deny();
   let list = [];
   try { list = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 200 }, fetchWindowIcons: false }); } catch { return deny(); }
@@ -1408,7 +1412,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
     state: () => state, settings: () => settings, saveSettings, win: () => win, ui: () => ui,
     toast: (m) => toast(m), push: () => push(), native: (wc, p) => nat(wc, p, 'a screenshot'), dlStart: () => dlFlyStart(), openOverlay: (k, d) => openOverlay(k, d), closeOverlay: () => closeOverlay(), overlayBusy: () => overlayOpen,
     newPrivateTab: () => { const t = newTabObj({ private: true }); activate(t.id); return t; },
-    unsafeUrl: (u, pid) => unsafeFor(pid, u), openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
+    unsafeUrl: (u, pid) => unsafeFor(pid, u), openUrl: (u, o) => openUrl(u, o), closeTab: (id) => closeTab(id), sleepTab: (t) => { if (sleeper.holdsWork(t)) return false; sleep(t); return true; }, thawTab: (t) => sleeper.thaw(t), forgetRevisits: () => sleeper.clear(), budgetTabs: () => budget.get().tabs,
     addBackgroundTab: (o) => { const t = newTabObj({ url: o.url, title: o.title, favicon: o.favicon, spaceId: state.spaces.some((s) => s.id === o.spaceId) ? o.spaceId : state.activeSpace, pinned: o.pinned }); push(); return t; },
   });
   webtools.init({ sessions: () => sessions, settings: () => settings });
@@ -1432,7 +1436,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   ui.webContents.once('did-finish-load', () => { if (settings.firstRun || settings.setupVersion < 2) { settings.seenVersion = updater.version; saveSettings(); openOverlay('wizard'); } else whatsNew(); });
 
   initAdblock(sessions);
-  budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), visibleIds: () => allVisibleIds(), toast: (m) => toast(m), push: () => push(), watching: () => anyOverlay() });
+  budget.init({ tabs, settings: () => settings, sleepTab: (t) => sleep(t), holdsWork: (t) => sleeper.holdsWork(t), visibleIds: () => allVisibleIds(), toast: (m) => toast(m), push: () => push(), watching: () => anyOverlay() });
   sleeper.init({ tabs, settings: () => settings, visibleIds: () => allVisibleIds(), native: (wc, p) => nat(wc, p, 'freezing or waking'), sleepTab: (t) => sleep(t), readJson, writeJson, hostVisits: (h) => features.hostVisits(h) });
   app.on('before-quit', () => { quitWatchdog(); detachDebuggers(); persist(true); quitting = true; sleeper.flush(); perms.flush(); features.shutdown(); });
   updater.onEvent((e) => { if (e.type === 'toast') toast(e.text); else if (e.type === 'ready') { toast(`Nova ${e.version} is ready. Restart to finish the update.`); push(); } else if (e.type === 'status') push(); });

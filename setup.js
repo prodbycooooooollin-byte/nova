@@ -172,7 +172,8 @@ function run(mode) {
         await killRunning(installedDir); await removeShell();
         const targets = [`"${installedDir}"`, ...(o.deleteData ? [`"${app.getPath('userData')}"`] : [])];
         const cmd = `ping 127.0.0.1 -n 4 >nul & ` + targets.map((t) => `rmdir /s /q ${t}`).join(' & ');
-        spawn('cmd.exe', ['/c', `"${cmd}"`], { detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true }).unref();
+        // hidden and not `detached` (a detached helper shows a console window where Windows Terminal is the default terminal); `start /b` lets the work outlive this process
+        spawn('cmd.exe', ['/d', '/s', '/c', `"start "" /b cmd /d /s /c "${cmd}""`], { stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true }).unref();
         return { ok: true };
       } catch (e) { return { ok: false, error: e.message }; }
     });

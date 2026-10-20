@@ -1,5 +1,17 @@
 [
   {
+    "version": "26.10.29",
+    "date": "2026-10-20",
+    "headline": {
+      "title": "Nothing unsent is lost",
+      "text": "Nova never puts a tab to sleep while it holds typed text, an attachment, a voice chat or a playing stream, and the ping window at quit is gone."
+    },
+    "notes": [
+      "Sleep: a chat box with text or a photo waiting to be sent, a call, and a muted stream that keeps playing are no longer put to sleep or closed by the memory limit. Chat assistants such as ChatGPT are no longer frozen.",
+      "Quit: the small helper that ends a stuck Nova no longer opens a console window with a ping in it."
+    ]
+  },
+  {
     "version": "26.10.28",
     "date": "2026-10-18",
     "headline": {

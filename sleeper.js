@@ -4,7 +4,8 @@
 //                and it resumes by itself the moment it is shown. The freeze survives detaching the debugger.
 //   2. Soft wake before a tab is discarded Nova remembers its scroll position, what was typed into plain form fields and
 //                (in main.js) a picture of it. The reload then shows that picture and restores both (wake-preload.js).
-//                Tabs holding input Nova cannot restore (passwords, card fields, rich editors) are never discarded by the idle policy.
+//                Tabs holding anything the person has not sent (typed text of any kind, attachments, passwords, card fields, rich editors, a call) are never discarded
+//                by any policy (idle timer, memory budget, CPU guard, extensions): see holdsWork(). They may be frozen, which loses nothing.
 //   3. Adaptive  how soon an unused tab is discarded is learned per site from how fast you came back to it before.
 const hostOf = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.hostname.replace(/^www\./, '') : ''; } catch { return ''; } };
 const noHash = (u) => String(u || '').split('#')[0];
@@ -19,9 +20,22 @@ const MIN_GAP_S = 4;          // switching past a tab with Ctrl+Tab is not a vis
 // A frozen page keeps its sockets but cannot answer them, so a live stream or a chat is dead when the page thaws (a Twitch tab that had to be closed and opened again).
 // Chrome itself does not freeze such pages; the CDP freeze ignores that rule, so Nova applies it: a page that has played or made sound since it was loaded, and the
 // well-known live services, are never frozen. They are still discarded after the idle delay, which loads a clean page when the tab is opened again.
-const LIVE_HOSTS = /(^|\.)(twitch\.tv|kick\.com|discord\.com|whatsapp\.com|slack\.com|teams\.microsoft\.com|teams\.live\.com|meet\.google\.com|zoom\.us|telegram\.org)$/;
+// The chat assistants are in the list too: a frozen page stops receiving the answer that is being written, and a voice chat there lives on a live connection.
+const LIVE_HOSTS = /(^|\.)(twitch\.tv|kick\.com|discord\.com|whatsapp\.com|slack\.com|teams\.microsoft\.com|teams\.live\.com|meet\.google\.com|zoom\.us|telegram\.org|chatgpt\.com|chat\.openai\.com|claude\.ai|gemini\.google\.com|copilot\.microsoft\.com|perplexity\.ai|grok\.com|chat\.mistral\.ai|chat\.deepseek\.com|poe\.com)$/;
 const awake = (t) => { const a = C && C.settings().awakeHosts; return Array.isArray(a) && a.includes(hostOf(t.url)); }; // a site you chose to keep awake (the shield menu)
-const live = (t) => !!t.mediaAt || LIVE_HOSTS.test(hostOf(t.url)) || awake(t);
+// A page that opened the microphone, the camera or the screen may be in a call or a voice chat, and it says nothing until it speaks: it is not frozen, and not discarded for two hours.
+// main.js sets t.captureAt when the page asks for such a device (the page of a voice chat was frozen while the person was still talking to it).
+const CAPTURE_HOLD_MS = 2 * 3600e3;
+const capturing = (t) => !!t.captureAt && Date.now() - t.captureAt < CAPTURE_HOLD_MS;
+const live = (t) => !!t.mediaAt || capturing(t) || LIVE_HOSTS.test(hostOf(t.url)) || awake(t);
+// A page that must never be discarded, whatever the timers say: something typed in and not sent, an attachment waiting to be sent, a call, or a page that could not be asked (the answer is
+// unknown, and unknown counts as "holds something"). Freezing is harmless for these (a frozen page keeps everything in memory); discarding is not.
+// Also a site the person keeps awake and a page that is playing a video or stream, even a muted one (several Twitch streams that collect watch time and channel points): the memory
+// budget used to put such a muted stream to sleep because only pages making sound were spared, and a stream that sleeps stops counting.
+function holdsWork(t) {
+  const since = Math.max(t.lastActive || 0, t.warmAt || 0, t.audibleAt || 0);
+  return !!t.dirty || capturing(t) || awake(t) || !!t.playing || !!t.audible || (t.snapAt || 0) < since; // the last one: the person was in the tab after the last look at it
+}
 
 let C, rev = {}, saveTimer = null;
 
@@ -48,8 +62,21 @@ const SNAP_JS = `(() => {
       const risky = BAD_TYPE.test(type) || BAD_AC.test(el.getAttribute('autocomplete') || '') || BAD_NAME.test((el.name || '') + ' ' + (el.id || ''));
       if (risky || el.value.length > 4000 || bytes + el.value.length > 30000) { out.dirty = true; continue; }
       bytes += el.value.length; out.f.push({ k: key, v: el.value });
+      if (el.value.trim() && (el.tagName === 'TEXTAREA' || /^(|text|search|email|url|tel|number)$/.test(type))) out.dirty = true; // typed and not sent: the tab is kept, not just restored later
     }
-    for (const el of document.querySelectorAll('[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"]')) if ((el.textContent || '').trim()) { out.dirty = true; break; }
+    const EDIT = '[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[role="textbox"]', eds = Array.from(document.querySelectorAll(EDIT));
+    for (const el of eds) if ((el.textContent || '').trim()) { out.dirty = true; break; }
+    // an attachment waiting to be sent (a photo in a chat box): a picture, video or canvas of some size next to the field, in its form or a few levels up; round ones are avatars
+    const big = (m) => { const r = m.getBoundingClientRect(); if (r.width < 40 || r.height < 40) return false; const br = parseFloat(getComputedStyle(m).borderTopLeftRadius) || 0, pct = /%/.test(getComputedStyle(m).borderTopLeftRadius); return !(pct ? br >= 40 : br >= Math.min(r.width, r.height) / 2 - 1); };
+    if (!out.dirty) for (const el of eds.concat(Array.from(document.querySelectorAll('textarea')))) {
+      let box = null; // the form of the field, or three levels up; one as big as the page says nothing
+      for (const c of [el.closest('form'), el.parentElement && el.parentElement.parentElement && el.parentElement.parentElement.parentElement]) { if (c && c.getBoundingClientRect().height <= innerHeight * 0.6) { box = c; break; } }
+      if (!box) continue;
+      for (const m of box.querySelectorAll('img,canvas,video')) if (big(m)) { out.dirty = true; break; }
+      if (out.dirty) break;
+    }
+    if (!out.dirty) for (const im of document.querySelectorAll('img[src^="blob:"]')) if (big(im)) { out.dirty = true; break; } // an upload preview
+    if (!out.dirty) for (const m of document.querySelectorAll('video,audio')) if (m.srcObject && m.srcObject.active !== false) { out.dirty = true; break; } // a live stream: a call
     if (!out.f.length) delete out.f;
     return out;
   } catch (e) { return null; }
@@ -89,9 +116,13 @@ async function snapshot(t) {
   let r = null;
   try { r = await Promise.race([wc.executeJavaScript(SNAP_JS, false), new Promise((res) => setTimeout(() => res(null), 800))]); } catch { r = null; }
   t.snapAt = Date.now();
-  t.snap = r && r.url ? r : null;
-  t.dirty = !!(r && r.dirty);
+  if (r && r.url) { t.snap = r; t.dirty = !!r.dirty; t.snapBad = 0; return; }
+  // The page did not answer in time (a busy chat page, for example). That is not "nothing typed": it is kept, and asked again a little later; only a page that stays silent
+  // through five tries (about two minutes) is treated as having nothing to lose.
+  t.snap = null; t.snapBad = (t.snapBad || 0) + 1; t.dirty = t.snapBad < SNAP_TRIES;
 }
+const SNAP_TRIES = 6;
+const needSnap = (t, since, now) => (t.snapAt || 0) < since || (t.snapBad > 0 && t.snapBad < SNAP_TRIES && now - (t.snapAt || 0) > 20e3); // after the last visit, or a failed look to repeat
 function wakePayload(t) { // what the preload of a freshly woken tab gets, or null when there is nothing trustworthy to restore
   const s = t.snap;
   if (!s || noHash(s.url) !== noHash(t.url)) return null;
@@ -163,7 +194,7 @@ async function step(t, idle, b) {
   busy.add(t.id);
   try {
     const since = Math.max(t.lastActive || 0, t.warmAt || 0, t.audibleAt || 0);
-    if (b.softWake && (t.snapAt || 0) < since) { if (t.frozen) await thaw(t); if (t.view && !C.visibleIds().includes(t.id)) await snapshot(t); }
+    if (needSnap(t, since, Date.now())) { if (t.frozen) await thaw(t); if (t.view && !C.visibleIds().includes(t.id)) await snapshot(t); } // also with Invisible wake off: the look is what protects typed text
     const need = (t.loading ? 120 : b.freezeAfterSec) * 1000;
     if (b.freeze && t.view && !t.frozen && !live(t) && idle >= need && !C.visibleIds().includes(t.id) && Date.now() - (t.freezeFailAt || 0) > 60e3) await freeze(t);
   } catch (e) { console.error('smart sleep', e.message); } finally { busy.delete(t.id); }
@@ -178,9 +209,9 @@ function tick() {
     if (t.pinned || t.audible || t.playing || busy.has(t.id) || awake(t)) { t.sleepAt = 0; continue; }
     const since = Math.max(t.lastActive || 0, t.warmAt || 0, t.audibleAt || 0), idle = now - since;
     const settle = t.warmAt > t.lastActive ? 9000 : 4000; // a hover-woken page needs a moment to put itself back
-    const wantSnap = b.softWake && (t.snapAt || 0) < since && idle >= settle;
+    const wantSnap = needSnap(t, since, now) && idle >= settle;
     const wantFreeze = b.freeze && !t.frozen && !live(t) && idle >= (t.loading ? 120 : b.freezeAfterSec) * 1000;
-    const d = delayMs(t), keep = b.softWake && t.dirty; // typed-in input Nova cannot restore: never discard it on a timer
+    const d = delayMs(t), keep = holdsWork(t); // anything not sent yet (text, an attachment, a call): never discard it on a timer
     t.sleepAt = d > 0 && !keep ? since + d : 0;
     if (wantSnap) { step(t, idle, b); continue; } // the picture and the scroll position are taken before anything is frozen or discarded
     if (d > 0 && idle >= d && !keep) { missed(t); C.sleepTab(t); continue; }
@@ -198,4 +229,4 @@ function init(ctx) {
 }
 const flush = () => { clearTimeout(saveTimer); try { C.writeJson('revisit.json', rev); } catch {} };
 
-module.exports = { init, live, left, arrived, missed, clear, flush, freeze, thaw, snapshot, wakePayload, delayMs, learned, _rev: () => rev };
+module.exports = { init, live, holdsWork, left, arrived, missed, clear, flush, freeze, thaw, snapshot, wakePayload, delayMs, learned, _rev: () => rev };
