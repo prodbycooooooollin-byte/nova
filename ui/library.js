@@ -60,8 +60,9 @@ function library(o, d) {
       ll.innerHTML = items.map((x) => {
         if (name === 'Downloads') return dlDoneRow(x);
         const g = name === 'History' ? ago(x.t) : ''; const gh = g && g !== last ? `<div class="lgrp">${g}</div>` : ''; last = g || last;
-        return `${gh}<div class="lrow" data-url="${esc(x.url)}">${icon(x)}<div class="lt"><b>${esc(x.title || x.url)}</b><span>${esc(hostOf(x.url))}${name === 'History' ? ' · ' + time(x.t) : ''}</span></div>${name === 'Bookmarks' ? `<button class="ibtn sm" data-edit="${esc(x.url)}" title="Rename">${ic('t-edit')}</button>` : ''}<button class="ibtn sm" data-del="${esc(x.url)}" title="Remove">${ic('x')}</button></div>`;
+        return `${gh}<div class="lrow" data-url="${esc(x.url)}"${name === 'Bookmarks' && !q ? ` draggable="true" data-bmd="${esc(x.url)}"` : ''}>${icon(x)}<div class="lt"><b>${esc(x.title || x.url)}</b><span>${esc(hostOf(x.url))}${name === 'History' ? ' · ' + time(x.t) : ''}</span></div>${name === 'Bookmarks' ? `<button class="ibtn sm" data-edit="${esc(x.url)}" title="Rename">${ic('t-edit')}</button>` : ''}<button class="ibtn sm" data-del="${esc(x.url)}" title="Remove">${ic('x')}</button></div>`;
       }).join('');
+      ll.toggleAttribute('data-bmlist', name === 'Bookmarks' && !q); // a list that can be reordered by dragging (not while a search is showing only some of the bookmarks)
       ll.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => { // rename in place: the title turns into a field
         const row = b.closest('.lrow'), t = row.querySelector('.lt b'), old = t.textContent, inp = Object.assign(document.createElement('input'), { value: old, className: 'lren', spellcheck: false });
         t.replaceWith(inp); inp.focus(); inp.select(); let done = false;
@@ -72,6 +73,7 @@ function library(o, d) {
       ll.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => { await nova.cmd(name === 'Bookmarks' ? 'removeBookmark' : 'removeHistory', { url: b.dataset.del }); draw(); }));
       if (name === 'Downloads') bindDlRows(ll, () => draw());
     };
+    window.bmListRedraw = name === 'Bookmarks' ? draw : null; // a bookmark dropped into a new place (ui/boot.js) redraws this list
     // running downloads sit above the finished ones and update live from the state Nova pushes
     const st = { key: null }; let prevActive = -1;
     const drawLive = () => { const n = paintLive($('#dl-live'), st, () => draw()); if (prevActive >= 0 && n < prevActive) draw(); prevActive = n; };
@@ -86,7 +88,7 @@ function library(o, d) {
     body.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => { range = b.dataset.r; body.querySelectorAll('[data-r]').forEach((x) => x.classList.toggle('on', x === b)); }));
     $('#doclear').onclick = async () => { if (!Object.values(pick).some(Boolean)) return toast('Pick something to clear.'); const r = await askDialog({ title: 'Clear this data?', text: pick.cookies ? 'You will be signed out of most websites.' : 'This cannot be undone.', ok: 'Clear', danger: true }); if (r) { await nova.cmd('clearData', { what: pick, range }); } };
   }
-  const show = (name) => { tab = name; mark(); name === 'Clear data' ? clear() : list(name); };
+  const show = (name) => { tab = name; mark(); window.bmListRedraw = null; name === 'Clear data' ? clear() : list(name); };
   o.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => show(b.dataset.t)));
   $('#lx').onclick = () => nova.cmd('closeOverlay');
   show(tab);

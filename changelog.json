@@ -1,5 +1,17 @@
 [
   {
+    "version": "26.10.30",
+    "date": "2026-10-21",
+    "headline": {
+      "title": "Drag to sort bookmarks",
+      "text": "move any bookmark to a new place in the bar or in the Library, and the tab limit no longer closes tabs with unsent text."
+    },
+    "notes": [
+      "Bookmarks: drag a bookmark in the bar or in the Library list to put it where you want it. The Library list now reads like the bar, oldest first.",
+      "Tabs: the tab limit no longer closes a tab that holds unsent text, an attachment, a call or a playing stream."
+    ]
+  },
+  {
     "version": "26.10.29",
     "date": "2026-10-20",
     "headline": {

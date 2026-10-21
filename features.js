@@ -404,6 +404,14 @@ async function handle(name, a, t) {
     case 'scanBrowsers': return scanBrowsers();
     case 'library': return library(a.kind, a.q, +a.space || 0);
     case 'renameBookmark': { const d = D(), b = d.bookmarks.find((x) => x.url === a.url), name = String(a.title || '').trim().slice(0, 200); if (b && name) { b.title = name; saveBookmarks(d); C.push(); } return; } // any bookmark, not only the page that is open
+    case 'moveBookmark': { // dragged in the bar or in the library: `url` goes right before (or after) `ref` in the order of the bar (left to right); no `ref` = to the end
+      const d = D(), bar = [...d.bookmarks].reverse(), from = bar.findIndex((b) => b.url === a.url), ref = a.ref && a.ref !== a.url ? a.ref : '';
+      if (from < 0 || (a.ref && !ref)) return;
+      const [x] = bar.splice(from, 1), at = ref ? bar.findIndex((b) => b.url === ref) : -1;
+      if (ref && at < 0) return; // the target is gone: nothing was changed
+      bar.splice(ref ? (a.after ? at + 1 : at) : bar.length, 0, x);
+      d.bookmarks = bar.reverse(); saveBookmarks(d); C.push(); return;
+    }
     case 'removeBookmark': { const d = D(); d.bookmarks = d.bookmarks.filter((b) => b.url !== a.url); saveBookmarks(d); C.push(); return; }
     case 'removeHistory': { const d = D(), sp = +a.space || 0; d.history = d.history.filter((h) => !(h.url === a.url && (!sp || !h.sp || h.sp === sp))); saveHistory(d); return; }
     case 'removeHistorySite': { // everything from one website (www. does not matter), in one space or in all of them
@@ -520,7 +528,7 @@ function topSites(n = 8, pid) { // bookmarks first, then the most visited hosts
 function library(kind, q = '', space = 0) {
   const { history, bookmarks } = D();
   const f = (list) => (q ? list.filter((x) => score(q, x.title, x.url) >= 0) : list);
-  if (kind === 'bookmarks') { const list = f(bookmarks).slice(0, 500); queueIcons(list.slice(0, 120)); return list.map(withIcon); }
+  if (kind === 'bookmarks') { const list = f(bookmarks).slice(0, 500).reverse(); queueIcons(list.slice(0, 120)); return list.map(withIcon); } // in the order of the bar (left to right = top to bottom), so dragging means the same in both
   if (kind === 'history') return f(space ? history.filter((h) => !h.sp || h.sp === space) : history).slice(0, 600).map(withIcon);
   if (kind === 'downloads') return downloads.slice(0, 100).map((x) => ({ ...x, exists: fs.existsSync(x.path) }));
   return [];

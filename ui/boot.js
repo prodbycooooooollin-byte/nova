@@ -31,3 +31,23 @@ document.addEventListener('dragover', (e) => {
 });
 document.addEventListener('drop', (e) => { if (dragTab === null || !dropInfo) return; e.preventDefault(); nova.cmd('reorder', { id: dragTab, ...dropInfo }); });
 document.addEventListener('dragend', (e) => { const out = dragTab !== null && e.dataTransfer && e.dataTransfer.dropEffect === 'none' ? dragTab : null; dragTab = null; dropInfo = null; clearDrop(); document.querySelectorAll('.dragging').forEach((x) => x.classList.remove('dragging')); if (deferredRender) { deferredRender = false; render(); } if (out !== null) nova.cmd('detachTab', { id: out }); }); // let go outside the window: the tab becomes a window of its own
+
+// ---------- drag bookmarks to reorder (the bookmarks bar, and the Bookmarks list in the library: both read left to right / top to bottom in the same order) ----------
+let dragBm = null, bmDrop = null, bmSince = 0;
+const bmEl = (n) => (n && n.closest ? n.closest('.bmk[data-bm],.lrow[data-bmd]') : null), bmUrl = (el) => el.dataset.bm || el.dataset.bmd;
+const clearBm = () => document.querySelectorAll('.bm-before,.bm-after').forEach((x) => x.classList.remove('bm-before', 'bm-after'));
+document.addEventListener('dragstart', (e) => { const el = bmEl(e.target); if (!el) return; dragBm = bmUrl(el); bmSince = Date.now(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragBm); setTimeout(() => el.classList.add('dragging'), 0); });
+document.addEventListener('dragover', (e) => {
+  if (dragBm === null) return;
+  let el = bmEl(e.target), ref = '', after = false;
+  if (el && bmUrl(el) !== dragBm) { // over another bookmark: before it or after it, by which half the pointer is in
+    const r = el.getBoundingClientRect(), vert = el.matches('.lrow') || (S.settings.compact && S.settings.layout !== 'top');
+    after = vert ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2; ref = bmUrl(el);
+  } else if (!el && e.target.closest && (e.target.closest('#bmbar') || e.target.closest('#ll[data-bmlist]'))) { // the empty end of the bar or the list: to the end
+    const all = [...document.querySelectorAll(e.target.closest('#ll') ? '#ll .lrow[data-bmd]' : '#bmbar .bmk[data-bm]')], last = all[all.length - 1];
+    if (!last || bmUrl(last) === dragBm) return; el = last; ref = bmUrl(last); after = true;
+  } else return;
+  e.preventDefault(); clearBm(); el.classList.add(after ? 'bm-after' : 'bm-before'); bmDrop = { ref, after };
+});
+document.addEventListener('drop', (e) => { if (dragBm === null || !bmDrop) return; e.preventDefault(); const url = dragBm, d = bmDrop; Promise.resolve(nova.cmd('moveBookmark', { url, ...d })).then(() => { if (window.bmListRedraw) window.bmListRedraw(); }); });
+document.addEventListener('dragend', () => { if (dragBm === null) return; dragBm = null; bmDrop = null; clearBm(); document.querySelectorAll('.dragging').forEach((x) => x.classList.remove('dragging')); if (deferredRender) { deferredRender = false; render(); } });

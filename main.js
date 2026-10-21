@@ -736,7 +736,7 @@ function closeTab(id) {
 function enforceLimit(keepId) {
   const max = settings.maxTabs;
   if (!max) return;
-  const open = [...tabs.values()].filter((t) => !t.pinned && t.id !== keepId && !shown(t));
+  const open = [...tabs.values()].filter((t) => !t.pinned && t.id !== keepId && !shown(t) && !(t.view && sleeper.holdsWork(t))); // a page with unsent text, an attachment, a call or a playing stream is never archived (closed) by the tab budget
   const over = tabs.size - max;
   if (over <= 0) return;
   open.sort((a, b) => a.lastActive - b.lastActive).slice(0, over).forEach((t) => archiveTab(t));

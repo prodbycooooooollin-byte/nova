@@ -271,6 +271,7 @@ function groupMenu(id) {
 }
 function render() {
   if (!S) return;
+  if (typeof dragBm !== 'undefined' && dragBm !== null) { if (Date.now() - bmSince < 8000) { deferredRender = true; return; } dragBm = null; bmDrop = null; } // a bookmark is being dragged: the bar stays as it is until it is dropped
   if (typeof dragTab !== 'undefined' && dragTab !== null) { if (Date.now() - dragSince < 5000) { deferredRender = true; return; } dragTab = null; dropInfo = null; } // a drag that never ended must not freeze the tab list
   applySettings();
   const cur = S.tabs.find((t) => t.id === S.activeTab), top = S.settings.layout === 'top';
@@ -284,7 +285,7 @@ function render() {
   $('#urlbar').innerHTML = `${top ? `<span class="uicon" data-do="sitepanel" title="Site settings">${ic({ lock: 't-shield', globe: 't-globe', search: 't-search' }[icon])}</span>` : ic(icon)}<span id="url-text">${label}</span>${top ? '' : cur?.bookmarked ? ic('starf').replace('<svg', '<svg style="color:var(--accent)"') : '<kbd>Ctrl K</kbd>'}`;
   { const star = document.getElementById('bmstar'), page = !!(cur && /^https?:/i.test(cur.url || '')); star.innerHTML = ic(top ? 't-star' : cur?.bookmarked ? 'starf' : 'star'); star.classList.toggle('on', !!cur?.bookmarked); star.classList.toggle('off', !page); star.title = cur?.bookmarked ? 'Edit this bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)'; }
 
-  $('#bmbar').innerHTML = (S.bar || []).length ? S.bar.map((b) => `<button class="bmk" data-bm="${esc(b.url)}" title="${esc(b.title || b.url)}">${siteFav(b.url, b.icon)}<span>${esc(b.title || hostOf(b.url))}</span></button>`).join('') + `<button class="bmk more" data-do="bookmarks" title="All bookmarks (Ctrl+Shift+O)">${ic('fwd')}</button>` : '';
+  $('#bmbar').innerHTML = (S.bar || []).length ? S.bar.map((b) => `<button class="bmk" draggable="true" data-bm="${esc(b.url)}" title="${esc(b.title || b.url)}">${siteFav(b.url, b.icon)}<span>${esc(b.title || hostOf(b.url))}</span></button>`).join('') + `<button class="bmk more" data-do="bookmarks" title="All bookmarks (Ctrl+Shift+O)">${ic('fwd')}</button>` : '';
   for (const [cid, at] of [...closing]) if (!S.tabs.some((x) => x.id === cid) || performance.now() - at > 2500) closing.delete(cid); // the browser has confirmed it, or it did not close after all
   const tabs = spaceTabs().filter((t) => !closing.has(t.id)), maxAge = (S.settings.archiveAfterHours || 24) * 3600e3;
   $('#pins').innerHTML = tabs.filter((t) => t.pinned).map((t) => `<div class="pin ${t.id === S.activeTab ? 'active' : ''}" data-tab="${t.id}" title="${esc(t.title)}">${favHtml(t)}<button class="pinx" data-close="${t.id}" title="Close tab">${ic('x')}</button></div>`).join('');
