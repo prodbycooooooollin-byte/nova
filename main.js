@@ -1393,6 +1393,7 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   app.setAppUserModelId(AUMID);
   loadSettings();
   repairShortcuts();
+  if (process.platform === 'win32' && app.isPackaged && !setupMode) setTimeout(() => { require('./browserreg').ensure(process.execPath, AUMID, dlog).catch(() => {}); }, 25000); // Windows' list of browsers must point at the Nova that is installed (browserreg.js)
   // the installer can leave a profile choice behind for the very first launch
   { const fr = readJson('first-run.json', null); try { fs.rmSync(userFile('first-run.json'), { force: true }); } catch {}
     if (fr && PROFILES[fr.profile]) { const { features: f, budget: b, ...rest } = PROFILES[fr.profile]; Object.assign(settings, rest, { profile: fr.profile, features: { ...f }, budget: { ...b } }); saveSettings(); } }
@@ -1454,13 +1455,21 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
   });
   perms.init({ fileOf: (pid) => userFile(profiles.fileOf('permissions.json', pid)) });
   safebrowsing.init({ dir: app.getPath('userData'), fetch: (u, o) => net.fetch(u, o), enabled: () => !!settings.features.safeBrowsing, log: (m) => dlog(m) });
-  app.on('second-instance', (_e, argv) => {
+  // the link or local page another program hands to Nova: a click in another program (the Google sign-in of the Claude app), a double click on an .html file; the types match browserreg.js
+  const launchTarget = (argv, wd) => {
+    for (const a of argv.slice(1)) {
+      if (/^https?:\/\//i.test(a)) return a;
+      if (/\.(html?|shtml|xhtml?|svg|webp)$/i.test(a) && !a.startsWith('-')) { try { const f = path.resolve(wd || process.cwd(), a); if (fs.existsSync(f)) return pathToFileURL(f).href; } catch { /* not a path */ } }
+    }
+    return '';
+  };
+  app.on('second-instance', (_e, argv, wd) => {
     const W = curW || firstW(); if (!W) return; useWin(W);
     if (win.isMinimized()) win.restore(); win.focus();
-    const u = argv.slice(1).find((a) => /^https?:\/\//i.test(a) || /\.html?$/i.test(a));
-    if (u) openUrl(/^https?:/i.test(u) ? u : pathToFileURL(u).href, { forceNew: true });
+    const u = launchTarget(argv, wd);
+    if (u) openUrl(u, { forceNew: true });
   });
-  const startUrl = process.argv.slice(1).find((a) => /^https?:\/\//i.test(a));
+  const startUrl = launchTarget(process.argv);
   if (startUrl) ui.webContents.once('did-finish-load', () => setTimeout(() => openUrl(startUrl, { forceNew: true }), 300));
   extbridge.init({ native: (wc, p) => nat(wc, p, 'a picture for an extension'), get ses() { return curSes(); }, sessions: () => sessions, extSessions: () => persistentSessions(), profileOf: (s) => (sesInfo.get(s) || {}).pid || settings.profiles[0].id, tabs, state: () => state, settings: () => settings, win: () => win, openUrl: (u, o) => openUrl(u, o), activate: (id) => activate(id), wake: (t) => wake(t), closeTab: (id) => closeTab(id), sleepTab: (t) => sleep(t), push: () => push(), toast: (m) => toast(m), normalize: (u) => normalizeInput(u), activeTab: () => activeTab(), userDir: () => app.getPath('userData') });
   sesReady.delete(sessionFor(curProfile(), false)); // the profile the first window opens in gets its session now, its extensions load while the interface starts and its first page does not wait for them (as always); the others get theirs when first opened and their first page waits (see wake)
@@ -1573,8 +1582,11 @@ if (!setupMode && gotLock) app.whenReady().then(async () => {
       case 'permResetAll': perms.reset(curProfile()); break;
       case 'siteClear': if (t && perms.originOf(a.origin)) { try { await sessionFor(t.pid, t.private).clearStorageData({ origin: a.origin }); toast(`Cookies and data of ${hostOfUrl(a.origin)} are gone. Reload the page to start fresh.`); } catch { toast('Could not clear that site.'); } } break;
       case 'awakeSet': { const h = String(a.host || '').toLowerCase(), set = new Set(settings.awakeHosts || []); if (h) { if (a.on) set.add(h); else set.delete(h); settings.awakeHosts = [...set]; saveSettings(); push(); } break; }
-      case 'defaultBrowser': { let d = false; try { d = app.isDefaultProtocolClient('https'); } catch { /* unknown */ } return { isDefault: d }; }
-      case 'makeDefault': Promise.resolve(shell.openExternal('ms-settings:defaultapps?registeredAppUser=Nova')).catch(() => shell.openExternal('ms-settings:defaultapps')); break; // Windows only lets you choose in its own settings
+      case 'defaultBrowser': { let d = false; try { d = process.platform === 'win32' && await require('./browserreg').isDefault(); } catch { /* unknown */ } return { isDefault: d }; } // what Windows has chosen for http and https (isDefaultProtocolClient only knows what a program registered for itself)
+      case 'makeDefault': { // Windows only lets you choose in its own settings; the registration is written again first so that what you choose there points at this Nova
+        if (process.platform === 'win32' && app.isPackaged) { try { await require('./browserreg').apply(process.execPath, AUMID, dlog); } catch { /* the settings page opens anyway */ } }
+        Promise.resolve(shell.openExternal('ms-settings:defaultapps?registeredAppUser=Nova')).catch(() => shell.openExternal('ms-settings:defaultapps')); toast('In Windows, choose Nova for HTTP and HTTPS. Then links from other programs open here.'); break;
+      }
       case 'duplicate': if (t) openUrl(t.url, { forceNew: true, afterId: t.id, spaceId: t.spaceId, private: t.private }); break;
       case 'closeOthers': case 'closeRight': if (t) { // the other tabs of this window and space that are not pinned; "right": only those after this one
         const own = [...tabs.values()].filter((x) => x.wid === t.wid && x.spaceId === t.spaceId), at = own.indexOf(t);

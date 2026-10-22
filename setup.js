@@ -93,16 +93,7 @@ async function registerShell(dir, { desktop, startMenu, register }) {
   await regSet(UNINSTALL_KEY, 'Publisher', 'Nova'); await regSet(UNINSTALL_KEY, 'DisplayIcon', exe);
   await regSet(UNINSTALL_KEY, 'InstallLocation', dir); await regSet(UNINSTALL_KEY, 'UninstallString', `"${exe}" --uninstall`);
   await regSet(UNINSTALL_KEY, 'NoModify', 1, 'REG_DWORD'); await regSet(UNINSTALL_KEY, 'NoRepair', 1, 'REG_DWORD');
-  if (register) { // makes Nova selectable under Settings > Default apps
-    const C = 'HKCU\\Software\\Classes\\NovaHTML', S = 'HKCU\\Software\\Clients\\StartMenuInternet\\Nova';
-    await regSet(C, '', 'Nova HTML Document'); await regSet(C + '\\DefaultIcon', '', `${exe},0`); await regSet(C + '\\shell\\open\\command', '', `"${exe}" "%1"`);
-    await regSet(S, '', 'Nova'); await regSet(S + '\\Capabilities', 'ApplicationName', 'Nova'); await regSet(S + '\\Capabilities', 'ApplicationDescription', 'Nova, a minimal browser built around your tabs');
-    await regSet(S + '\\Capabilities', 'ApplicationIcon', `${exe},0`);
-    for (const k of ['http', 'https']) await regSet(S + '\\Capabilities\\URLAssociations', k, 'NovaHTML');
-    for (const k of ['.html', '.htm']) await regSet(S + '\\Capabilities\\FileAssociations', k, 'NovaHTML');
-    await regSet(S + '\\shell\\open\\command', '', `"${exe}"`);
-    await regSet('HKCU\\Software\\RegisteredApplications', 'Nova', 'Software\\Clients\\StartMenuInternet\\Nova\\Capabilities');
-  }
+  if (register) await require('./browserreg').apply(exe, AUMID); // makes Nova selectable under Settings > Default apps, with all its link and file types (a running Nova checks it again at every start)
   await refreshIcons(link);
 }
 async function removeShell() {

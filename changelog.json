@@ -1,5 +1,16 @@
 [
   {
+    "version": "26.10.31",
+    "date": "2026-10-22",
+    "headline": {
+      "title": "Nova is a proper default browser again",
+      "text": "it is registered with all its link and file types, so links from other programs, like a Google sign-in, can open in Nova."
+    },
+    "notes": [
+      "Default browser: Nova now lists web links and web page files in the Windows default apps and repairs its own entry at every start. Choose Nova there once, with Make Nova your default browser in the menu."
+    ]
+  },
+  {
     "version": "26.10.30",
     "date": "2026-10-21",
     "headline": {
